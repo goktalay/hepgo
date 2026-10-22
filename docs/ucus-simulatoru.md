@@ -2875,3 +2875,100 @@ içinde gereken süre kesintisiz tutarsa ANGAJE → kovalayan kazanır; süre bi
   dil, bağlama). Görsel: `./.venv/bin/python -m tests.dogfight_shots` → `/tmp/dogfight-shots/df-*.png` (tür seçimi, salon, kovalayan HUD'u, kaçan
   uyarısı, sonuç, salonda rövanş, Karşılaşmalar sekmesinde tür); SIMUMAV: `./.venv/bin/python -m tests.simumav_dogfight_shots` → `df-sm-*.png`
   (sihirbaz tür seçimi + şema, davet 2 oyuncu, salon). Not: görsel betikte tutma süresi görüntü alınırken geçici büyütülür (`20.5/120.0 s`).
+
+## 42. UÇUŞ UYARI SİSTEMİ — sesli + görsel GPWS / stall / bank angle / master caution (`static/js/modules/flightsim_gpws.js` saf + `flightsim_gpws_ui.js` arayüz/ses; sunucu `app/flightsim_gpws.py`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: "uçakta IMU ya da gyro saçmalarsa hem sesli hem görsel uyarı görünür, benzerini yapalım, oyuncu hata yapmaya çekinsin; açılıp
+kapanabilir olsun." Gerçek uçaklardaki GPWS / EGPWS ("PULL UP", "TERRAIN", "SINK RATE", "TOO LOW", "DON'T SINK"), stall uyarısı (stick shaker),
+"BANK ANGLE", master warning / master caution mantığı simülatöre taşındı; uyarılar uçuş özetine ve "uçuş disiplini" puanına yansır.
+
+### 42.1 Değerlendirici (saf; istemcide, kayıttan oynatmada da aynı)
+- **Girdi** (`teleInput(tele, ctx)`): canlı `tele` ya da kayıt karesi (aynı alan adları) → {t (SITL saati `tbm`; kayıtta kare zamanı), armed, mode,
+  AGL, ileri bakış AGL'si, dikey hız, yer/hava hızı, roll/pitch (°), açısal hız (rs/ps/ys → °/s), batarya (§23 elektrik modeli öncelikli, yoksa SITL
+  `batt_pct`), yakıt (§23), GPS fix, `sens_bad`, `ekf`, `vibe`, rüzgâr, motor kesik, kalkış aşaması, evden mesafe, bağlantı yaşı, çarpışma}.
+  **AGL 3B araziden** (`sim.position()` − `sim.terrainHeight`; prosedürel dünyada SITL arazisi yok); yoksa `terrain_agl`, o da yoksa `alt_rel`.
+  İleri bakış: hız vektörüyle `look` (kopter 4 sn, uçak 8 sn) sonrası ve yarısındaki konumun arazisine göre AGL (arazi yükselmesi + alçalma birlikte).
+- **Yeni tele alanları** (gerçek SITL; `app/flightsim.py _isle`): `sens_bad` = SYS_STATUS mevcut ∧ etkin ∧ ¬sağlıklı sensör bitleri;
+  `ekf` = EKF_STATUS_REPORT hız / yatay konum / dikey konum / pusula varyanslarının en büyüğü; `vibe` (m/s², VIBRATION x/y/z en büyüğü) + `clip`.
+  Ölçüm (gerçek ArduCopter SITL): düz uçuşta `sens_bad = 0x200000` (AHRS biti "sağlıksız") → IMU maskesi yalnız jiroskop (1) + ivmeölçer (2).
+- **Araç sınıfı** (`vehicleClass`): copter (multirotor/hexarotor/fpv) · heli · plane (sabit kanat) · vtol · icept (INTERCEPTOR) · rover. VTOL ve
+  INTERCEPTOR Q kiplerinde (QHOVER…) kopter eşikleri, diğer kiplerde uçak eşikleri (`modeKind`). Kara aracında uçuş uyarıları yok; STALL yalnız kanatlıda.
+- **Uyarılar ve eşikler** (sens = Normal; "açıkken" sütunu histerezis — uyarı açıkken gevşeyen eşik; tetik gecikmesi varsayılan 0,3 sn):
+
+| Kod | Seviye | Kopter | Uçak (sabit kanat / VTOL-FW / INTERCEPTOR-FW) | Not |
+|---|---|---|---|---|
+| PULL UP | WARNING | AGL < 80 m, kapanma > 2,5 m/s, çarpmaya kalan < 3,5 sn (açıkken ×1,3) | AGL < 300, kapanma > 4, < 5 sn | kapanma = max(alçalma, ileri bakış AGL kaybı / look) |
+| TERRAIN | WARNING | kaynak arazi yükselmesi, < 7 sn | < 10 sn | LAND / RTL·AUTO son yaklaşmada yok |
+| STALL | WARNING | — | hava hızı < 9 m/s (açıkken 10,35) ya da pitch > 15° ve < 11,7 m/s; AGL > 3 | ses: stick shaker |
+| GYRO / IMU FAULT | WARNING | gyro/ivme sağlık biti · EKF ≥ 0,8 · \|p\|,\|q\| > 400°/s 0,4 sn · \|r\| > 200°/s 2 sn · tutum sıçraması | \|r\| > 120°/s 3 sn | ACRO/FLIP/AUTOTUNE'da hareket kuralları yok; sıçrama 3 sn mandallı |
+| ENGINE OUT | WARNING | havadayken DISARM + düşüş (> 1,5 m/s, AGL > 3, 8 sn içinde) | havada motor kesik (`motor_cut`) | tetik 0,5 sn |
+| OVERSPEED | WARNING | yer hızı > 22 m/s | hava hızı > 38 (INTERCEPTOR 70, heli 30) | §23 azami hız ayarı varsa × 1,08 |
+| BANK ANGLE | WARNING | \|roll\| > 35° (ayar 20–60) | > 45° (ayar 30–70) | açıkken −5° |
+| PITCH | WARNING | \|pitch\| > 35° | burun yukarı > 30° / aşağı > 25° | kalkışta yok |
+| SINK RATE | WARNING | alçalma > 6 m/s (AGL < 240) ya da alçalma kaynaklı < 7 sn | > 12 m/s ya da < 10 sn | |
+| BATTERY CRITICAL | WARNING | < %10 ya da §23 batarya bitti | aynı | tetik 1 sn |
+| FUEL | WARNING | §23 yakıt < %5 ya da bitti | aynı | |
+| GPS LOST | WARNING | bir kez 3B fix görüldükten sonra fix < 3 (1 sn) | aynı | |
+| GEOFENCE | WARNING | evden mesafe > HEPGO dünya yarı boyutu (`world.size_m/2`) · SIMUMAV parkur yarıçapı | aynı | |
+| TOO LOW | CAUTION | (tepe AGL > 15) AGL < 4 m ve yer hızı > 8 | (tepe > 60) AGL < 30 ve > 12 m/s | iniş dışında |
+| DON'T SINK | CAUTION | havalanmadan sonraki 60 sn'de, AGL < 40, tepeden > 6 m kayıp, alçalıyor | AGL < 200, > 15 m kayıp | |
+| EKF VARIANCE | CAUTION | 0,5 ≤ EKF < 0,8 | aynı | |
+| VIBRATION | CAUTION | > 30 m/s² (açıkken 25) | aynı | |
+| BATTERY LOW / FUEL LOW | CAUTION | < %25 / < %20 | aynı | |
+| HIGH WIND | CAUTION | rüzgâr > 12 m/s (2 sn) | > 15 m/s | |
+| LINK LOST | CAUTION | canlıda telemetri > 1,5 sn gelmezse (1 sn gecikme; gizli sekmede ölçülmez) | aynı | |
+
+- **Hassasiyet** Düşük / Normal / Yüksek: çarpma süresi eşikleri ve TOO LOW irtifası × 0,75 / 1 / 1,3, sert alçalma eşiği ÷ aynı oran.
+- **Evre bastırma:** ARM'sız uyarı yok (yalnız ENGINE OUT'un "havada DISARM" kuralı); kalkışta (havalanmadan önce + havalanmadan sonra kopter 3 sn
+  / uçak 8 sn, rampa/fırlatıcı `armed`/`launch` aşaması, TAKEOFF kipi) arazi / alçalma / stall / pitch / TOO LOW yok; LAND / QLAND her zaman, RTL /
+  QRTL / SMART_RTL / AUTO ise AGL < 25 m (uçak 60) ve evden < 60 m (uçak 400) son yaklaşmada TERRAIN / TOO LOW / DON'T SINK yok; çarpışmada hepsi susar.
+- **Durum makinesi** (kod başına): ham koşul `onDelay` kadar sürünce AÇILIR; koşul 1 sn yoksa ve en az 2,5 sn gösterildiyse KAPANIR (bölüm =
+  {code, level, t0, start_s (ilk ARM'dan), dur_s}). Zaman 0,5 sn'den fazla geri giderse (Sıfırla, kayıtta geri atlama) açık bölümler kapanır ve
+  bellek sıfırlanır. Öncelik sırası tablodaki gibi (WARNING'ler hep CAUTION'ların üstünde); birincil uyarı büyük kutuda, diğerleri çip.
+- **Onay (MASTER):** o anki uyarılar onaylanır → ses susar, koşul sürerse görsel sabit kalır (yanıp sönmez); kapanıp yeniden açılan ya da yeni bir
+  uyarı yine çalar. Seviye bazlı (MASTER WARNING yalnız kırmızıları, MASTER CAUTION yalnız sarıları). Kısayol **B**; kutuya tıklama hepsini onaylar.
+
+### 42.2 Görsel ve ses (`flightsim_gpws_ui.js`)
+- **Kutu** ekranın ortasının üstünde (%27; mobilde %20, küçük yazı): kırmızı "WARNING · PULL UP" / sarı "CAUTION · TOO LOW", onaylanmamışken yanıp
+  söner; iki yanında **MASTER WARNING / MASTER CAUTION** lambaları (o seviyede uyarı yoksa gizli; onaylanmamışken yanıp söner); altında diğer etkin
+  uyarılar (en çok 3 çip). WARNING'de ekran kenarında kırmızı **vinyet** (onaylanmamışken nabız). `prefers-reduced-motion` yavaşlatır.
+- **FPV (pilot) ve gimbal (fpv) kipleri:** OSD / askeri HUD açıksa büyük kutu gizlenir; aynı metni OSD (merkezin üstünde OSD yazısı) ve HUD (çerçeveli
+  kutu) kendisi çizer (`osdCtx.gpws` / `hudCtx.gpws` → `osdText()`); MASTER lambası ve vinyet kalır. Ekran kaydında HUD/OSD tuvali kayda girer.
+- **Ses** (Web Audio, dosya yok; motor sesinin master kazancından geçen ayrı yol `audio.alertBus()` → ses düzeyi, 🔇, sekme gizli, ≥ 2× oynatma ile
+  susar, ekran kaydına girer): PULL UP / TERRAIN / SINK RATE → "whoop whoop" (yükselen iki süpürme), diğer WARNING'ler → iki tonlu alarm, STALL →
+  stick shaker (18 Hz çıngırak), CAUTION → çift çan. Tondan sonra **konuşma** (speechSynthesis): havacılık geleneği İngilizce ("Pull up", "Bank angle,
+  bank angle", "Stall, stall"…); ayarda "Uyarı dili: Arayüz dili" seçilirse metin ve konuşma sitenin dilinde (Türkçe "YUKARI ÇEK" …). speechSynthesis
+  yoksa yalnız ton. WARNING onaylanana dek ~3,6 sn'de bir yinelenir; CAUTION bir kez. Genel ses kapalıysa uyarı sesi de yok, görsel kalır.
+- **Aç/kapa:** ses kapsülü (🔊 ▾) menüsünde "Uçuş uyarıları: Kapalı · Yalnız görsel · Görsel + ses" + ⚙ alt panel (uyarı dili, hassasiyet, araç
+  tipine göre yatış eşiği kaydırıcısı, tür tür aç/kapa — araçta geçersiz türler soluk —, "▶ Dene" sırayla PULL UP / BANK ANGLE / STALL / TOO LOW
+  gösterir/çalar). Sihirbazın son adımında ("Kayıt ve özet") aynı seçici. Tercih: HEPGO `localStorage fs.gpws`, SIMUMAV `sm.gpws`
+  ({mode, lang, sens, bank_copter, bank_plane, off[]}); **varsayılan Görsel + ses AÇIK**. Kayıtlı simülasyon (preset) ayarına eklenmedi (tercih
+  kullanıcıya ait, uçuşlar arasında hatırlanır).
+
+### 42.3 Kayıt, sunucu, rapor, puan
+- **Olay şeridi:** açılan uyarı "WARNING · PULL UP" (kırmızı) / "CAUTION · TOO LOW" (sarı), etiket `UYARI` (panel konsolu).
+- **Sunucu** (`cmd gpws`, REST ve WS; SITL'e gitmez): {events: [{code, level, t0, start_s, dur_s}] (≤ 50), cfg?: {mode, off}}. İstemci açılışta ayarı,
+  sonra biten bölümleri ~1,5 sn toplu gönderir; Bitir'de `flush()` açık bölümleri kapatıp gönderir (özetten önce). Doğrulama 400: bilinmeyen kod,
+  seviye uyuşmazlığı, sayı dışı / negatif süre, > 50 öğe, geçersiz mod. Tekilleştirme (kod, t0 0,1 sn) — birden çok yazma izinli sekme çift saymaz;
+  oturum başına ≤ 500 bölüm. Kayıttan oynatmada gönderilmez.
+- **Özet** (`summary.alerts`; `flightsim_gpws.ozetle` = JS `summarizeAlerts`): {mode, off, events (≤ 200), by_code {code: {level, n, total_s, first_s}},
+  warnings, cautions, total_s, score, grade}. **Uçuş disiplini** = 100 − Σ ceza; WARNING bölümü 6 + 1,5 × sn (en çok 20), CAUTION 2 + 0,5 × sn (en çok
+  8); not A ≥ 90 · B ≥ 75 · C ≥ 60 · D ≥ 40 · F. Uyarılar kapalıysa puan yok. Bildirim hiç gelmediyse (eski istemci) `alerts` alanı yok.
+- **DB göçü (idempotent, `app/db.py init`):** `drone_sim_runs.alerts TEXT` (özet JSON) + `alert_score INTEGER`; SIMUMAV çekirdek DB'si
+  `app/simumav/shim/db.py RUN_EK_SUTUNLAR` (aynı iki sütun). Kapanışta Bitir'de üretilmiş özet satırının `alerts`'ı da son bölümlerle güncellenir.
+- **Rapor:** HEPGO özet raporu "⚠ Uçuş uyarıları · Uçuş disiplini 72/100 · C" bölümü (kırmızı / sarı adet, toplam uyarı süresi, puan karoları +
+  tür başına adet / toplam süre / ilk görülme tablosu; uyarısız uçuşta "Uyarısız uçuş — kusursuz disiplin."); rapor metni (paylaşım) satırı;
+  Simülasyon Kayıtları kartında "Uçuş disiplini 72/100".
+- **Karşılaşma** (§33/§41): oyuncu oturumu aynı oturum ekranı → uyarılar ve puan aynen. **Kayıttan oynatma:** kareler aynı değerlendiriciden
+  geçer (görsel + olay şeridi; atlamada sıfırlanır; ses ≥ 2× hızda yok).
+
+### 42.4 Testler ve görsel doğrulama
+- `node tests/test_flightsim_gpws.mjs` (25): her uyarının tetik/temizlenmesi, histerezis, tetik gecikmesi + en kısa gösterim, evre bastırma, öncelik,
+  araç tipine göre eşik (kopter/uçak/VTOL Q/kara aracı), onay, zaman geri gitmesi, kapalı mod / tür kapatma, özet + puan, ayarlar, telemetri
+  dönüşümü, metinler, 6 + 7 dil, bağlama, sunucu kod listesi.
+- `.venv/bin/python -m tests.test_flightsim_gpws`: saf kayıt (doğrulama, tekilleştirme, tavanlar) + puanın JS ile eşitliği (node) + HEPGO API uçtan uca
+  (400'ler, WS komutu, özet, kapanışta drone_sim_runs.alerts/alert_score + özet satırı) + SIMUMAV shim/köprü/dışa aktarma.
+- **Gerçek SITL:** `HEPGO_SITL_DIR=/opt/hepgo/sitl/bin .venv/bin/python -m tests.test_flightsim_gpws_sitl` (~1,5 dk): ArduCopter kalkış 70 m →
+  ALT_HOLD'da tam sağ yatış (ANGLE_MAX 30° → eşik 25°) → STABILIZE gaz kesik serbest düşüş → toparlama; tele kareleri istemci değerlendiricisinden
+  geçer: yerde/kalkışta/askıda yanlış alarm yok, BANK ANGLE ve PULL UP (+ SINK RATE, DON'T SINK) açılır, IMU yanlış alarmı yok; özet puan eşit.
+- Görsel: `./.venv/bin/python -m tests.gpws_shots_hepgo` → `/tmp/gpws-shots/hep-*.png` (PULL UP, onaylı, TOO LOW, gimbal HUD, FPV OSD, ses menüsü,
+  ayar paneli, rapor, sihirbaz, mobil); `./.venv/bin/python -m tests.gpws_shots_simumav` → `sm-*.png`.

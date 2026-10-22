@@ -873,3 +873,61 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
 - **Motor sesi**: CAYMAZ (yakıtlı sabit kanat / VTOL) iki zamanlı benzinli sentez — ayrıntı HEPGO docs/ucus-simulatoru.md §16; `fly/session.js`
   `createEngineAudio({ engine: power.engine })`.
 - Testler: `node tests/test_flightsim_audio.mjs`, `node tests/test_simumav_ui.mjs`; e2e + görseller: `./.venv/bin/python -m tests.simumav_smfix_e2e` → `/tmp/smfix-shots`.
+
+## 26. Arka plan müziği, kanal başına ses düzeyleri ve bölüm başına hareketli "soft" arka planlar (oyun arayüzü)
+
+**Dosyalar:** `static/simumav/app/ui/audiomix.js` (kanal tercihleri, saf), `ui/music.js` (prosedürel müzik), `ui/backdrop.js` (sahne yöneticisi,
+saf eşleme/bütçe), `ui/backdrop/scenes.js` (5 Canvas2D sahne), `ui/backdrop/caymaz_atlas.webp` (+ üretici `tools/simumav_caymaz_sprites.py`),
+kabuk bağlantısı `app.js` (`syncAmbience`), ayarlar `settings/index.js`, §42 uyarı yolu `fly/session.js` (tek satır: `audio: withAlertGain(audio)`),
+stiller `fx.css`, lisans kaydı `static/simumav/LICENSES.md`. Bölüm modüllerinin içerik kodu DEĞİŞMEDİ (birleştirme kolay).
+
+**Ses kanalları (cihazda saklanır; mevcut anahtarlarla uyumlu):**
+
+| Kanal | Anahtar | Etkisi |
+|---|---|---|
+| Ana ses + Ana düzey | sunucu ayarı `sound`, `volume` | hepsinin üstünde çarpan (`ui/sfx.js` master; ses kapalı → master 0, müzik durur) |
+| Müzik | `sm.music` `{on, vol}` (vars. açık, 55) | arka plan müziği |
+| Oyun efektleri | `sm.sfx` `{on, vol}` (HEPGO §44 `createSfxPrefs` ile AYNI biçim) | menü/düğme hover-tık sesleri, geçiş süpürmesi + uçuşta §44 halka/sıralama/puan |
+| Uyarı sesleri | `sm.gpws.mode` (açık = `full`, sessiz = `visual`; `off`/`lang` alanları korunur) + `sm.alertvol` `{vol}` | §42 uyarı tonu ve sesli okuma (`withAlertGain` vekili `alertBus` kazancını ve konuşma düzeyini ölçekler), §10 yakıt/batarya alarmı |
+| Motor ve uçuş sesi | `fs.audio.on` `'1'/'0'`, `fs.audio.vol` `0..100` (HEPGO `createAudioPrefs`) | uçuşta motor/rüzgâr/çarpışma; menü uçuş sahnesi uğultusu (`sm:engine` açıksa) da bu düzeyle ölçeklenir |
+
+Kazanç eğrisi `(vol/100)^1.5`. Değişiklikte `sm:mix` olayı → müzik/efekt anında güncellenir. Ayarlar › "Ses düzeyleri" başlığı altında her
+kanal: aç/kapa anahtarı + %5 adımlı kaydırıcı + yüzde; efekt ve uyarı kanalında bırakınca önizleme sesi.
+
+**Müzik (`ui/music.js`) — dosya/CDN/üçüncü taraf varlık YOK:** Web Audio sentezi, La minör `Am7 → Fmaj7 → Cmaj7 → G6`, 76 BPM, akor başına 2 ölçü
+(128 adımlık ≈ 25 sn döngü). Katmanlar: pad (akor notası başına ±7 cent iki testere, yavaş süzgeç LFO'su), bas, tohumlu arpej (her döngüde hafif
+değişir; dotted-8'lik gecikme), 2 ölçüde bir çan; üretilmiş dürtü yanıtıyla yankı, kompresör → ortak ana kazanç (tek `AudioContext`, `sfx.bus()`).
+Zamanlayıcı 120 ms'de bir 0,5 sn ileriyi planlar. Otomatik oynatma kuralı: ilk `pointerdown`/`keydown`/`touchend`'de 2,5 sn fade-in.
+Bastırma (`musicDuck`, saf): menü/bölümler 1 · Uç seçimi/sihirbaz/salon 0,7 · **uçuş oturumu (`#view.sm-fly-session`) 0** · sekme gizli 0;
+0'a inince 1,2 sn fade-out ve zamanlayıcı DURUR (CPU 0). Bölüm geçişlerinde kesintisiz (kabuk düzeyinde yaşar). Teşhis `window.__smMusic()`.
+
+**Hareketli arka planlar (`ui/backdrop.js` + `scenes.js`):** tek `<canvas id="backdrop">` (JS ile `#view`'in önüne eklenir; `position:fixed; z-index:0`,
+`#view` z-index 1), **Canvas2D — WebGL bağlamı açmaz** (uçuşun tek paylaşılan WebGL renderer kuralına dokunmaz; `__smGl()` değişmez).
+Eşleme (`sceneFor`, saf): `menu` → yok (menünün kendi canlı uçuş sahnesi `#stage`), `hangar` → hangar, `crew` → brifing sınıfı, `tracks` → tel kafes
+küre, `missions` → ilaçlama tarlası, `fly` (Tek/Çok seçimi, sihirbaz, salon) → CAYMAZ; `ops`/`settings`/`support` → yok; uçuş oturumu → yok
+(döngü durur, önbellek tuvalleri bırakılır). Ayarlar › "Hareketli arka planlar" (`sm:bgfx`, eskiden yalnız menü uçuşu) ikisini birlikte kapatır.
+
+| Sahne | İçerik |
+|---|---|
+| hangar | perspektif hangar: açık kapıdan gece göğü + pist ışıkları, kemer tavan makasları, derinlik boyunca kayan dalga hâlinde tavan ışıkları ve zemindeki dikey yansımaları, süpürülen projektör, biri içeri (önden) biri dışarı (arkadan) taksi yapan CAYMAZ'lar (kapı dışındayken açıklığa kırpılır, zeminde ayna yansıması), toz zerreleri |
+| crew | brifing sınıfı: projeksiyon perdesinde ızgara, aşamalı çizilen 3 uçuş rotası + üstünde uçak simgesi, yavaş dönen rüzgâr okları alanı, radar süpürmesi, lazer imleç; yan tahtalarda silik şemalar; arkadan sıralar/sandalye sırtları; perde ışıması + projektör tozu |
+| tracks | dönen tel kafes küre (enlem/boylam; arka yüz silik), şehir ışıkları, büyük daire yörüngelerinde 6 uçak simgesi + solan izler (yörüngeden analitik; durum yok), atmosfer halesi, yıldızlar |
+| missions | alacakaranlık tarla (yakınsayan ekin şeritleri, kamera ilerlemesi), mekik deseninde sıra sıra geçen ilaçlama dronu (dönen pervaneler, seyir ışıkları, gölge), iki memeden püskürtme bulutu (havuzlu ≤ 240 parçacık, yan rüzgârla sürüklenip çöker) |
+| caymaz | gökyüzü + güneş ışıması, iki katman paralaks tepe, üç derinlikte bulutlar, yavaş sinematik kamera yörüngesi (atlas kareleri arası karışım, 52°–128°), hafif yatış, ince hız çizgileri |
+
+CAYMAZ görüntüsü çalışma anında WebGL'siz çizilsin diye `static/models/caymaz-sim.glb` (HEPGO'nun kendi modeli) **önceden** 32 yörünge açısından
+saydam zeminli bir WebP atlasına çizilir (`tools/simumav_caymaz_sprites.py`: headless Chromium + three.js; 2560×800, ≈ 132 KB). Sahne ışığına uysun
+diye çalışma anında bir kez renklendirilmiş kopyası önbelleğe alınır.
+
+**Performans:** düşük çözünürlükte çizilir (ölçek 0,7; düşük güçte 0,5; en çok 1400 px genişlik) ve büyütülür (doğal yumuşaklık + `blur(.4px)`),
+30 fps sınırı (düşük güç: mobil dokunmatik < 900 px, ≤ 4 çekirdek, ≤ 4 GB, Save-Data → 24 fps, yoğunluk 0,55). Durağan katmanlar boyut
+değişince bir kez önbellek tuvaline çizilir. `prefers-reduced-motion` → tek durağan kare (döngü yok); sekme gizli → döngü durur. Kare süresi
+teşhisi `window.__smBackdrop()` (`avgMs`, `worstMs`). Açık temada katman %20 opaklıkta silik.
+
+**Arayüz sesleri:** `#view` içindeki düğmelere (`button`, `.btn`, `[role=button]`, `.sm-mode-card`, `.sm-card`) devredilmiş hover/tık sesleri
+(menü kartları kendi seslerini çalar; uçuş oturumu ve `[data-nosfx]` hariç), efekt düzeyine bağlı.
+
+**Testler:** `node tests/test_simumav_sound.mjs` (kanal tercihleri + mevcut anahtar uyumu, kazanç/bastırma, uyarı vekili, müzik kuramı, bölüm→sahne,
+reduced-motion/düşük güç bütçesi, atlas, WebGL/dış dosya yok statik denetimi, lisans kaydı); görsel/davranış `tests/simumav_sound_shots.py`
+(her bölüm × masaüstü/mobil × TR/EN → `/tmp/smsound-shots`, müzik fade-in, uçuş oturumunda müzik 0 + arka plan kapalı, gizli sekme, ayar kaydırıcıları,
+reduced-motion).

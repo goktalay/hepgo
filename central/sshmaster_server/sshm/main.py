@@ -43,7 +43,8 @@ APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'porta
 TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup-{v}.exe', 'portable': 'IP-Tools-Portable-{v}.exe'},
          'fs': {'name': 'File Search', 'slug': 'file-search', 'setup': 'File-Search-Setup-{v}.exe', 'portable': 'File-Search-Portable-{v}.exe'},
          'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'},
-         'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'}}
+         'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'},
+         'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'}}
 TOOLS['ip']['desc'] = {'tr': 'Ağdaki cihazları, açık portları ve servisleri tarar', 'en': 'Scans your network for devices, open ports and services',
                        'fr': 'Analyse le réseau : appareils, ports ouverts et services', 'de': 'Durchsucht das Netzwerk nach Geräten, offenen Ports und Diensten',
                        'es': 'Escanea la red en busca de dispositivos, puertos abiertos y servicios', 'ar': 'يفحص الشبكة بحثًا عن الأجهزة والمنافذ المفتوحة والخدمات',
@@ -64,6 +65,14 @@ TOOLS['m3']['desc'] = {'tr': '3B dosyaları açar, parçalarına ayırır (patla
                        'ar': 'يفتح الملفات ثلاثية الأبعاد ويفككها إلى قطع ويصدّرها إلى 15 صيغة (STEP وFBX وglTF وSTL…)',
                        'zh': '打开 3D 文件，拆分为零件（爆炸视图），并导出为 15 种格式（STEP、FBX、glTF、STL…）',
                        'ru': 'Открывает 3D-файлы, разносит их на детали и экспортирует в 15 форматов (STEP, FBX, glTF, STL…)'}
+TOOLS['sd']['desc'] = {'tr': 'Herkese açık sosyal medya bağlantılarından video ve ses indirir (çözünürlük seçimi, oynatma listesi, kuyruk)',
+                       'en': 'Downloads video and audio from public social media links (resolution choice, playlists, queue)',
+                       'fr': 'Télécharge vidéo et audio depuis des liens publics de réseaux sociaux (choix de résolution, playlists, file d’attente)',
+                       'de': 'Lädt Video und Audio von öffentlichen Social-Media-Links (Auflösungswahl, Playlists, Warteschlange)',
+                       'es': 'Descarga vídeo y audio de enlaces públicos de redes sociales (elección de resolución, listas, cola)',
+                       'ar': 'ينزّل الفيديو والصوت من روابط وسائل التواصل الاجتماعي العامة (اختيار الدقة، قوائم التشغيل، قائمة الانتظار)',
+                       'zh': '从公开的社交媒体链接下载视频和音频（选择分辨率、播放列表、下载队列）',
+                       'ru': 'Скачивает видео и звук по общедоступным ссылкам соцсетей (выбор разрешения, плейлисты, очередь)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 # Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
 # kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına

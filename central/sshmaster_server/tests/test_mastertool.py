@@ -232,7 +232,7 @@ def main():
         r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
         assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
         assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
-        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3'}
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3', 'sd'}
         assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
         sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
         c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
@@ -447,7 +447,7 @@ def main():
         SSO = r.json()['sso_token']
         MT = {'Authorization': 'Bearer ' + SSO}
         cat = c.get('/api/mt/apps', headers=MT).json()
-        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3', 'sd'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
         ipc = cat['apps'][5]
         assert ipc['description']['en'].startswith('Scans') and len(ipc['description']) == 8 and cat['apps'][0]['description'] is None
         assert ipc['group'] == 'tools' and ipc['name'] == 'IP Tools' and ipc['site'].endswith('/araclar/ip-tools') and cat['apps'][0]['group'] == 'apps'
@@ -505,6 +505,10 @@ def main():
         assert 'canonical" href="https://mastertool.download/araclar/ip-tools?lang=en"' in tp.text and '"isPartOf"' in tp.text
         assert c.get('/araclar/ip-tools', headers={'Host': 'sshmasters.com'}).status_code == 404
         assert c.get('/araclar/yok', headers={'Host': 'mastertool.download'}).status_code == 404
+        sdp = c.get('/araclar/social-download?lang=de', headers={'Host': 'mastertool.download'})   # Social Download (sd): sayfa, simge, görüntüler
+        assert sdp.status_code == 200 and '"isPartOf"' in sdp.text and '/shots/sd-02-video-analiz-gece-en.webp' in sdp.text, sdp.status_code
+        assert c.get('/brand/sd-512.png', headers={'Host': 'mastertool.download'}).status_code == 200
+        assert 'Yalnızca indirme hakkınız olan içerikleri indirin' in sdp.text   # hukuki uyarı sayfada
         sm2 = c.get('/sitemap.xml', headers={'Host': 'mastertool.download'}).text; assert sm2.count('<loc>https://mastertool.download/araclar/quick-preview') == 8 and sm2.count('/araclar/ip-tools') >= 8, sm2.count('/araclar/')
         # web oturumunda (Hesabım) sso oturumu kapatılınca ailesi düşer; web 'Oturumlar' listesinde görünür
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
@@ -552,7 +556,7 @@ def main():
         assert g.get('/api/xx/profile', headers=VF).status_code == 404 and g.get('/api/sm/profile', headers=VF).status_code == 404
         # katalog: kind:'web' kaydı yalnız ?v=1.2.0 ve üstü isteyen Master Tool'a
         r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop'}); MT4 = {'Authorization': 'Bearer ' + r.json()['sso_token']}
-        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3']
+        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp', 'm3', 'sd']
         assert [x['app'] for x in c.get('/api/mt/apps', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps

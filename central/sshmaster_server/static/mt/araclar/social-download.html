@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Social Download — herkese açık sosyal medya videolarını indirme (Master Tool aracı)</title>
+<meta name="description" content="Social Download: YouTube, Instagram, TikTok, X, Facebook, Vimeo ve daha birçok sitedeki herkese açık bağlantılardan video ve ses indirin; çözünürlüğü seçin, oynatma listelerini kuyruğa alın. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="Social Download — herkese açık bağlantılardan video ve ses indirin">
+<meta property="og:description" content="Bağlantıyı yapıştırın, çözünürlüğü ya da yalnız sesi seçin, oynatma listesini kuyruğa alın. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/social-download">
+<link rel="icon" href="/brand/sd.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+  .fmt-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .fmt-cloud span { font: 12.5px ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 3px 9px; border-radius: 999px; background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); color: var(--head); }
+</style>
+<style>
+  .pf-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .pf-list span { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 4px 11px 4px 5px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--head); }
+  .pf-list i { width: 18px; height: 18px; border-radius: 6px; display: inline-block; }
+  .pf-list.no span { padding-left: 11px; color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(248,113,113,.7); }
+  .legal-box { display: flex; gap: 16px; align-items: flex-start; padding: 22px 24px; border-radius: 14px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.07); }
+  .legal-box svg { width: 30px; height: 30px; flex: 0 0 auto; color: #fbbf24; }
+  .legal-box b { color: var(--head); font-size: 17px; display: block; margin-bottom: 6px; }
+  .legal-box p { margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#platformlar">Platformlar</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/sd-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Bağlantıyı yapıştırın, <em>videoyu indirin.</em></h1>
+        <p class="lead">Social Download; YouTube, Instagram, TikTok, X, Facebook, Vimeo ve daha birçok sitedeki herkese açık bağlantılardan video ve ses indirir. İndirmeden önce çözünürlüğü ya da yalnız sesi seçin; oynatma listelerini tek tıkla kuyruğa alın.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/sd-02-video-analiz-gece.webp" width="1600" height="1000" alt="Analiz ve çözünürlük seçimi" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/sd-04-kuyruk-gunduz.webp" width="1600" height="1000" alt="İndirme kuyruğu" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Yapıştır, seç, indir</h2>
+      <p class="sub">Tek bir video da olsa yüz öğelik bir oynatma listesi de: hangi kalitede ineceğini indirmeden önce görün, gerisini kuyruğa bırakın.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></div>
+          <h3>Yapıştır ve analiz et</h3><p><kbd>Ctrl</kbd>+<kbd>V</kbd> ya da sürükle-bırak: başlık, küçük resim, süre, kanal ve kaynaktaki çözünürlükler birkaç saniyede görünür. Çok satırlı yapıştırmada her bağlantı ayrı öğe olur; izleme parametreleri atılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4M3 15h4M17 9h4M17 15h4"/></svg></div>
+          <h3>Çözünürlüğü siz seçin</h3><p>2160p (4K), 1440p, 1080p, 720p, 480p, 360p…; MP4, MKV ya da WebM. Seçtiğiniz çözünürlük kaynakta yoksa en yakın düşük olan indirilir ve bu, indirmeden önce açıkça yazılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg></div>
+          <h3>Yalnız ses</h3><p>Videonun sesini MP3, M4A ya da Opus olarak alın; 128–320 kbps ya da en iyi kalite. Başlık, sanatçı ve tarih dosyanın bilgi alanlarına yazılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M4 11h12M4 16h7"/><path d="M15 14.5v6l5-3z"/></svg></div>
+          <h3>Oynatma listesi ve kanal</h3><p>Listedeki bütün öğeler seçili gelir; istemediklerinizi tek tek kaldırın. Özel ya da silinmiş videolar seçilemez. İsterseniz liste adında bir klasöre, sıra numarasıyla kaydedilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10M7.5 9.5 12 14l4.5-4.5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></div>
+          <h3>İndirme kuyruğu</h3><p>Aynı anda 1–4 indirme; ilerleme, hız ve kalan süre. Duraklatın, sürdürün (kaldığı yerden), iptal edin ya da yeniden deneyin. Uygulamayı kapatsanız da kuyruk bir sonraki açılışta geri gelir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+          <h3>Onlarca platform</h3><p>YouTube, Instagram (herkese açık gönderi ve Reels), TikTok, X, Facebook, Vimeo, Dailymotion, Twitch klipleri, Reddit, SoundCloud ve indirme motorunun desteklediği diğer herkese açık siteler.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg></div>
+          <h3>Her zaman güncel motor</h3><p>Siteler sık değiştiği için indirme motoru (yt-dlp) uygulama içinden güncellenir: yalnız resmi sürümden, imza ve SHA-256 doğrulamasıyla. FFmpeg birleştirme ve dönüştürme için uygulamayla gelir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Yalnız herkese açık içerik</h3><p>Giriş gerektiren, özel ya da abonelikli içerik ve DRM ile korunan servisler tasarım gereği desteklenmez; çerez, şifre ya da tarayıcı oturumu kullanılmaz. İndirmeler doğrudan bilgisayarınızdan yapılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>
+          <h3>Tek hesap, 8 dil</h3><p>Diğer Mastertool uygulamalarıyla ortak oturum. Ayarlar ve isteğe bağlı indirme geçmişi AES-256-GCM ile şifrelenerek eşitlenir; dosyalar asla. Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский; Gece, Gündüz ya da Sistem teması.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay">
+    <div class="wrap">
+      <h2>Yakından bakın</h2>
+      <p class="sub">Bağlantıdan dosyaya: Social Download'ın işleyişi.</p>
+      <div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/sd-02-video-analiz-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-02-video-analiz-gece-800.webp" srcset="/shots/sd-02-video-analiz-gece-800.webp 800w, /shots/sd-02-video-analiz-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Analiz ve çözünürlük seçimi"></a></figure><div><h3>İndirmeden önce ne ineceğini görün</h3><p>Bağlantı analiz edilince kaynaktaki bütün çözünürlükler listelenir; olmayanlar kesik çizgiyle gösterilir.</p><ul><li>Seçtiğiniz çözünürlük kaynakta yoksa en yakın düşük olan indirilir; panelde “2160p yok — 1080p indirilecek” gibi yazılır.</li><li>Dikey videolarda (Shorts, Reels, TikTok) kısa kenar esas alınır: 1080×1920 = 1080p.</li><li>MP4'te en uyumlu kodekler (H.264 + AAC) tercih edilir; uymayan akışlar MKV olarak kaydedilir.</li><li>Video bir oynatma listesinin içindeyse yalnız o video seçilir; “Tüm listeyi aç” ile liste açılır.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/sd-03-oynatma-listesi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-03-oynatma-listesi-gece-800.webp" srcset="/shots/sd-03-oynatma-listesi-gece-800.webp 800w, /shots/sd-03-oynatma-listesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Oynatma listesi"></a></figure><div><h3>Oynatma listeleri ve kanallar</h3><p>Liste ya da kanal bağlantısında öğeler sırasıyla listelenir; hepsi seçili gelir.</p><ul><li>Tümünü seç / hiçbiri; tıklayarak tek tek kaldırın.</li><li>Özel, silinmiş ya da canlı öğeler seçilemez.</li><li>Bir listeden en çok 1000 öğe; küçük resimler yalnız ekranda görününce yüklenir.</li><li>Liste adında alt klasör ve <code>{index}</code> ile sıralı dosya adları.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/sd-04-kuyruk-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-04-kuyruk-gunduz-800.webp" srcset="/shots/sd-04-kuyruk-gunduz-800.webp 800w, /shots/sd-04-kuyruk-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="İndirme kuyruğu"></a></figure><div><h3>Kuyruk: duraklat, sürdür, yeniden dene</h3><p>Her indirme kendi geçici klasöründe yürür; görüntü ve ses ayrı indirilip birleştirilir.</p><ul><li>Aynı anda 1–4 indirme; iki indirmenin başlaması arasında nazik bekleme (varsayılan 2 sn).</li><li>Duraklatılan indirme kaldığı yerden sürer; iptal edilenin yarım dosyaları silinir.</li><li>Hatalar anlaşılır dille: özel içerik, giriş gerekli, ülke kısıtı, 429 hız sınırı, ağ hatası…</li><li>Bitince oynat ya da klasörde göster; geçmişten yeniden indir.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/sd-08-ayarlar-motor-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-08-ayarlar-motor-gunduz-800.webp" srcset="/shots/sd-08-ayarlar-motor-gunduz-800.webp 800w, /shots/sd-08-ayarlar-motor-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Motor"></a></figure><div><h3>İmzalı motor güncellemesi</h3><p>Motorun yeni sürümü çıkınca bildirilir; güncelleme sizin onayınızla yapılır.</p><ul><li>Yalnız yt-dlp'nin resmi GitHub sürümlerinden indirilir.</li><li>Özet listesinin OpenPGP imzası uygulamaya gömülü yt-dlp anahtarıyla doğrulanır.</li><li>Dosyanın SHA-256 değeri ve çalıştırıldığında bildirdiği sürüm denetlenmeden kullanılmaz.</li><li>“Uygulamayla geleni kullan” ile tek tıkla geri dönülür.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/sd-09-uyari-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-09-uyari-gece-800.webp" srcset="/shots/sd-09-uyari-gece-800.webp 800w, /shots/sd-09-uyari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kullanmadan önce"></a></figure><div><h3>Sorumluluk ve sınırlar</h3><p>İlk açılışta kullanım uyarısı onaylanmadan hiçbir bağlantı analiz edilmez; uyarı pencerenin üst şeridinde hep görünür.</p><ul><li>Yalnız giriş yapmadan izlenebilen, herkese açık bağlantılar.</li><li>DRM'li ve abonelikli servisler (Netflix, Spotify, Disney+…) analiz bile edilmez.</li><li>Tarayıcı çerezleri, şifreler ve hesap bilgileri hiçbir zaman kullanılmaz.</li><li>Telif hakları ve platform kullanım koşulları kullanıcının sorumluluğundadır.</li></ul></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="platformlar">
+    <div class="wrap">
+      <h2>Platformlar ve biçimler</h2>
+      <p class="sub">İndirme motorunun desteklediği herkese açık siteler; hepsi için aynı pencere, aynı kuyruk.</p>
+      <div class="specs">
+        <div class="spec"><h3>Video</h3><div class="pf-list" data-noi18n><span><i style="background:#ff0033"></i>YouTube</span><span><i style="background:#e1306c"></i>Instagram</span><span><i style="background:#111827"></i>TikTok</span><span><i style="background:#334155"></i>X (Twitter)</span><span><i style="background:#1877f2"></i>Facebook</span><span><i style="background:#1ab7ea"></i>Vimeo</span><span><i style="background:#0a7cff"></i>Dailymotion</span><span><i style="background:#9146ff"></i>Twitch</span><span><i style="background:#ff4500"></i>Reddit</span><span><i style="background:#00a1d6"></i>Bilibili</span><span><i style="background:#e60023"></i>Pinterest</span><span><i style="background:#0a66c2"></i>LinkedIn</span><span><i style="background:#36465d"></i>Tumblr</span></div><p style="margin:10px 0 0;color:var(--muted)">Instagram ve Facebook'ta yalnız herkese açık gönderiler; X'te herkese açık gönderilerdeki videolar; Twitch'te klipler ve geçmiş yayınlar.</p></div>
+        <div class="spec"><h3>Ses ve arşiv</h3><div class="pf-list" data-noi18n><span><i style="background:#ff5500"></i>SoundCloud</span><span><i style="background:#1da0c3"></i>Bandcamp</span><span><i style="background:#ff0033"></i>YouTube Music</span><span><i style="background:#64748b"></i>Internet Archive</span><span><i style="background:#f1680d"></i>PeerTube</span></div><p style="margin:10px 0 0;color:var(--muted)">…ve motorun tanıdığı diğer herkese açık video / ses sayfaları.</p></div>
+        <div class="spec"><h3>Çıktı biçimleri</h3><div class="fmt-cloud" data-noi18n><span>MP4</span><span>MKV</span><span>WebM</span><span>MP3</span><span>M4A</span><span>Opus</span></div><p style="margin:10px 0 0;color:var(--muted)">Video 4320p (8K) ile 144p arası; ses 128–320 kbps ya da en iyi değişken bit hızı.</p></div>
+        <div class="spec"><h3>Desteklenmeyen (tasarım gereği)</h3><div class="pf-list no" data-noi18n><span>Netflix</span><span>Spotify</span><span>Disney+</span><span>Prime Video</span><span>Max (HBO)</span><span>Apple TV / Music</span><span>Deezer</span><span>Tidal</span><span>Crunchyroll</span><span>Paramount+</span><span>DAZN</span><span>BluTV</span><span>Exxen</span><span>MUBI</span></div><p style="margin:10px 0 0;color:var(--muted)">DRM ile korunan ya da yalnız abonelikle izlenebilen servisler; giriş gerektiren, özel ve üyelere özel içerik.</p></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-01-hos-geldiniz-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-01-hos-geldiniz-gece-800.webp" srcset="/shots/sd-01-hos-geldiniz-gece-800.webp 800w, /shots/sd-01-hos-geldiniz-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantıyı yapıştırın"></a><figcaption><b>Bağlantıyı yapıştırın</b><span>Ctrl+V ya da Yapıştır: bağlantı analiz edilir; desteklenen platformlar</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-02-video-analiz-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-02-video-analiz-gece-800.webp" srcset="/shots/sd-02-video-analiz-gece-800.webp 800w, /shots/sd-02-video-analiz-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Analiz ve çözünürlük seçimi"></a><figcaption><b>Analiz ve çözünürlük seçimi</b><span>Kaynakta 4K yok: en yakın düşük çözünürlük (1080p) indirileceği açıkça yazılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-03-oynatma-listesi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-03-oynatma-listesi-gece-800.webp" srcset="/shots/sd-03-oynatma-listesi-gece-800.webp 800w, /shots/sd-03-oynatma-listesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Oynatma listesi"></a><figcaption><b>Oynatma listesi</b><span>Tüm öğeler seçili gelir, tek tek kaldırılabilir; özel öğeler seçilemez</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/sd-04-kuyruk-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-04-kuyruk-gunduz-800.webp" srcset="/shots/sd-04-kuyruk-gunduz-800.webp 800w, /shots/sd-04-kuyruk-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="İndirme kuyruğu"></a><figcaption><b>İndirme kuyruğu</b><span>Eşzamanlı 1–4 indirme; ilerleme, hız, kalan süre; duraklat, sürdür, yeniden dene</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/sd-05-yalniz-ses-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-05-yalniz-ses-gunduz-800.webp" srcset="/shots/sd-05-yalniz-ses-gunduz-800.webp 800w, /shots/sd-05-yalniz-ses-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yalnız ses"></a><figcaption><b>Yalnız ses</b><span>MP3, M4A ya da Opus; 128–320 kbps ya da en iyi kalite</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-06-gecmis-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-06-gecmis-gece-800.webp" srcset="/shots/sd-06-gecmis-gece-800.webp 800w, /shots/sd-06-gecmis-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Geçmiş"></a><figcaption><b>Geçmiş</b><span>Son indirmeler; yeniden indir, kaynağı aç; isteğe bağlı şifreli senkron</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-07-ayarlar-indirme-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-07-ayarlar-indirme-gece-800.webp" srcset="/shots/sd-07-ayarlar-indirme-gece-800.webp 800w, /shots/sd-07-ayarlar-indirme-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › İndirme"></a><figcaption><b>Ayarlar › İndirme</b><span>Klasör, dosya adı şablonu, varsayılan biçim, eşzamanlılık, hız ve istek aralığı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/sd-08-ayarlar-motor-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-08-ayarlar-motor-gunduz-800.webp" srcset="/shots/sd-08-ayarlar-motor-gunduz-800.webp 800w, /shots/sd-08-ayarlar-motor-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Motor"></a><figcaption><b>Ayarlar › Motor</b><span>yt-dlp + FFmpeg; imza ve SHA-256 doğrulamalı &quot;Motoru güncelle&quot;</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/sd-09-uyari-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-09-uyari-gece-800.webp" srcset="/shots/sd-09-uyari-gece-800.webp 800w, /shots/sd-09-uyari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kullanmadan önce"></a><figcaption><b>Kullanmadan önce</b><span>Yalnız herkese açık içerik; giriş gerektiren ve DRM’li içerik tasarım gereği yok</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/sd-10-giris-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/sd-10-giris-gunduz-800.webp" srcset="/shots/sd-10-giris-gunduz-800.webp 800w, /shots/sd-10-giris-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tek giriş"></a><figcaption><b>Tek giriş</b><span>Mastertool hesabıyla bir kez giriş yapın; diğer uygulamalar yeniden sormaz</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 için bileşenler, indirme işleyişi, güvenlik, sınırlar ve kısayollar.</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 ve 11, 64 bit (x64)</td></tr><tr><th>Paketler</th><td><code>Social-Download-Setup-&lt;sürüm&gt;.exe</code> (NSIS kurulum) ve <code>Social-Download-Portable-&lt;sürüm&gt;.exe</code> (taşınabilir)</td></tr><tr><th>Kurulum klasörü</th><td><code>Program Files\Mastertool\Social Download</code>; yalnız bu kullanıcı için kurulumda <code>%LOCALAPPDATA%\Programs\Mastertool\Social Download</code></td></tr><tr><th>Başlat menüsü</th><td>Master Tool › Social Download</td></tr><tr><th>Hesap</th><td>Mastertool hesabı; diğer Mastertool uygulamalarıyla ortak oturum</td></tr><tr><th>İnternet</th><td>Gerekir: indirmeler doğrudan bu bilgisayardan platformlara yapılır</td></tr><tr><th>Yönetici izni</th><td>Gerekmez</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>Electron</th><td>33 (Chromium 130, Node.js 20) — sandbox'lı pencereler, içerik güvenlik politikası</td></tr><tr><th>yt-dlp</th><td>Bağlantı çözme ve indirme motoru (Unlicense); uygulama içinden imzalı güncelleme</td></tr><tr><th>FFmpeg</th><td>LGPL derlemesi, paylaşılan kitaplıklar — görüntü + ses birleştirme, ses dönüştürme, meta veri</td></tr><tr><th>electron-builder</th><td>NSIS kurulum ve taşınabilir paket</td></tr><tr><th>Derleme</th><td>Motor dosyaları resmi sürümlerden indirilir ve sabit SHA-256 ile doğrulanır; lisans metinleri pakette</td></tr></table></div></div>
+        <div class="spec"><h3>İndirme</h3><div class="t-wrap"><table><tr><th>Çözünürlük</th><td>Kaynakta olanlar listelenir; seçilen yoksa en yakın düşük, düşük de yoksa en düşük mevcut</td></tr><tr><th>Kapsayıcı</th><td>MP4 (H.264 + AAC tercihli), MKV, WebM; uyumsuz akışlar MKV olarak</td></tr><tr><th>Yalnız ses</th><td>MP3, M4A, Opus; 128 / 192 / 256 / 320 kbps ya da en iyi VBR</td></tr><tr><th>Kuyruk</th><td>1–4 eşzamanlı; nazik bekleme 0–30 sn (varsayılan 2); isteğe bağlı hız sınırı</td></tr><tr><th>Dosya adı</th><td>Şablon: <code>{title}</code>, <code>{uploader}</code>, <code>{date}</code>, <code>{resolution}</code>, <code>{playlist}</code>, <code>{index}</code>…; geçersiz karakterler temizlenir</td></tr><tr><th>Sürdürme</th><td>Duraklatılan ya da yarıda kalan indirme kaldığı yerden; kuyruk kapanışta saklanır</td></tr></table></div></div>
+        <div class="spec"><h3>Motor güncellemesi</h3><div class="t-wrap"><table><tr><th>Kaynak</th><td>Yalnız yt-dlp'nin resmi GitHub sürümleri (https)</td></tr><tr><th>İmza</th><td>SHA2-256SUMS dosyasının OpenPGP imzası, uygulamaya gömülü yt-dlp imza anahtarıyla (RSA 4096) doğrulanır</td></tr><tr><th>Bütünlük</th><td>İkilinin SHA-256 değeri imzalı listeyle karşılaştırılır; çalıştırılıp sürümü denetlenir</td></tr><tr><th>Onay</th><td>Günde bir denetim (isteğe bağlı) yalnız bildirir; güncelleme kullanıcı onayıyla</td></tr><tr><th>Geri dönüş</th><td>“Uygulamayla geleni kullan”; bir önceki kopya saklanır</td></tr></table></div></div>
+        <div class="spec wide"><h3>Gizlilik ve güvenlik</h3><div class="t-wrap"><table><tr><th>Doğrudan indirme</th><td>Bağlantılar ve dosyalar Mastertool sunucularından geçmez; indirme bu bilgisayardan platforma yapılır</td></tr><tr><th>Çerez ve şifre yok</th><td>Motor her çağrıda yapılandırma dosyası okumadan ve çerezsiz çalışır; çerez, tarayıcı oturumu, şifre, <code>--exec</code> gibi seçenekler kodda yasaklıdır ve her çağrıda denetlenir</td></tr><tr><th>Bağlantı denetimi</th><td>DRM'li servisler, yerel ağ adresleri, kullanıcı adı / şifre içeren ve http(s) dışı bağlantılar motor çağrılmadan reddedilir</td></tr><tr><th>Pencereler</th><td><code>contextIsolation</code> ve <code>sandbox</code> açık, <code>nodeIntegration</code> kapalı; küçük resimler ana süreçte indirilip yerel olarak gösterilir</td></tr><tr><th>Senkron</th><td>Ayarlar ve isteğe bağlı geçmiş (son 200: bağlantı, başlık, platform, biçim), uçtan uca şifreli: PBKDF2 → HKDF → AES-256-GCM; indirme klasörü ve dosyalar gönderilmez</td></tr></table></div></div>
+        <div class="spec wide"><h3>Yerel veri</h3><div class="t-wrap"><table><tr><th>İndirilenler</th><td>Seçtiğiniz klasör (varsayılan <code>İndirilenler\Social Download</code>)</td></tr><tr><th>Kuyruk</th><td><code>%APPDATA%\social-download\queue.json</code> — yalnız bu cihazda</td></tr><tr><th>Ayarlar ve geçmiş</th><td><code>%APPDATA%\social-download\store.json</code></td></tr><tr><th>Yarım dosyalar</th><td><code>%APPDATA%\social-download\partial\</code> — iptal edilince silinir</td></tr><tr><th>Küçük resimler</th><td><code>%APPDATA%\social-download\thumbs\</code> — 30 günden eskiler silinir</td></tr><tr><th>Güncellenen motor</th><td><code>%APPDATA%\social-download\engine\</code></td></tr></table></div></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3><div class="specs"><div><div class="t-wrap"><table><tr><th><kbd>Ctrl</kbd>+<kbd>V</kbd></th><td>Panodaki bağlantıyı yapıştır ve analiz et</td></tr><tr><th><kbd>Enter</kbd></th><td>Bağlantı çubuğunda analiz et</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>Seçilenleri indir</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>L</kbd></th><td>Bağlantı çubuğuna git</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>O</kbd></th><td>İndirme klasörünü aç</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>,</kbd></th><td>Ayarlar</td></tr></table></div></div><div><div class="t-wrap"><table><tr><th><kbd>Del</kbd></th><td>Seçilenleri kuyruktan / geçmişten kaldır</td></tr><tr><th><kbd>Boşluk</kbd></th><td>Duraklat / sürdür</td></tr><tr><th><kbd>F5</kbd></th><td>Yeniden dene</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>A</kbd></th><td>Tümünü seç</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd></th><td>Kuyruk / Geçmiş</td></tr><tr><th><kbd>Esc</kbd></th><td>Analizi iptal et / seçimi kaldır</td></tr></table></div></div></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0</th><td>İlk sürüm: bağlantı analizi, çözünürlük / kapsayıcı / yalnız ses seçimi, en yakın düşük çözünürlük, oynatma listesi ve kanal, 1–4 eşzamanlı indirme kuyruğu, geçmiş, imzalı motor güncellemesi, Mastertool ortak oturumu ve şifreli senkron, 8 dil.</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz dilleri</h3><div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div><p>Arapça sağdan sola. İlk açılışta sistem dili kullanılır, listede yoksa İngilizce.</p></div>
+      </div>
+      <div class="legal-box" style="margin-top:28px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg><div><b>Yalnızca indirme hakkınız olan içerikleri indirin; telif hakları ve platform kullanım koşulları kullanıcının sorumluluğundadır.</b><p>Social Download yalnız herkese açık içerik için tasarlanmıştır. İndirdiğiniz içeriği nasıl kullandığınızdan, telif haklarına ve indirdiğiniz platformun kullanım koşullarına uymaktan siz sorumlusunuz.</p></div></div>
+      <div class="limits"><h3>Bilinen sınırlar (tasarım gereği)</h3><ul><li>Giriş gerektiren, özel, yalnız üyelere / abonelere açık ve yaş doğrulaması isteyen içerik indirilmez; bunun için bir ayar yoktur.</li><li>DRM ile korunan servisler (Netflix, Spotify, Disney+, Prime Video, Max, Apple TV / Music, Deezer, Tidal…) desteklenmez; DRM atlatma yoktur.</li><li>Tarayıcı çerezleri otomatik ya da elle içe aktarılmaz; şifre ya da hesap bilgisi istenmez.</li><li>Canlı yayınlar kaydedilmez; yayın bittikten sonra indirilebilir.</li><li>Platformların robot denetimi ya da hız sınırı (429) atlatılmaz; neden açıklanır, bekleyip yeniden denemeniz önerilir.</li><li>Tek seferde en çok 25 bağlantı analiz edilir; bir listeden en çok 1000 öğe listelenir.</li><li>Kod imzası olmadığından ilk indirmede Windows SmartScreen uyarı gösterebilir. Uygulama Mastertool hesabı olmadan çalışmaz. Yalnız Windows 10 ve 11 (x64).</li></ul></div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>Social Download'ı edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

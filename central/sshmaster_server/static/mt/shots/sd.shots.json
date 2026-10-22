@@ -1,0 +1,92 @@
+[
+ {
+  "stem": "sd-01-hos-geldiniz-gece",
+  "theme": "dark",
+  "title": "Bağlantıyı yapıştırın",
+  "caption": "Ctrl+V ya da Yapıştır: bağlantı analiz edilir; desteklenen platformlar",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-02-video-analiz-gece",
+  "theme": "dark",
+  "title": "Analiz ve çözünürlük seçimi",
+  "caption": "Kaynakta 4K yok: en yakın düşük çözünürlük (1080p) indirileceği açıkça yazılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-03-oynatma-listesi-gece",
+  "theme": "dark",
+  "title": "Oynatma listesi",
+  "caption": "Tüm öğeler seçili gelir, tek tek kaldırılabilir; özel öğeler seçilemez",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-04-kuyruk-gunduz",
+  "theme": "light",
+  "title": "İndirme kuyruğu",
+  "caption": "Eşzamanlı 1–4 indirme; ilerleme, hız, kalan süre; duraklat, sürdür, yeniden dene",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-05-yalniz-ses-gunduz",
+  "theme": "light",
+  "title": "Yalnız ses",
+  "caption": "MP3, M4A ya da Opus; 128–320 kbps ya da en iyi kalite",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-06-gecmis-gece",
+  "theme": "dark",
+  "title": "Geçmiş",
+  "caption": "Son indirmeler; yeniden indir, kaynağı aç; isteğe bağlı şifreli senkron",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-07-ayarlar-indirme-gece",
+  "theme": "dark",
+  "title": "Ayarlar › İndirme",
+  "caption": "Klasör, dosya adı şablonu, varsayılan biçim, eşzamanlılık, hız ve istek aralığı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-08-ayarlar-motor-gunduz",
+  "theme": "light",
+  "title": "Ayarlar › Motor",
+  "caption": "yt-dlp + FFmpeg; imza ve SHA-256 doğrulamalı \"Motoru güncelle\"",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-09-uyari-gece",
+  "theme": "dark",
+  "title": "Kullanmadan önce",
+  "caption": "Yalnız herkese açık içerik; giriş gerektiren ve DRM’li içerik tasarım gereği yok",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "sd-10-giris-gunduz",
+  "theme": "light",
+  "title": "Tek giriş",
+  "caption": "Mastertool hesabıyla bir kez giriş yapın; diğer uygulamalar yeniden sormaz",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

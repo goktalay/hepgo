@@ -49,6 +49,11 @@ export async function mount(root, ctx) {
     row(t('settings.engine'), t('settings.engine_sub'), switchEl(engineOn(), v => { localStorage.setItem('sm:engine', v ? '1' : '0'); sfx.configure({ engine: v }); }, t('settings.engine'))),
     row(t('settings.bgfx'), t('settings.bgfx_sub'), switchEl(bgOn(), v => { localStorage.setItem('sm:bgfx', v ? '1' : '0'); dispatchEvent(new CustomEvent('sm:bgfx')); }, t('settings.bgfx'))),
     row(t('settings.analog'), t('settings.analog_sub'), switchEl(S.analog_fpv !== false, v => save({ analog_fpv: v }), t('settings.analog'))),
+    // §25 gizlilik: TOP 10 PİLOT listesinde görünme (varsayılan görünür; sunucu users.settings.lb_hidden)
+    (() => { const r = row(t('settings.lb_hidden'), t('settings.lb_hidden_sub'), switchEl(!!S.leaderboard_hidden, async v => {
+      S.leaderboard_hidden = v;
+      try { await api.put('/api/settings', { leaderboard_hidden: v }); toast(t('common.saved'), 'ok'); } catch (e) { toastErr(e); }
+    }, t('settings.lb_hidden'))); r.dataset.set = 'lb_hidden'; return r; })(),
     row(t('settings.account'), `${user.display_name || ''}${user.email ? ` · ${user.email}` : ''}`, h('a', { class: 'btn', href: mtUrl, target: '_blank', rel: 'noopener' }, t('settings.account_link'))),
     // Destek (§9): belirgin kart — Sorun bildir modalı + Taleplerim
     (() => { const r = row(t('support.report'), t('support.report_sub'), h('div', { class: 'btn-row' },

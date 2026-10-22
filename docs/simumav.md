@@ -931,3 +931,57 @@ teşhisi `window.__smBackdrop()` (`avgMs`, `worstMs`). Açık temada katman %20 
 reduced-motion/düşük güç bütçesi, atlas, WebGL/dış dosya yok statik denetimi, lisans kaydı); görsel/davranış `tests/simumav_sound_shots.py`
 (her bölüm × masaüstü/mobil × TR/EN → `/tmp/smsound-shots`, müzik fade-in, uçuş oturumunda müzik 0 + arka plan kapalı, gizli sekme, ayar kaydırıcıları,
 reduced-motion).
+
+## 27. 3B pilot avatarları + TOP 10 PİLOT (SIMUMAV'a özgü)
+### 25.1 Avatar (Mürettebat)
+- **Model**: prosedürel düşük poli büst (`static/simumav/app/crew/avatar_mesh.js`, three.js ile üretilir; harici model/doku/yazı tipi YOK → lisans
+  kaydı: tümü proje kodu, CC0 eşdeğeri; yama ve "AI" yazıları çalışma anında CanvasTexture). Parçalar: tulum (lathe gövde, yaka, fermuar), göğüste
+  yama + isim bandı, boyun, yüz (ten tonu, gözler), kask (kapak + vizör açıklı bant + kenar + kulaklık), vizör (aynalı: metal; değilse yarı saydam,
+  gözler görünür), aksesuar (mikrofon | tepe sırtı | anten | yarış şeridi). Yapay zekâ pilot (§24): gri kask, kırmızı aynalı vizör, alın + iki yanda
+  "AI", anten, seviye renginde şerit (`botAvatar(level)`).
+- **Ayar** (`pilots.avatar` JSON; sunucu `app/simumav/avatar.py` doğrular, istemci eşi `crew/avatar_core.js` — sabitler node testinde birebir
+  karşılaştırılır): `{v:1, helmet, visor, mirror, suit, skin: s1…s8, patch: none|star|wing|bolt|chevron|target|shield|cross, patch_color,
+  accessory: none|mic|crest|antenna|stripe}`; renkler `#rrggbb` (palet + serbest seçici). Bilinmeyen alan atılır; geçersiz alan → 422; kısmi PUT
+  mevcut ayarla birleşir; eksik alan karakter varsayılanı. 600 bayt üst sınırı.
+- **Eski 2B karakterler** (`img/pilots/p01…p10.svg`) `LEGACY` ile 3B karşılığa eşlenir (SVG renklerinden: kask/tulum/ten/vizör); düzenleyicide
+  "Hazır pilotlar" olarak da seçilir. `character` sütunu korunur (geri uyum; `svg` alanı API'de duruyor).
+- **API**: `POST /api/crew {name, character, avatar?}`, `PUT /api/crew/{id} {avatar?}` (+ ad/varsayılan), `GET /api/crew/avatar-options`;
+  pilot yanıtlarında `avatar` (normalize). Karşılaşma anlık görüntüsünde (`GET /api/match/{id}`, WS `match`) her oyuncuda `avatar` (varsayılan
+  pilotun; botta `null` → istemci AI avatarı; `match.pilot_avatari`).
+- **Düzenleyici** (`crew/index.js`): kart ✎ / çift tık / "+" → geniş pencere: solda canlı dönen 3B önizleme (`avatar3d.mountAvatarStage`,
+  paylaşılan çizicinin `makeStage` görünümü; sürükleyerek döndür), "Rastgele"; sağda ad, hazır pilotlar, kask, vizör + aynalı, tulum, ten tonu (8),
+  yama (çizimli seçenekler) + rozet rengi, aksesuar. Kartlarda 256 px 3B PNG.
+### 25.2 Avatar görüntüleri ve WebGL kuralı
+- `crew/avatar3d.js`: `avatarImage(cfg, size)` → paylaşılan çizici (`core/three.js snapshot`: tek render, 2B tuvale kopya, görünüm kaydı yok,
+  boşta bırakma kuralı) → PNG dataURL; bellek + `sessionStorage` (48 girdi) önbelleği, anahtar `avatarKey` (ayar + boyut).
+- **Uçuş ekranı açıkken** (`.sm-fly-session`) WebGL'e hiç dokunulmaz: önbellekte yoksa aynı ayardan **2B yedek portre** (`drawAvatar2D`, bellekte
+  tutulur). Salon (`renderLobby`) oyuncu avatarlarını yarıştan önce `precacheAvatars` ile 128 px'e render eder → yarış ekranındaki canlı sıralama,
+  bekleme kutusu, sonuç podyumu ve tablosu yalnız `<img>` kullanır (`playerImg` / `rowImg`). Doğrulama: e2e'de uçuşta `__smGl() ≤ 1`.
+### 25.3 TOP 10 PİLOT — sıralama formülü (v1; `avatar.siralama`, sabitler `avatar.PUAN`)
+Dönem: **son 30 gün** (`period=30d`, karşılaşma bitişi / uçuş başlangıcı) ya da **tüm zamanlar** (`all`). Kullanıcı başına:
+- **Karşılaşma puanı** = Σ ağırlık × (§44 sonuç puanı + galibiyet bonusu 300). Halka yarışı: halka × 100 + bitirdiyse 250 + sıra bonusu
+  max(0, 200 − 50·sıra); it dalaşı: kazanana 1000 + kovalayanın en uzun tutması × 100 (≤ 500). Yalnız `BITTI` karşılaşmalar.
+  **Ağırlık** 1; rakiplerin hepsi yapay zekâysa 0,5 (bota karşı puan çiftliği sınırlanır).
+- **Tempo** (halka yarışı süreleri) = Σ ağırlık × clamp(20 × (15 − süre/halka sayısı), 0, 200) — halka başına 5 sn → 200, ≥ 15 sn → 0.
+- **Uçuş disiplini** (§42 `summary.alerts.score`, yalnız ≥ 60 sn uçuşlar) = round(ortalama × 1,5 × min(uçuş sayısı, 20)) — en çok 3000.
+- **Hedef önleme** (§24 `summary.targets.score`) = round(en iyi 10 uçuşun toplamı × 0,5).
+- **Toplam** = karşılaşma + tempo + disiplin + önleme; 0 puanlılar listelenmez. Eşitlikte galibiyet, sonra uçuş sayısı, sonra eski hesap önde.
+- **Hariç**: botlar (`match_players.is_bot`, negatif kimlik) hiç sayılmaz/listelenmez; `users.settings.lb_hidden` (Ayarlar → "Liderlik tablosunda
+  görünme", `PUT /api/settings {leaderboard_hidden}`; varsayılan görünür) olan kullanıcı listede yer almaz (değişince önbellek hemen düşer).
+### 25.4 Uç nokta ve gizlilik
+- `GET /api/leaderboard?period=30d|all` (oturumsuz) → `{period, generated_at, ttl_s: 300, formula: 'v1', pilots: [{rank, name, email, avatar,
+  score, wins, matches, flights, parts: {match, pace, discipline, intercept}}]}`. **Kullanıcı kimliği, ham ad/e-posta dönmez**; maske sunucuda:
+  ad → ad + soyadın baş harfi + sabit 5 yıldız (`M***** K*****`; orta adlar atılır, tek kelime `E*****`, Türkçe büyük harf İ/I, e-posta biçimli ad →
+  yerel kısmın baş harfi), e-posta → ilk 2 harf + `***@` + alan adının (ilk etiket) ilk 2 harfi + `***.` + TLD (`mk***@gm***.com`, alt alan adı
+  `ab***@ma***.tr`). Bellek önbelleği dönem başına 5 dk (`Cache-Control: public, max-age=300`), IP başına 30 istek/dk (429).
+- **Gösterim**: tanıtım sitesi `#top10` bölümü (`site/js/top10.js`, `css/top10.css`; tembel yükleme; ilk üç podyum + 4–10 liste; avatarlar sitenin
+  tek paylaşılan bağlamıyla tuvale; 1. pilot görünürken döner; WebGL yoksa 2B yedek) + oyun menüsünde "🏆 TOP 10 PİLOT" penceresi (`menu/top10.js`).
+### 25.5 DB göçü v6 (idempotent)
+- `pilots.avatar TEXT` — `init()` PRAGMA denetimiyle ALTER (yalnız yoksa); `avatar IS NULL` satırlar `LEGACY[character]` ile doldurulur
+  (kullanıcı değişikliği ezilmez). Yeni kullanıcının varsayılan pilotu p01 karşılığıyla oluşur. `SCHEMA_VERSION = 6`.
+### 25.6 Metinler, testler, görseller
+- Metinler: oyun `avatar.*`, `top10.*`, `settings.lb_hidden*`; site `nav.top10`, `top10.*` (7 dil).
+- Testler: `./.venv/bin/python -m tests.test_simumav_avatar` (maske kenar durumları, avatar doğrulama/kısmi PUT, v6 göçü, formül, 30 gün / tüm
+  zamanlar, botlar hariç, gizlilik ayarı, maskeli/kimliksiz yanıt, önbellek, 429), `tests.test_simumav_match` (salon/yarış avatarı),
+  `node tests/test_simumav_avatar.mjs` (sabitler sunucuyla birebir, tüm parça birleşimleri gerçek three.js ile, WebGL kuralı, i18n).
+- Görseller: `./.venv/bin/python -m tests.simumav_avatar_shots` → `/tmp/smavatar-shots/*.png`.

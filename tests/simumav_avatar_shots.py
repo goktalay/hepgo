@@ -245,6 +245,9 @@ try:
             shot(pa, '06-sonuc-podyum-avatarlar')
             pa.context.close()
 
+        # yazılım WebGL (swiftshader) uzun uçuştan sonra GPU sürecini yavaşlatıyor → menü/site görselleri yeni tarayıcıyla
+        b.close()
+        b = p.chromium.launch(executable_path=EXE, args=ARGS)
         # ---- 07–08 oyun menüsü TOP 10
         for lang, ad in (('tr', '07-menu-top10-tr'), ('en', '08-menu-top10-en')):
             _, pm = baglam(b, ali, lang)

@@ -371,10 +371,13 @@ async function renderWizard(view, ctx) {
     // HEPGO §27.3 gösterge tasarımı (önizlemeli kartlar; kalıcı tercih fs.gauge.theme — uçuşta kadran kutusu / G): çekirdek modül /sim/flightsim_gtheme.js
     const gtHolder = h('div', { class: 'sm-gt-holder fs-gt-wiz' });
     import('/sim/flightsim_gtheme.js').then(M => { if (destroyed || W.step() !== 'pilot' || !gtHolder.isConnected) return; gtHolder.append(M.createGaugeThemePicker({ tr, keyed: true, game: true, dark: () => true }).el); }).catch(() => {});
+    // HEPGO §43 grafik kalitesi (Otomatik / Düşük / Orta / Yüksek / Ultra; kalıcı tercih sm.gfx — uçuşta alt bant "Grafik ▾")
+    const gfxHolder = h('div', { class: 'sm-gfx-holder' });
+    import('/sim/flightsim_gfx_ui.js').then(M => { if (destroyed || W.step() !== 'pilot' || !gfxHolder.isConnected) return; gfxHolder.append(M.createGfxPicker({ tr, keyed: true, storageKey: 'sm.gfx' }).el); }).catch(() => {});
     // HEPGO §42 uçuş uyarıları (Kapalı / Yalnız görsel / Görsel + ses; tercih sm.gpws — uçuşta ses kapsülü menüsünden de)
     const gpHolder = h('div', { class: 'sm-gpws-holder' });
     import('/sim/flightsim_gpws_ui.js').then(M => { if (destroyed || W.step() !== 'pilot' || !gpHolder.isConnected) return; gpHolder.append(M.gpwsWizardField({ tr, keyed: true, storage: gpwsStorage })); }).catch(() => {});
-    body.append(list, camPick.el, gtHolder, gpHolder, h('div', { class: 'sm-rec-opts' }, h('h3', null, 'Kayıt seçenekleri'), cb('video', 'Video kaydı', '3B sahne + HUD/OSD + motor sesi (WebM); uçuş bitince Operasyon\'da'), cb('bin', 'Uçuş logu (.bin)', 'DataFlash log → kayıttan oynatma ve analiz')));
+    body.append(list, camPick.el, gtHolder, gfxHolder, gpHolder, h('div', { class: 'sm-rec-opts' }, h('h3', null, 'Kayıt seçenekleri'), cb('video', 'Video kaydı', '3B sahne + HUD/OSD + motor sesi (WebM); uçuş bitince Operasyon\'da'), cb('bin', 'Uçuş logu (.bin)', 'DataFlash log → kayıttan oynatma ve analiz')));
   };
   const draw = () => {
     clear(body);

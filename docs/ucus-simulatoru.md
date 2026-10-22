@@ -2972,3 +2972,100 @@ kapanabilir olsun." Gerçek uçaklardaki GPWS / EGPWS ("PULL UP", "TERRAIN", "SI
   geçer: yerde/kalkışta/askıda yanlış alarm yok, BANK ANGLE ve PULL UP (+ SINK RATE, DON'T SINK) açılır, IMU yanlış alarmı yok; özet puan eşit.
 - Görsel: `./.venv/bin/python -m tests.gpws_shots_hepgo` → `/tmp/gpws-shots/hep-*.png` (PULL UP, onaylı, TOO LOW, gimbal HUD, FPV OSD, ses menüsü,
   ayar paneli, rapor, sihirbaz, mobil); `./.venv/bin/python -m tests.gpws_shots_simumav` → `sm-*.png`.
+
+## 43. Grafik kalite ayarları — ön ayarlar, otomatik/uyarlamalı kademe, son işlem (`flightsim_gfx.js` + `flightsim_gfx3d.js` + `flightsim_gfx_ui.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: güçlü bilgisayarı olan görsel kaliteyi artırabilsin, zayıf olan düşürebilsin. TEK paylaşılan WebGL renderer korunur (ikinci bağlam
+yok); değişiklikler simülasyonu yeniden başlatmadan canlı uygulanır.
+
+### 43.1 Ön ayarlar (`GFX_PRESETS`, saf `resolveGfx(pref, caps, {level, scaleMul})`)
+| Alan | Düşük | Orta | Yüksek (= §43 öncesi + son işlem) | Ultra |
+|---|---|---|---|---|
+| Çözünürlük ölçeği × dpr (tavan / piksel bütçesi) | 0,75 (≤ 1 / 1,3 MP) | 1 (≤ 1,5 / 2,6 MP) | 1 (≤ 2 / 5 MP) | 1,5 süper örnekleme (≤ 3 / 8,3 MP) |
+| Kenar yumuşatma | kapalı | MSAA 4× | MSAA 4× | MSAA 8× (desteklenmezse 4×) |
+| Gölge haritası / kapsam (± m) / tür | yok | 1024 / 70 / PCF | 2048 / 90 / PCF yumuşak | 4096 / 140 → kameraya göre 2,2×'e dek (yakın keskin + uzak geniş), arazi de gölge düşürür |
+| Görüş / sis uzaklığı | 0,6× | 0,85× | 1× | 1,3× |
+| Arazi ızgarası (prosedürel / ufuk / gerçek / uzak) | 192 / 64 / 192 / 128 | 256 / 96 / 256 / 160 | 320 / 128 / 256 / 192 | 448 / 192 / 384 / 256 |
+| Ağaç yoğunluğu / 3B ağaç LOD | 0,35× / 300 m | 0,65× / 420 m | 1× / 520 m | 1,25× / 800 m |
+| Anizotropik filtre / uydu atlası | 2× / 2048 | 4× / 4096 | 8× / 4096 | 16× / 8192 (MAX_TEXTURE_SIZE ≥ 8192) |
+| Su / yağış parçacığı | basit / %35 | normal / %60 | normal / %100 | ayrıntılı / %100 |
+| Son işlem | yok | yok | ACES + bloom 0,35 + SSAO (yarım çöz.) + vinyet + renk | ACES + bloom 0,45 + SSAO (tam, 16 örnek) + vinyet + renk |
+| PiP / radar / EO / nişangâh çözünürlüğü, PiP hızı | 0,5× · 15 fps | 0,75× · 20 fps | 1× · 30 fps | 1,25× · 30 fps |
+| Kare hızı sınırı | 30 | 60 | 60 | sınırsız (ekran yenilemesi) |
+| Google 3B karo hata eşiği / önbellek | 28 px / 200 MB | 20 / 300 | 14 / 400 | 8 / 600 |
+- **Özel**: tabanı o anki kademe olan ince ayar (`normCustom`: alan başına sınır/izinli değer — `GFX_LIMITS`, enumlar). `GFX_LEGACY` (opts.gfx
+  verilmeyen çağıranlar: sihirbaz önizlemesi, stüdyo) = Yüksek, son işlemsiz → eski görüntü birebir.
+- **Kalıcı tercih** `{preset, base, custom, dynRes, fpsCounter, fpsCap, bgThrottle, autoLevel}`: HEPGO `localStorage fs.gfx`, SIMUMAV `sm.gfx`.
+
+### 43.2 Otomatik + uyarlamalı kip
+- **İlk kademe** (`autoLevel(dev)`): GPU adı (`WEBGL_debug_renderer_info`, sahnenin kendi bağlamından — `sim.gfxCaps.gpu`), dpr, `hardwareConcurrency`,
+  `deviceMemory`, mobil. Yazılım WebGL (SwiftShader/llvmpipe) → Düşük (üst sınır Düşük); zayıf tümleşik (Intel HD 5xx, eski Mali/Adreno) → Düşük; Iris
+  Xe / Radeon Graphics / bilinmeyen → Orta; ayrık (GTX/RTX/RX/Arc/Apple M) → Yüksek; üst sınıf (RTX x070+, RX 6800+, M Pro/Max) + ≥ 8 çekirdek + 8 GB →
+  Ultra; mobil en çok Orta (bellek ≤ 3 GB / ≤ 4 çekirdek → Düşük); dpr ≥ 2,5 tümleşik ekran bir kademe aşağı. Uyarlamalı kip en çok bir kademe yukarı
+  çıkabilir (`max`). Kademe kalıcı tercihe `autoLevel` olarak yazılır (sonraki açılışta tuval antialias'ı ve ilk piksel oranı doğru).
+- **Uyarlamalı** (`createAdaptive`, 0,5 sn'de bir `sim.gfxStats().fps`): FPS < 40 (kare sınırı 30 ise 24) **5 sn** sürerse önce ölçek 1 → 0,85 → 0,7,
+  sonra bir kademe aşağı; FPS ≥ 57 (sınır 30 ise 28) **12 sn** sürerse ölçek geri, sonra bir kademe yukarı. Histerezis: her değişiklikten sonra 6 sn
+  bekleme; inilen kademeye dönüş 30 sn kilitli, aynı kademeden tekrar inilirse kilit iki katı (≤ 10 dk) → titreme yok. Yeni ayarın ilk 4 sn'si ve
+  pencere odakta değilken ölçülmez. Kullanıcı elle ön ayar seçince uyarlamalı kip kapanır. Otomatikte kare sınırı 60.
+- **Dinamik çözünürlük** (ayrı kutu, `createDynRes`): her ön ayarda; ölçeği 0,05 adımla 0,5…1 arasında hedef FPS'e (50) yaklaştırır (çok düşükte
+  çift adım). Açıkken uyarlamalı kip ölçek adımlarını atlar (yalnız kademe).
+
+### 43.3 3B uygulaması (`flightsim3d.js setGraphics(params)` — canlı)
+- **Piksel oranı** `pixelRatioFor` (ölçek × dpr, tavan, bütçe ≥ 0,5) her `resize`'da; **ekran kaydı** sürerken (`flightsim_record.js` durum →
+  `sim.setRecordFloor(true)`) taban = kayıt hedefi 1280×720'yi karşılayan oran (dpr'yi aşmaz) → düşük ölçek kaydı bulanıklaştırmaz; kayıt sırasında
+  arka plan kısması da yok. Kayıt birleşik tuvali (720p) değişmedi; kayıttan oynatma aynı ayarlarla çalışır (enterpolasyon gerçek zamanla).
+- **Kenar yumuşatma**: tuval `antialias`'ı yalnız açılışta seçilebilir (bağlam özelliği): ön ayar MSAA ≤ 4× ve son işlem/FXAA yoksa yerel MSAA; değilse
+  son işlem hattının WebGL2 çok örnekli hedefi (4×/8×). FXAA son geçişte. Açılışta yerel MSAA ile açılmış tuvalde "kapalı" seçimi yeniden açılışa dek
+  yerel MSAA'yı kaldıramaz.
+- **Son işlem hattı** (`createGfxPipeline`; EffectComposer yerel kopyada olmadığından kendi küçük hattımız, aynı renderer): sahne → HalfFloat HDR hedef
+  (MSAA; SSAO'da derinlik dokusu) → SSAO (derinlikten görünüm uzayı konum + normal, spiral 8/16 örnek, 150–400 m arası söner, derinliğe duyarlı
+  bulanıklaştırma) → bloom (parlak geçiş ½ + 3 mip Gauss) → son geçiş: AO × renk + bloom → ACES Filmic (koyu tonlarda doğrusal korunur: sahne ton
+  eşlemesiz ayarlı, ACES "toe"su ağaçları siyaha yakın gösteriyordu) → renk derecelendirme (doygunluk/kontrast/sıcaklık) → vinyet → (FXAA) → sRGB.
+  Yalnız dış gözlemci kiplerinde (takip/serbest/yer + gündüz gimbal); FPV balıkgözü ve termal/gece görüşü geçişi (§22.3) kendi hattında (örnek
+  sayısı ön ayardan).
+- **Gölge**: harita boyutu/tür değişince harita + malzemeler (`needsUpdate`) yeniden; kapsam `setShadowBox` (Ultra'da her kare kamera–odak uzaklığına
+  göre ±140…±308 m; güneş uzaklığı kapsamla büyür); bina/ağaç gölge düşürme `objCast`, arazi `terrainCast` (`applyCast`, dünya her kurulduğunda).
+- **Görüş/sis + yağış**: `skyAndLights` son argümanlarıyla yeniden (sis uzaklığı çarpanı, prosedürel ufuk halkası sınırı korunur; `precipParams`
+  kalitesi). **Su**: `wfx.U.waterQ` (0 iki oktav, yağmur halkası yok · 1 üç oktav · 2 dört oktav + 3 km'ye dek dalga). **Anizotropi**: sahnedeki
+  mipmapli dokular + zemin ayrıntı dokuları (render hedefi dokularına dokunulmaz). **Ağaç LOD** mesafesi `updateTreeLod(…, gfx.treeLod)`.
+- **Arazi ayrıntısı / bitki yoğunluğu / doku çözünürlüğü** ızgara ve örnek sayısını değiştirir → dünya 700 ms sonra **sessizce** yeniden kurulur
+  (`buildWorld(W, quiet)`: ilerleme/olay iletisi yok; aynı tohum → binalar/çarpışma kutuları aynı, ağaç sayısı değişir; görev çizimi ve §26 saha yeniden
+  oturur; Google 3B'de yok). Gerçek arazide atlas boyutu değişirse karolar yeniden alınır (`realCache` anahtarında atlas).
+- **PiP / radar / EO / nişangâh**: render hedefi çözünürlüğü × `pipScale`, PiP aralığı ≥ 1000/`pipFps`, radar/EO aralığı × (30 / pipFps).
+- **Kare hızı sınırı** (`frameGate`, 30/60/sınırsız; sürüklenmesiz zamanlama) + **arka planda kısma** (pencere `blur` → 20 fps; `focus`'ta geri).
+  Atlanan rAF turunda hiçbir şey yapılmaz; dt gerçek geçen süreden.
+- **Google 3B** (`flightsim_g3d.js setQuality({errorTarget, cacheMB})`): karo hata eşiği (maximumScreenSpaceError eşleniği) + LRU önbellek; çözünürlük
+  ölçeği `setResolutionFromRenderer` ile LOD'a doğrudan yansır; görüş mesafesi sis ufku çarpanıyla.
+- **İstatistik**: `renderer.info.autoReset = false`, kare başında sıfırlanır → `gfxStats().calls/tris` karenin toplamı (PiP, radar, son işlem dahil;
+  `fxInfo` da artık karenin toplamını verir). `gfxStats().fps` son 2 sn'nin kare aralığından (saniyede < 1 kare de ölçülür). `getGraphics()` uygulanan
+  ayar + tampon boyutu + hat bilgisi; `gfxCaps` (maxSamples, maxAniso, maxTex, halfFloat, nativeAA, gpu).
+
+### 43.4 Arayüz (`flightsim_gfx_ui.js`)
+- **Alt bant**: Panel/ses kapsülünde (`.fs-ops-snd`) simge düğme `.fs-gfx-btn` (monitör simgesi + kademe harfi: D/O/Y/U, Otomatikte "A·O"; ayrıntı
+  `title`'da) → yukarı açılan menü `.fs-gfx-menu`: ön ayar seçici (Otomatik/Düşük/Orta/Yüksek/Ultra/Özel), Otomatikte "şu an …" + ölçek, canlı FPS /
+  çizim çağrısı / üçgen / tampon çözünürlüğü, kare hızı sınırı (30/60/Sınırsız), Dinamik çözünürlük, Köşede FPS sayacı (`.fs-gfx-fps`, üst orta;
+  < 40 sarı, < 24 kırmızı), Arka planda kıs, "Ayrıntılı ayarlar (Özel)" kaydırıcıları (ölçek, AA, gölge, gölge mesafesi, görüş, arazi, bitki, doku
+  filtresi, su, yağış, son işlem, bloom, SSAO, PiP çözünürlüğü/hızı, Google karo eşiği), "Ön ayara dön". Mobilde Yüksek/Ultra (ya da bu tabanlı Özel)
+  seçilince pil/ısınma uyarısı. Kademe değişimleri olay şeridine ("Grafik: kare hızı düşük → Orta").
+- **Sihirbaz**: HEPGO özet adımında (`summaryBox` altında) ve SIMUMAV son adımda ("Pilot ve kayıt", gösterge tasarımının altında) `createGfxPicker`
+  — aynı kalıcı tercih. Metinler `GFX_TEXTS` (HEPGO Türkçe anahtar, 6 dil; SIMUMAV `gfx.*` 7 dil).
+
+### 43.5 Testler ve görsel doğrulama
+- `node tests/test_flightsim_gfx.mjs` (20 test): ön ayar → parametre (monotonluk, Yüksek = eski sabitler, yetenek kırpması), Özel normalleştirme,
+  tercih (fs.gfx / sm.gfx), piksel oranı (bütçe, kayıt tabanı), kare sınırı kapısı, otomatik kademe kuralları (yazılım/zayıf/tümleşik/ayrık/üst
+  sınıf/mobil/yüksek dpr), uyarlamalı histerezis (önce ölçek, bekleme, dönüş kilidi iki katı, titreşen FPS'te değişiklik yok, sınır 30), dinamik
+  çözünürlük, metinler 6 + 7 dil, bağlama (tek renderer, oturum/sihirbaz/kayıt).
+- Görsel: `./.venv/bin/python -m tests.gfx_shots_hepgo` → `/tmp/gfx-shots/hepgo-{drone,town}-{low,medium,high,ultra}.png`, `hepgo-menu*.png`,
+  `hepgo-auto-counter.png` + yazılım WebGL göreli ölçüm tablosu; SIMUMAV `./.venv/bin/python -m tests.gfx_shots_simumav` → `sm-follow-*.png`,
+  `sm-menu-tr.png`, `sm-wizard-picker.png`.
+- Yazılım WebGL (SwiftShader, 1280×720, prosedürel dünya, kasaba bakışı) göreli ölçüm — mutlak FPS anlamsız, oranlar anlamlı:
+
+  | Ön ayar | kare/sn | çizim çağrısı | üçgen | tampon | MSAA | son işlem | gölge |
+  |---|---|---|---|---|---|---|---|
+  | Düşük | 0,83 | 186 | 288 k | 960×460 @0,75 | — | — | yok |
+  | Orta | 0,33 | 228 | 615 k | 1280×614 @1 | 4 | — | 1024 |
+  | Yüksek | 0,33 | 242 | 962 k | 1280×614 @1 | 4 | SSAO ½ + bloom | 2048 |
+  | Ultra | 0,17 | 251 | 2,22 M | 1920×921 @1,5 | 4 (yazılım GL azami 4) | SSAO tam + bloom | 4096 |
+- **Sınırlar**: gerçek kademeli gölge haritası (CSM) yok — Ultra'da tek 4096 harita kamera uzaklığına göre büyüyen kapsamla (yakın + uzak);
+  SMAA yok (MSAA 8× / FXAA); su yansıması düzlemsel yansıma değil (Fresnel gök yansıması, kalite oktav/mesafe); FPV balıkgözü ve termal/gece
+  görüşünde son işlem (ACES/bloom/SSAO) uygulanmaz; bina sayısı oyun dünyasıdır (çarpışma) — yalnız ağaç yoğunluğu ölçeklenir; tuval antialias'ı
+  açılışta sabittir.

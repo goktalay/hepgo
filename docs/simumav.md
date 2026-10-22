@@ -826,3 +826,11 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
   `drone_sim_runs.alerts` / `alert_score` sütunları `shim/db.py RUN_EK_SUTUNLAR` ile (idempotent ALTER).
 - Uçuş özeti modalında "⚠ Uçuş uyarıları · Uçuş disiplini" kartı (`.sm-gpws-card`; HEPGO `.fs-rp-gpws` bölümü CSS'te gizli). Operasyon kayıttan
   oynatmasında (`ops/replay.js`) kareler aynı değerlendiriciden geçer (AGL = alt_rel; ses yok, gönderim yok).
+
+## 23. Grafik kalite ayarları — HEPGO docs/ucus-simulatoru.md §43'ün SIMUMAV karşılığı
+- Uçuş ekranı (`fly/session.js`): `loadSim` listesine `flightsim_gfx_ui.js` (MGfx); `MGfx.createGfxCtl({ tr, keyed: true, storageKey: 'sm.gfx', … })`
+  düğmesi Panel/ses kapsülüne (`opsSnd.append`), `createFlightSim3D(…, { gfx: gfxCtl.initial() })`, sahne kurulunca `gfxCtl.attach(sim)` (GPU adı →
+  otomatik kademe + uyarlamalı kip), iki dispose zincirinde `gfxCtl.dispose()`.
+- Sihirbaz son adımı ("Pilot ve kayıt", `fly/index.js stepPilot`): gösterge tasarımının altında `/sim/flightsim_gfx_ui.js createGfxPicker` (sm.gfx).
+- Ön ayarlar, uyarlamalı kip, son işlem, kayıt tabanı HEPGO ile birebir (ortak çekirdek). Metinler `gfx.*` (7 dil, `static/simumav/app/i18n/*.json`).
+- Görsel: `./.venv/bin/python -m tests.gfx_shots_simumav` (GFX_LANG=en ile İngilizce menü).

@@ -1039,9 +1039,16 @@ yalnız aktif istemci, CORS yok (OPTIONS 204). Testler `tests/test_caysim.py`. A
 - **Tipe göre ses modeli** (`AUDIO_MODELS`, SITL tipi; görsel model sesi değiştirmez): **multirotor/hexarotor** 4/6 motor, her motor hafif farklı
   oranlı (`MOTOR_RATIOS`) testere dalga + 2× kare (ESC) + bant geçiren pervane uğultusu; pala geçiş frekansı 150 Hz (gaz 0) → 600 Hz (gaz 100), batarya < %30'da
   %4'e kadar düşer; disarm = sessiz. **helikopter** ana rotor "wop-wop" (20–30 Hz LFO ile genlik modülasyonlu alçak gürültü + harmonik), türbin ıslığı
-  900–1500 Hz, kuyruk rotoru (×5,5). **sabit_kanat** (delta/caymaz aynı) benzinli tek silindirli iki zamanlı: devir 1500 (rölanti) → 7500 d/dk,
-  ateşleme f = devir/60 × silindir (25 → 125 Hz) testere + alt harmonik kare + egzoz gürültüsü (lowpass gazla açılır) + 2 pala pervane; armed + gaz 0 = rölanti,
-  disarm sessiz.
+  900–1500 Hz, kuyruk rotoru (×5,5). **sabit_kanat** (delta/caymaz aynı) **CAYMAZ 220 cc benzinli tek silindirli iki zamanlı** (eski "uğultu" sentezi
+  yerine, kullanıcı isteği): devir **2200 (rölanti) → 7600 d/dk** gazla eşlenir, hava hızı pervaneyi boşaltır (+%4'e kadar; `twoStrokeRpm`), devir gecikmeli
+  (`TWO_STROKE_TAU` yukarı 0,45 / aşağı 0,9 sn); ateşleme **f = devir/60** (iki zamanlıda her devir bir ateşleme; 36,7 → 126,7 Hz; `firingHz(rpm, cyl, stroke)`).
+  Katmanlar (`twoStrokeParams` saf eşleme): dar darbe dizisi (`PeriodicWave`, %12 doluluk, 40 harmonik — `pulseCoeffs`) + f/2 alt harmonik (rölantide
+  belirgin) → gazla açılan lowpass; **egzoz "pat-pat"**: geniş bantlı gürültü × ateşleme darbesi (AM: darbe osilatörü gürültü kazancını sürer) → **egzoz
+  rezonansı** bandpass (Q 3, 215 → 450 Hz) + kuru yol; **hafif rastgele zamanlama** (her güncellemede ±35 cent'e kadar detune; rölantide daha çok);
+  **mekanik tıkırtı** (3,4 kHz bant gürültüsü × aynı darbe); **pervane** 2 pala sinüs + pala geçişi hışırtısı (gaz + hava hızı). Motor tipi
+  `createEngineAudio(stage, { engine })` ('fuel' | 'electric'; SIMUMAV hangar `power.engine`): `isTwoStroke(model, engine)` = sabit kanat / VTOL,
+  `stroke: 2` ve elektrik değil; elektrikli sabit kanat ve `stroke`suz modeller (SIMUMAV jet) eski sentezi (testere + kare + lowpass egzoz + pervane) kullanır;
+  HEPGO motor tipi vermez → sabit kanat iki zamanlı. Kopter/heli/rover sesleri değişmedi. Armed + gaz 0 = rölanti, disarm sessiz.
 - **ARM sesi (kullanıcı isteği: "ARM olduğunda motor çalışıp ses çıksın")** — `spinStep(cur, armed, dt, kind)` 0…1 motor durumu, kazanç ve devir bununla
   çarpılır: ARM geçişinde devir 0 → rölanti rampası **kopter 0,6 sn** (ESC başlatma; rölanti kazancı `COPTER_IDLE` 0,3 — belirgin vızıltı, pala geçişi
   150 Hz × 0,35 → 150 Hz), **helikopter 3 sn** rotor sarmalı (LFO 3 → 20 Hz, türbin ile), **sabit kanat 0,8 sn marş** ("cranking": testere 80–120 Hz +

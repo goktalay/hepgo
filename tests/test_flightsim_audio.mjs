@@ -5,6 +5,7 @@
 // Çalıştırma: node tests/test_flightsim_audio.mjs
 import assert from 'node:assert/strict';
 import { AUDIO_MODELS, IMPACT_BOOST, impactParams, MOTOR_RATIOS, REF_DISTANCE, TAU_UP, TAU_DOWN, SPIN_UP, SPIN_DOWN, COPTER_IDLE, audioModel, copterBpf, planeRpm, firingHz, heliBpf, vtolMix, vehicleRpm,
+  isTwoStroke, twoStrokeRpm, twoStrokeParams, pulseCoeffs, TWO_STROKE_TAU,
   engineTargets, smoothFollow, spinStep, distanceGain, fpvParams, dopplerFactor, createAudioPrefs, createEngineAudio } from '../static/js/modules/flightsim_audio.js';
 
 let n = 0;
@@ -62,9 +63,32 @@ test('kopter pala geçiş frekansı: gaz 0 → 150 Hz, 100 → 600 Hz; düşük 
   close(copterBpf(100, 0), 600 * 0.96); close(copterBpf(100, 15), 600 * (1 - 0.02)); close(copterBpf(100, 80), 600);
   close(copterBpf(150), 600); close(copterBpf(-5), 150);
 });
-test('uçak devri: rölanti 1500 → tam gaz 7500; ateşleme f = devir/60 × silindir', () => {
-  close(planeRpm(0), 1500); close(planeRpm(100), 7500); close(planeRpm(50), 4500);
+test('uçak devri (CAYMAZ 220 cc iki zamanlı): rölanti 2200 → tam gaz 7600; ateşleme f = devir/60 × silindir (iki zamanlı her devir)', () => {
+  close(planeRpm(0), 2200); close(planeRpm(100), 7600); close(planeRpm(50), 4900);
+  assert.ok(AUDIO_MODELS.sabit_kanat.idleRpm >= 1800 && AUDIO_MODELS.sabit_kanat.idleRpm <= 2500, 'rölanti 1800–2500');
+  assert.ok(AUDIO_MODELS.sabit_kanat.maxRpm >= 7000 && AUDIO_MODELS.sabit_kanat.maxRpm <= 8000, 'tam gaz 7000–8000');
   close(firingHz(1500, 1), 25); close(firingHz(7500, 1), 125); close(firingHz(3000, 2), 100);
+  close(firingHz(6000, 1, 2), 100); close(firingHz(6000, 1, 4), 50);   // iki zamanlı her devir; dört zamanlı iki devirde bir
+});
+test('iki zamanlı: motor tipi seçimi (yakıtlı/varsayılan → iki zamanlı; elektrikli / jet → eski sentez; kopter asla)', () => {
+  assert.equal(isTwoStroke(audioModel('sabit_kanat')), true); assert.equal(isTwoStroke(audioModel('sabit_kanat'), 'fuel'), true);
+  assert.equal(isTwoStroke(audioModel('sabit_kanat'), 'electric'), false); assert.equal(isTwoStroke(audioModel('vtol'), 'fuel'), true);
+  assert.equal(isTwoStroke(audioModel('multirotor'), 'fuel'), false); assert.equal(isTwoStroke(audioModel('helikopter')), false);
+  assert.equal(isTwoStroke({ kind: 'plane', cylinders: 2, blades: 3, idleRpm: 4200, maxRpm: 19000 }, 'fuel'), false, 'stroke yok (SIMUMAV jet) → eski');
+  assert.equal(engineTargets('sabit_kanat', { armed: true }, { engine: 'electric' }).twoStroke, false);
+  assert.equal(engineTargets('sabit_kanat', { armed: true }).twoStroke, true);
+});
+test('iki zamanlı: rpm → frekanslar (ateşleme = devir/60, pervane 2 pala, egzoz rezonansı devirle), hava hızı pervaneyi boşaltır', () => {
+  close(twoStrokeRpm(0), 2200); close(twoStrokeRpm(100), 7600); close(twoStrokeRpm(100, 40), 7600 * 1.04); close(twoStrokeRpm(100, 400), 7600 * 1.04);
+  assert.ok(twoStrokeRpm(50, 20) > twoStrokeRpm(50, 0));
+  const idle = twoStrokeParams(2200, 0), full = twoStrokeParams(7600, 100);
+  close(idle.fire, 2200 / 60); close(full.fire, 7600 / 60); close(idle.sub, idle.fire / 2); close(full.prop, 2 * 7600 / 60);
+  close(idle.exhaustHz, 120 + 2.6 * 2200 / 60); assert.ok(full.exhaustHz > 400 && full.exhaustHz < 480 && idle.exhaustHz > 190 && idle.exhaustHz < 240, 'egzoz rezonansı ~215 → ~450 Hz');
+  assert.ok(full.lowpass > idle.lowpass && full.pop > idle.pop && full.propNoise > idle.propNoise, 'gazla açılır');
+  assert.ok(idle.subGain > full.subGain && idle.jitterCents > full.jitterCents, 'rölantide düzensiz / alt harmonik belirgin');
+  assert.ok(TWO_STROKE_TAU.up > TAU_UP && TWO_STROKE_TAU.down > TWO_STROKE_TAU.up, 'gecikmeli devir tepkisi (kapanış daha yavaş)');
+  const c = pulseCoeffs(0.12, 40); assert.equal(c.real.length, 41); assert.equal(c.real[0], 0); close(c.real[1], 2 * Math.sin(Math.PI * 0.12) / Math.PI);
+  assert.ok(c.real.slice(1, 6).every(v => v > 0), 'dar darbe: ilk harmonikler pozitif ve güçlü');
 });
 test('helikopter rotor 20–30 Hz; VTOL karışımı 5→20 m/s; araç devri 800–4500', () => {
   close(heliBpf(0), 20); close(heliBpf(100), 30);
@@ -80,9 +104,9 @@ test('engineTargets: kopter disarm sessiz, armed gazla artar', () => {
 });
 test('engineTargets: uçak armed + gaz 0 = rölanti (sesli), disarm sessiz; devir ve ateşleme frekansı', () => {
   const idle = engineTargets('sabit_kanat', { armed: true, throttle: 0 });
-  assert.ok(idle.plane > 0, 'rölanti sesli'); close(idle.rpm, 1500); close(idle.fire, 25);
+  assert.ok(idle.plane > 0, 'rölanti sesli'); close(idle.rpm, 2200); close(idle.fire, 2200 / 60);
   const full = engineTargets('sabit_kanat', { armed: true, throttle: 100 });
-  close(full.rpm, 7500); close(full.fire, 125); assert.ok(full.plane > idle.plane);
+  close(full.rpm, 7600); close(full.fire, 7600 / 60); assert.ok(full.plane > idle.plane);
   const off = engineTargets('sabit_kanat', { armed: false, throttle: 0 });
   assert.equal(off.plane, 0); assert.equal(off.rpm, 0);
 });
@@ -174,7 +198,7 @@ test('kopter: gaz 100 → motor frekansları 600 Hz × oranlar (yumuşatma sonra
   assert.equal(g.copter.bus.gain.value, 0, 'disarm sessiz');
   a.dispose();
 });
-test('hexarotor 6 motor; helikopter LFO 20–30 Hz; uçak ateşleme 25→125 Hz (rölanti/tam gaz)', () => {
+test('hexarotor 6 motor; helikopter LFO 20–30 Hz; uçak (iki zamanlı) ateşleme 36,7→126,7 Hz (rölanti/tam gaz)', () => {
   const h6 = mk('hexarotor'); h6.unlock(); h6.update({ armed: true }); assert.equal(h6.graph.copter.motors.length, 6); h6.dispose();
   const he = mk('helikopter'); he.unlock();
   for (let i = 0; i < 60; i++) tick(he, { armed: true, throttle: 100 });
@@ -184,9 +208,12 @@ test('hexarotor 6 motor; helikopter LFO 20–30 Hz; uçak ateşleme 25→125 Hz 
   he.dispose();
   const pl = mk('sabit_kanat'); pl.unlock();
   for (let i = 0; i < 120; i++) tick(pl, { armed: true, throttle: 0 });
-  close(pl.graph.plane.fire.o.frequency.value, 25, 0.5); assert.ok(pl.graph.plane.bus.gain.value > 0.25, 'rölanti sesli');
+  assert.ok(pl.graph.plane.two, 'sabit kanat varsayılanı iki zamanlı grafik');
+  close(pl.graph.plane.fire.o.frequency.value, 2200 / 60, 0.7); assert.ok(pl.graph.plane.bus.gain.value > 0.25, 'rölanti sesli');
+  close(pl.graph.plane.pop.o.frequency.value, 2200 / 60, 0.7);
   for (let i = 0; i < 120; i++) tick(pl, { armed: true, throttle: 100 });
-  close(pl.graph.plane.fire.o.frequency.value, 125, 2.5); close(pl.graph.plane.prop.o.frequency.value, 250, 5);
+  close(pl.graph.plane.fire.o.frequency.value, 7600 / 60, 2.5); close(pl.graph.plane.prop.o.frequency.value, 2 * 7600 / 60, 5);
+  close(pl.graph.plane.exRes.frequency.value, 120 + 2.6 * 7600 / 60, 10);
   for (let i = 0; i < 200; i++) tick(pl, { armed: false, throttle: 0 });
   assert.equal(pl.graph.plane.bus.gain.value, 0, 'disarm → sessiz');
   pl.dispose();
@@ -329,9 +356,9 @@ test('ARM sesi grafikte: kopter ARM anında düşük, 0,6 sn sonra rölanti (bus
   const p = mk('sabit_kanat'); p.unlock();
   tick(p, { armed: false }); assert.equal(p.graph.plane.starter.g.gain.value, 0);
   tick(p, { armed: true, throttle: 0 }); close(p.graph.plane.starter.g.gain.value, 0.22); assert.ok(p.graph.plane.starterN.g.gain.value > 0, 'marş gürültüsü');
-  const fire0 = p.graph.plane.fire.o.frequency.value; assert.ok(fire0 < 25 && fire0 > 2, `marşta ateşleme rölantinin altında: ${fire0}`);
+  const fire0 = p.graph.plane.fire.o.frequency.value; assert.ok(fire0 < 2200 / 60 && fire0 > 2, `marşta ateşleme rölantinin altında: ${fire0}`);
   for (let i = 0; i < 16; i++) tick(p, { armed: true, throttle: 0 });   // 0,85 sn
-  close(p.smooth.spin, 1); assert.equal(p.graph.plane.starter.g.gain.value, 0, 'marş sustu'); close(p.graph.plane.fire.o.frequency.value, 25, 1e-6); close(p.graph.plane.bus.gain.value, 0.3, 1e-9);
+  close(p.smooth.spin, 1); assert.equal(p.graph.plane.starter.g.gain.value, 0, 'marş sustu'); close(p.graph.plane.fire.o.frequency.value, 2200 / 60, 2200 / 60 * 0.016); close(p.graph.plane.bus.gain.value, 0.3, 1e-9);
   for (let i = 0; i < 22; i++) tick(p, { armed: false, throttle: 0 });
   assert.equal(p.graph.plane.bus.gain.value, 0, 'uçak DISARM 1 sn sonra sessiz'); assert.equal(p.graph.plane.starter.g.gain.value, 0); p.dispose();
   // heli: 3 sn sarmal
@@ -347,5 +374,27 @@ test('performans: 50 Hz tele → ≤ 25 Hz işleme; parametre yazımı sınırl�
   assert.ok(a.stats.updates <= 51 && a.stats.updates >= 45, `işlenen kare ${a.stats.updates}`);
   assert.ok(a.stats.paramSets / a.stats.updates < 40, 'kare başına < 40 parametre');
   a.dispose();
+});
+test('iki zamanlı grafik: darbe × gürültü AM (pat-pat), mekanik tıkırtı, rastgele zamanlama; gecikmeli devir; elektrikli sabit kanat eski sentez', () => {
+  const a = mk('sabit_kanat', { engine: 'fuel' }); a.unlock();
+  const g = a.graph.plane;
+  assert.ok(g.two && g.pop && g.popAM && g.mechAM && g.exRes && g.propN, 'katmanlar kurulu');
+  assert.ok(g.pop.g.outs.includes(g.popAM.gain), 'darbe dizisi gürültü genliğini sürer (AM)');
+  assert.ok(g.mechD.outs.includes(g.mechAM.gain), 'tıkırtı da darbe ile');
+  assert.equal(g.exRes.type, 'bandpass'); assert.equal(g.exRes.Q.value, 3);
+  for (let i = 0; i < 60; i++) tick(a, { armed: true, throttle: 0 });
+  const dets = new Set(); for (let i = 0; i < 10; i++) { tick(a, { armed: true, throttle: 0 }); dets.add(g.fire.o.detune.value.toFixed(3)); }
+  assert.ok(dets.size > 5, 'ateşleme zamanlaması hafif rastgele (detune değişir)');
+  assert.ok([...dets].every(v => Math.abs(Number(v)) <= 35), 'titreşim ±35 cent içinde');
+  // gaz sıçraması: devir gecikmeli (0,2 sn sonra hâlâ ara değerde; 3 sn sonra tam)
+  for (let i = 0; i < 4; i++) tick(a, { armed: true, throttle: 100 });
+  const mid = a.smooth.rpm; assert.ok(mid > 2400 && mid < 5500, `gecikmeli devir: ${mid}`);
+  for (let i = 0; i < 80; i++) tick(a, { armed: true, throttle: 100 });
+  close(a.smooth.rpm, 7600, 30);
+  // ses düzeyi 0 → master 0 (sessiz ayarına uyum)
+  a.setVolume(0); tick(a, { armed: true, throttle: 100 }); assert.equal(a.graph.master.gain.value, 0); a.dispose();
+  const e = mk('sabit_kanat', { engine: 'electric' }); e.unlock(); e.update({ armed: true });
+  assert.ok(!e.graph.plane.two && e.graph.plane.exhaust, 'elektrikli sabit kanat: eski sentez'); e.dispose();
+  const c = mk('multirotor', { engine: 'fuel' }); c.unlock(); c.update({ armed: true }); assert.ok(c.graph.copter && !c.graph.plane, 'kopter değişmez'); c.dispose();
 });
 console.log(`\n${n} test geçti`);

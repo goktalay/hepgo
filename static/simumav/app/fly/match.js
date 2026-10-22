@@ -233,9 +233,10 @@ export async function createMatch(payload) {
 
 // ---------------------------------------------------------------- ortak sayfa iskeleti
 function page(view, ctx, { title, sub, body, back = '#/fly' }) {
-  const go = ctx.go || (hh => { location.hash = hh; });
+  // geri: kabuğun üst sol "← Geri" düğmesi (app.js setBack; diğer bölümlerle aynı kalıp) — sayfa içinde ayrı düğme yok
+  if (ctx.setBack) ctx.setBack(tr('common.back'), back);
   const root = h('div', { class: 'sm-fly sm-mt-page' },
-    h('div', { class: 'sm-mt-head' }, h('button', { class: 'btn sm-mt-backbtn', type: 'button', onclick: () => go(back) }, '← ', tr('common.back')),
+    h('div', { class: 'sm-mt-head' },
       h('div', null, h('h1', null, title), sub ? h('p', { class: 'muted' }, sub) : null)), body);
   clear(view, root);
   return root;

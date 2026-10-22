@@ -853,3 +853,23 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
   yenilgi / puan sayacı (`ai.your_score`), it dalaşında angajman tonu; önleme ve angajman başarısında "coin"; uçuş özetinde disiplin puanı sayacı.
 - Metinler `ai.*`, `sfx.*` (7 dil). Testler: `tests.test_simumav_match` (`yapay_zeka`), `node tests/test_flightsim_sfx.mjs`. Görsel:
   `./.venv/bin/python -m tests.simumav_aibot_shots` → `/tmp/aibot-shots/sm-*.png`.
+
+## 25. Düzeltmeler (smfix): Google harita yedeği, hangar kart 3B, Uç geri düğmesi, iki zamanlı motor sesi
+- **Yeni Parkur harita hatası (PROD konsolu: `tile.googleapis.com 403`, `GoogleCloudAuth … 403`, Maps JS gri hata kutusu)** — kök neden: SIMUMAV tarayıcıya
+  HEPGO ile AYNI `GOOGLE_MAPS_API_KEY`'i verir (`/api/meta.maps_key`, ortak `.env`); anahtarın **HTTP yönlendiren (referrer) kısıtında simumav.com yok**
+  (caymaz.app / *.hepgo.com izinli; simumav.com ve www.simumav.com → `PERMISSION_DENIED: Requests from referer … are blocked`). CSP doğru (maps.googleapis.com,
+  maps.gstatic.com, *.googleapis.com, tile.googleapis.com, *.gstatic.com, *.ggpht.com). googletagmanager/google.com/doubleclick CSP reddi GA4 + Google Ads
+  etiketinden (rıza sonrası) — haritayla ilgisiz, zararsız; CSP'ye eklenmedi.
+  Kod: `tracks/gmap.js` küresel `gm_authFailure` yakalanır (`gmapsAuthFailed()`, olay `sm:gmaps-auth`); `tracks/satmap.js` anahtarsız uydu karolu
+  (Esri World Imagery, img-src) 2B seçici — pickerMap ile aynı arabirim (tıkla = konum, sürükle = kaydır, tekerlek/+− yakınlaştır, işaretçi ve halkalar
+  sürüklenir, arama kutusu "enlem, boylam" kabul eder); parkur editörü Google reddinde / yüklenemezse / anahtar yoksa ona geçer + bilgi notu
+  (`tracks.maps_unavailable`); Google 3B seçiliyken `tracks.g3d_unavailable` notu. Uçuşta `flightsim3d` `opts.g3dFallback: 'real'` (yalnız SIMUMAV; HEPGO
+  prosedürel kalır): Google 3B alınamazsa **Gerçek araziye** düşer (`onFallback(msg, {from, to})`; `fly.g3d_fallback_real`; atıf gerçek arazi kaynaklarına).
+  Menü uçuş sahnesi `MODEL_URLS`: var olmayan `plane.glb`/`vtol.glb`/`fpv.glb`… adayları kaldırıldı (her açılışta 404) — yalnız depoda olan GLB'ler.
+- **Hangar şeridi**: her kartta yavaşça dönen mini 3B model (`miniDroneView`: dronun GLB'si / prosedürel şablonu, kullanıcı rengi; 0,45 rad/sn); `makeStage`
+  görünümleri paylaşılan TEK çiziciyle (core/three.js) — ek WebGL bağlamı yok; ekran dışı kartlar render edilmez; en çok `MAX_CARD_VIEWS` 12 kart canlı.
+- **Uç geri düğmesi**: kabuk `#back` (app.js `setBack`; hedef işlev de olabilir): `#/fly` seçim → "Ana Menü"; sihirbaz (solo / multi / ai) → bir önceki
+  adım, ilk adımda `#/fly`; davet / salon → `#/fly`; uçuş ve yarış tam ekran → gizli (kendi geri düğmeleri). Sayfa içi `.sm-mt-backbtn` kaldırıldı.
+- **Motor sesi**: CAYMAZ (yakıtlı sabit kanat / VTOL) iki zamanlı benzinli sentez — ayrıntı HEPGO docs/ucus-simulatoru.md §16; `fly/session.js`
+  `createEngineAudio({ engine: power.engine })`.
+- Testler: `node tests/test_flightsim_audio.mjs`, `node tests/test_simumav_ui.mjs`; e2e + görseller: `./.venv/bin/python -m tests.simumav_smfix_e2e` → `/tmp/smfix-shots`.

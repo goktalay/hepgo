@@ -76,9 +76,11 @@ const ctx = {
   toast: (msg, kind) => toast(msg, kind === 'err' || kind === 'error' ? 'err' : kind === 'ok' || kind === 'success' ? 'ok' : ''),
   // Hedef rota şu anki adresle aynıysa (ör. #/missions içinde görev düzenleyicisi → "Görevler"; #/tracks, #/hangar sihirbazı) hash değişmez,
   // hashchange gelmez ve düğme hiçbir şey yapmazdı → aynı rotada modül yeniden kurulur (alt ekran kapanır, liste açılır).
+  // target işlev olabilir: modül kendi içinde geri gider (Uç: sihirbaz adımı → önceki adım, ilk adımda #/fly seçimine).
   setBack: (label, target = 'menu') => {
     back.hidden = !label; document.getElementById('back-label').textContent = label || '';
     back.onclick = () => {
+      if (typeof target === 'function') { target(); return; }   // modül içi geri (ör. Uç sihirbazında bir önceki adım)
       const hash = String(target).startsWith('#') ? target : `#/${target}`;
       if (location.hash === hash || (target === 'menu' && !location.hash)) route(true); else ctx.go(target);
     };

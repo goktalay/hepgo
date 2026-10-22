@@ -1572,6 +1572,15 @@ mümkün; **takip/serbest/yer** dış gözlemci kameraları her zaman gündüz r
   %46'sı, geniş ekranda %34'ü). Tercih `localStorage fs.cam.pip` `{on, size, corner, fx, fy}`. **V** gizle/göster; PiP gimbal gösterirken üstünde
   **tekerlek = yakınlaştırma**. `prefers-reduced-motion`: yapışma/boyut geçiş animasyonu yok.
 - **Gimbal yakınlaştırma** 1–8× (`+`/`−`, Shift+tekerlek, PiP üstünde tekerlek): FOV = 2·atan(tan 39° / z) (`gimbalZoomFov`; ana görünüm ve PiP).
+- **Düzeltme — araç yerdeyken PiP'in alt yarısı düz mavi.** İki kök neden: (1) prosedürel dünyanın **su düzlemi tek dörtgendi** (~19 km, iki üçgen);
+  kamera zemine çok yakınken (yerdeki sabit kanadın gimbali z ≈ 0,3 m) yakın düzlemle kırpılan dev üçgenin derinliği bozuluyor, arazinin ~1,5 m
+  altındaki su **küçük render hedeflerinde** (PiP 81×46, 160×90, 256×144 …) pistin/arazinin üstüne çiziliyordu — çözünürlüğe bağlı olduğu için dpr /
+  ön ayar / PiP ölçeği değişince görünüp kayboluyordu (ana görünümde nadiren). Su düzlemi artık ≤ ~500 m hücrelere bölünür (8–64 bölüm), pist asfaltı
+  ≤ 50 m dilimlere. (2) Gimbal kamerasının **sabit 0,5 m yakın düzlemi** 0,3 m altındaki zemini kesiyordu (aşağı bakınca boşluk): `vehCamNear` →
+  near = clamp(0,35·AGL, 0,05, 0,5) (AGL: arazi yüksekliği; araç yere yakınsa gövde altı da aday — Google 3B'de DEM hücresi karo yüzeyinden sapabilir);
+  ana gimbal görünümü ve PiP aynı kural; prosedürel/gerçek arazide kamera zeminin 0,1 m altına inmez. Uçuşta (AGL ≥ 1,5 m) 0,5 aynen.
+  Regresyon: `./.venv/bin/python -m tests.pip_shots_hepgo` (teşhis `pipPose()` + `pipProbe()`: PiP hedefinin alt yarısı aynı kameranın 4× başvuru
+  çizimiyle karşılaştırılır; araç tipi × dpr 1/1,5/2 × ön ayar × gündüz/termal/gece × gimbal açısı; kareler /tmp/fixes-shots/pip-*.png).
 
 ### 22.5 Sihirbaz "Kamera" kartı
 "Yeni Simülasyon Başlat" penceresinde **4. Kamera** (kayıt kipinde 3.): üç kart, her birinde **önizleme** — prosedürel küçük sahne (gökyüzü, tepeler,
@@ -2695,6 +2704,16 @@ seçimi tek kapsüle. Yalnız sunum değişti; komutlar, tercihler ve kısayolla
 - **Testler.** `node tests/test_flightsim_servotrig.mjs` (düğme/eylem metni aşamaya göre), `node tests/test_flightsim_camera.mjs` (görünüm etiketi,
   gimbal devre dışı, iki istemcinin bant kurgusu); görsel `./.venv/bin/python -m tests.fltbar_shots_hepgo` / `tests.fltbar_shots_simumav`
   (/tmp/fltbar-shots: 1600 / 1280 / 900 px, liste ve panel açık, dinleme, tetik → özet, rover, replay, İngilizce; taşma denetimi).
+
+- **Sığdırma (düzeltme, `flightsim_fltbar.js fitFlightBar(bar, {stage})`; HEPGO `flightsim.js`, SIMUMAV `fly/session.js`).** 1280–1440 px'te
+  bant iki satıra kayıyordu (gimbal görünümünde 1440'ta bile). Bant ve doğrudan çocukları ResizeObserver ile izlenir; tek satıra sığmıyorsa (ya da bir
+  kapsül sağ kenarı / oynatma çubuğu kutusunu aşıyorsa) `data-fit` kademesi artar: **1** boşluk/iç boşluk küçülür, gimbal etiketinin ipucu
+  ("(↑↓ / tekerlek)", `setGimbalLabel` → title'da tam metin) ve görünüm kısayol numarası gizlenir; **2** ikincil etiketler simgeye iner (Sanal kumanda,
+  Hassasiyet, Kumanda, Kayıt, Mod, kamera türü, Sıfırla); **3** Dinle ve görünüm adı da simge, yazı 12,5 px; hâlâ taşıyorsa oynatma çubuğu kendi satırına
+  (`data-fit-wrap`). Gizlenen etiketin düğmesi `aria-label` + `title` taşır. ≥ 1280 px TR/EN/DE tek satır; 1024–1279 px en çok iki satır; mobil
+  (§39 `.fs-mob`) hiç sıkıştırılmaz. Test: `node tests/test_flightsim_flyui.mjs` (`pickFitLevel`, `setGimbalLabel`), görsel
+  `./.venv/bin/python -m tests.fltfit_shots_hepgo` (çok rotorlu gimbal, sabit kanat, rover, replay; panel açık/kapalı; 1600…1024; mobil;
+  `FLTFIT_LANG=en|de`) ve `tests.fltfit_shots_simumav` (TR/EN/DE; /tmp/fixes-shots/fltfit-*.png).
 
 ## 37. Sanal kumanda varsayılan açık + fiziksel kumanda (Gamepad API) (`static/js/modules/flightsim_gamepad.js`; HEPGO + SIMUMAV ortak)
 Kullanıcı isteği: "Tüm simülasyonlarda sanal kumanda açık gelsin. Tarayıcıya takılan fiziksel kumanda / joystick tanınsın ve aracı RC olarak kontrol etsin."

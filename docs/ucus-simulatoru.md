@@ -2133,6 +2133,20 @@ farklı tasarım seçenekleri", "tüm başlatmalarda kamera 100 m yüksekten bak
   canlı eğri önizlemesi: doğrusal kesikli çizgi, ölü bölge sarı, uç noktası). Değişiklik anında kumandaya uygulanır. Kalıcı: `fs.rc.feel`. Sihirbazda ayar yok.
 - Metinler: HEPGO Türkçe anahtar; SIMUMAV `rcfeel.*` (7 dil).
 
+#### 27.1.1 Kumanda modu — Mode 1–4 (`static/js/modules/flightsim_stickmode.js`)
+RC vericilerdeki gibi hangi çubuğun hangi ekseni sürdüğü seçilir (⚙ Hassasiyet panelinin ve fiziksel kumanda panelinin üstünde M1–M4; tercih `localStorage fs.rc.mode`, varsayılan Mode 2; değişim `fs-stickmode` olayıyla iki panel ve açık oturum anında eşitlenir).
+
+| Mod | Sol çubuk (X / Y) | Sağ çubuk (X / Y) |
+|---|---|---|
+| 1 | yaw / pitch | roll / gaz |
+| 2 | yaw / gaz | roll / pitch |
+| 3 | roll / pitch | yaw / gaz |
+| 4 | roll / gaz | yaw / pitch |
+
+- Sanal çubuklar ve klavye (WASD = sol çubuk, oklar = sağ çubuk) moda göre eşlenir: Mode 3'te A/D roll, ←/→ yaw olur. Uçakta gaz hangi çubuktaysa orada tutmalıdır. Çubuk etiketleri ve klavye ipucu anında güncellenir.
+- Standart gamepad: eksen ataması herhangi bir modun varsayılanıysa seçili modun varsayılanına çekilir (`applyStickModeToPad`); elle (Algıla) yapılan atama korunur. RC vericide mod donanımdadır, eksen ataması değişmez.
+- Kara aracında (§31) mod uygulanmaz. HEPGO `flightsim.js virtualRC` ve SIMUMAV `fly/rc.js virtualRC` aynı `STICK_MAP`'i kullanır (`stickMode()` girdisi). Test: `node tests/test_flightsim_stickmode.mjs`.
+
 ### 27.2 Giriş sekansı — 100 m bakış + 3‑2‑1 geri sayım (`static/js/modules/flightsim_intro.js`, 3B `flightsim3d.js playIntro/endIntro`)
 - **Ne zaman:** her oturumda bir kez, 3B dünya kurulmuş + perde (`.fs-msg`) kalkmış + oturum HAZIR iken (HEPGO canlı, sahte ve kayıttan oynatma; SIMUMAV
   her uçuş). SIMUMAV sihirbazının eski BAŞLA geri sayımı (`COUNTDOWN_S`) bununla birleştirildi: sihirbazda artık yalnız "Hazır ol…" perdesi var, sayım sahnede.

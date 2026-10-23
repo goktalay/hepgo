@@ -1,0 +1,49 @@
+name: Hepgo Dron Köprüsü (Linux / Jetson paketi)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'bridge/dron_koprusu/kopru_core.py'
+      - 'bridge/dron_koprusu/goruntu_core.py'
+      - 'bridge/dron_koprusu_linux/**'
+      - 'tools/kopru_linux_paket.py'
+      - '.github/workflows/dron-koprusu-linux.yml'
+
+jobs:
+  paket:
+    # Python 3.8 (Jetson Nano JetPack 4.6 hedefi) ile sabit bağımlılıklar kurulur, kaynak derlenir, paket üretilir.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Bağımlılıklar (requirements.txt — Python 3.8 sabit sürümler)
+        run: |
+          python -m pip install --upgrade "pip<25"
+          pip install -r bridge/dron_koprusu_linux/requirements.txt
+
+      - name: Python 3.8 derleme + içe aktarma
+        run: |
+          python -m py_compile bridge/dron_koprusu/kopru_core.py bridge/dron_koprusu/goruntu_core.py bridge/dron_koprusu_linux/hepgo_kopru.py
+          python bridge/dron_koprusu_linux/hepgo_kopru.py --surum
+          python -c "import sys; sys.path[:0]=['bridge/dron_koprusu']; import websockets, pymavlink.dialects.v20.ardupilotmega, goruntu_core, kopru_core; print('websockets', websockets.__version__)"
+          bash -n bridge/dron_koprusu_linux/install.sh
+          bash -n bridge/dron_koprusu_linux/uninstall.sh
+
+      - name: Paket (tar.gz)
+        id: pk
+        run: |
+          python tools/kopru_linux_paket.py --cikti dist
+          echo "ad=$(ls dist/*.tar.gz | xargs -n1 basename)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pk.outputs.ad }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256

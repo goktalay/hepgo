@@ -83,7 +83,8 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase',
              # sunucu-içi bileşik komut (bkz. SEQ_CMDS); köprü 'mission_start' yeteneği bildirirse MAV_CMD_MISSION_START olarak da gider
              'mission_start', 'mission_clear', 'mission_pause', 'mission_resume', 'mission_cancel', 'mission_resume_at'}
-BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear'}   # köprünün bildirebileceği yetenekler
+BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear',
+               'video'}   # v1.3: görüntü köprüsü (ayrı WebSocket /ws/drone/video; app/drone_video.py)   # köprünün bildirebileceği yetenekler
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 # Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
@@ -405,8 +406,8 @@ def _open_session(bridge, started_by=None):
         with db.connect() as conn:
             cur = conn.execute('''INSERT INTO drone_bridge_sessions (bridge_id, started_by, started_at, status, tlog_path, last_seen)
                                   VALUES (?,?,?,'ACIK',?,?)''', (bridge.id, started_by, db.now(), rel, db.now()))
-            conn.execute("UPDATE drone_bridges SET status = 'CEVRIMICI', last_seen = ?, host = ?, platform = ?, bridge_ver = ? WHERE id = ?",
-                         (db.now(), bridge.host, bridge.platform, bridge.ver, bridge.id))
+            conn.execute("UPDATE drone_bridges SET status = 'CEVRIMICI', last_seen = ?, host = ?, platform = ?, bridge_ver = ?, caps = ? WHERE id = ?",
+                         (db.now(), bridge.host, bridge.platform, bridge.ver, json.dumps(bridge.caps), bridge.id))
             db.audit(conn, None, 'Dron köprüsü bağlandı', 'drone_bridge', bridge.id, f'{bridge.name} · {bridge.host or ""}')
             conn.commit()
             return cur.lastrowid, rel

@@ -446,8 +446,10 @@ class Bridge:
     """Köprü yaşam döngüsü. ui(event, data) geri çağrısı arayüze olay verir:
     'server' (state, detail), 'link' (state, detail), 'log' (metin), 'stats' (dict)."""
 
-    def __init__(self, code, ui=None, link_spec=None):
+    def __init__(self, code, ui=None, link_spec=None, caps=None, version=None):
         self.domain, self.key = parse_code(code)
+        self.caps = list(caps) if caps is not None else list(CAPS)   # Linux/Jetson köprüsü görüntü açıksa 'video' ekler (v1.3)
+        self.version = version or VERSION
         self.ui = ui or (lambda ev, *a: print(ev, *a))
         self.link_spec = link_spec
         self.mav = None
@@ -558,7 +560,7 @@ class Bridge:
             try:
                 async with websockets.connect(url, max_size=None, ping_interval=None, open_timeout=15, close_timeout=3) as ws:
                     await ws.send(json.dumps({'v': 1, 't': 'auth', 'key': self.key, 'host': socket.gethostname()[:120],
-                                              'platform': platform.system().lower()[:40], 'bridge_ver': VERSION, 'caps': CAPS}))
+                                              'platform': platform.system().lower()[:40], 'bridge_ver': self.version, 'caps': self.caps}))
                     first = json.loads(await asyncio.wait_for(ws.recv(), 15))
                     if first.get('t') != 'auth_ok':
                         raise FatalError(FATAL_CODES[4403])

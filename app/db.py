@@ -1562,6 +1562,7 @@ CREATE TABLE IF NOT EXISTS drone_bridges (
     owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- sahibi pilot
     host        TEXT,                                   -- son bağlanan cihaz adı (köprü bildirir)
     bridge_ver  TEXT,
+    caps        TEXT,                                   -- son bağlantıda bildirilen yetenekler (JSON dizi; ör. "video" = görüntü köprüsü)
     status      TEXT NOT NULL DEFAULT 'CEVRIMDISI',     -- CEVRIMDISI | CEVRIMICI
     last_seen   TEXT,
     note        TEXT,
@@ -1603,6 +1604,48 @@ CREATE TABLE IF NOT EXISTS drone_bridge_sessions (
     error       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_drone_bridge_sessions_bridge ON drone_bridge_sessions(bridge_id, started_at);
+-- Dron kameraları (Dron Yönetimi › Kameralar; app/drone_video.py, docs/dron-kopru-protokolu.md v1.3): kamera bir köprüye bağlanır; köprü
+-- (ör. Jetson görüntü köprüsü) RTSP/RTP kaynağını kendi ağında açar, H.264'ü parçalı MP4 olarak /ws/drone/video ile sunucuya iter.
+-- Yapılandırma SİTEDEN gelir: kayıt değişince köprüye {t:'video_cfg'} gider. Parola cameras.encrypt ile şifreli; arayüze dönmez.
+CREATE TABLE IF NOT EXISTS drone_cameras (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    drone_id      INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,     -- bağlı dron (isteğe bağlı; dron paneli / Canlı Uçuş penceresi)
+    bridge_id     INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,    -- görüntüyü taşıyan köprü
+    kind          TEXT NOT NULL DEFAULT 'rtsp',           -- rtsp | rtp
+    url           TEXT,                                   -- rtsp://host:port/yol (kimlik bilgisi URL'de tutulmaz)
+    username      TEXT,
+    password_enc  TEXT,                                   -- cameras.encrypt; yalnız köprüye video_cfg ile gider
+    transport     TEXT NOT NULL DEFAULT 'tcp',            -- RTSP taşıması: tcp | udp
+    rtp_port      INTEGER,                                -- RTP: köprünün dinlediği UDP portu
+    codec         TEXT NOT NULL DEFAULT 'h264',           -- RTP yük kodeki: h264 | h265 (H.265 tarayıcıda uyarılı)
+    payload_type  INTEGER,                                -- RTP yük türü (96–127; boş = 96)
+    sdp           TEXT,                                   -- RTP: isteğe bağlı SDP metni (yoksa köprü üretir)
+    fps           INTEGER NOT NULL DEFAULT 0,             -- 0 = kaynak FPS'i (yeniden kodlamadan); 5/10/15/20/25/30
+    width         INTEGER, height INTEGER,                -- isteğe bağlı çıkış çözünürlüğü (yeniden kodlama gerektirir)
+    bitrate_kbps  INTEGER,                                -- isteğe bağlı (yeniden kodlamada)
+    active        INTEGER NOT NULL DEFAULT 1,
+    note          TEXT,
+    created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_cameras_bridge ON drone_cameras(bridge_id);
+CREATE INDEX IF NOT EXISTS ix_drone_cameras_drone ON drone_cameras(drone_id);
+-- Canlı Uçuş › Kameralar: saha görevinde kullanılan kameralar. bridge_id doluysa görev AÇIKKEN (BASLANGIC/GOREVDE) kameranın kayıtlı köprüsü
+-- yerine bu köprü kullanılır (etkin köprü; app/drone_video.EFF_BRIDGE); drone_id = görüntünün HUD'unda telemetrisi gösterilen dron (uçuştaki dronlardan).
+CREATE TABLE IF NOT EXISTS field_task_cameras (
+    id          INTEGER PRIMARY KEY,
+    task_id     INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE,
+    camera_id   INTEGER NOT NULL REFERENCES drone_cameras(id) ON DELETE CASCADE,
+    bridge_id   INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+    drone_id    INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT,
+    UNIQUE (task_id, camera_id)
+);
+CREATE INDEX IF NOT EXISTS ix_field_task_cameras_camera ON field_task_cameras(camera_id);
 CREATE INDEX IF NOT EXISTS ix_drone_bridge_sessions_open ON drone_bridge_sessions(ended_at);
 CREATE TABLE IF NOT EXISTS drone_route_centers (
     id          INTEGER PRIMARY KEY,
@@ -3603,6 +3646,9 @@ def _migrate_drone_links(conn):
     if 'link' not in ff_cols:
         conn.execute('ALTER TABLE field_flights ADD COLUMN link TEXT')
     conn.execute('CREATE INDEX IF NOT EXISTS ix_field_flights_bridge ON field_flights(bridge_id)')
+    db_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_bridges)')}
+    if db_cols and 'caps' not in db_cols:   # v1.3: köprünün son bildirdiği yetenekler (görüntü köprüsü rozeti çevrimdışıyken de görünsün)
+        conn.execute('ALTER TABLE drone_bridges ADD COLUMN caps TEXT')
     dd_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_drones)')}
     old = [c for c in ('conn_type', 'conn_host', 'conn_port', 'conn_serial', 'conn_baud', 'bridge_id', 'sysid') if c in dd_cols]
     if not old:

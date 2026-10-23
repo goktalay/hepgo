@@ -373,7 +373,7 @@ def _hangar():
     K.kutu(0, -Y - 0.3, 0, 2 * X + 1.2, 0.6, H + 0.6, mat='hangar_wall', side='S')
     K.kutu(0, Y + 0.3, 0, 2 * X + 1.2, 0.6, H + 0.6, mat='hangar_wall', side='N')
     K.kutu(-X - 0.3, 0, 0, 0.6, 2 * Y, H + 0.6, mat='hangar_wall')
-    K.kutu(X + 0.3, 0, 0, 0.6, 2 * Y, H + 0.6, mat='hangar_wall', holes=[{'u': 0, 'v': 3.0, 'w': 10, 'h': 6}], axis='y', yaw=90)   # açık kapı (ışık)
+    K.kutu(X + 0.3, 0, 0, 2 * Y, 0.6, H + 0.6, mat='hangar_wall', holes=[{'u': 0, 'v': 3.0, 'w': 10, 'h': 6}], axis='y', yaw=90)   # açık kapı (ışık)
     K.kutu(0, 0, H, 2 * X, 2 * Y, 0.6, mat='hangar_roof')
     for x in range(-24, 25, 8):   # çatı makas kirişleri (alt başlık 7,8 m)
         K.kutu(x, 0, 7.8, 0.35, 2 * Y, 0.4, mat='steel_beam')
@@ -651,7 +651,7 @@ def _kanyon():
     # şelale: kuzey uçta (y = 70) kaya yüzü; su perdesi y = 64 (dekor, geçilir), arkasında mağara geçidi
     K.kutu(0, 76, 0, 60, 6, 30, mat='rock_wall')
     K.kutu(0, 63.8, 0.0, 8.0, 0.2, 14.0, mat='waterfall', decor=True)
-    K.kutu(0, 60, 0, 30, 1.0, 0.25, mat='water', decor=True)
+    K.kutu(0, 58, 0, 26, 9.0, 0.25, mat='water', decor=True)   # şelale havuzu
     # düşen kayalar (engel) ve dağınık kayalar (dekor)
     for x, y, r in ((-10, -40, 1.6), (-17, 34, 1.4), (12, 30, 1.8), (17, -48, 1.5)):
         K.kure(x, y, 0.6, r, mat='rock')
@@ -905,6 +905,18 @@ def parkur_dogrula(c, pay=HAT_PAY):
             if min(a[2], b[2]) < 0.8:
                 sorun.append(f'hat {k}: zemine çok yakın (z < 0,8 m)')
                 break
+    sz = (c.get('env') or {}).get('size')
+    if sz:   # engeller parkur alanının içinde (yanlış eksenli kutu alan dışına taşmasın)
+        for k, e in enumerate(c['obstacles']):
+            if e['t'] == 'box':   # tam köşe kutusu (engel_aabb dönük kutuda çevrel daireyi kullanır)
+                r, f = sag(e.get('yaw', 0)), ileri(e.get('yaw', 0))
+                xs = [e['x'] + r[0] * su * e['w'] / 2 + f[0] * sv * e['d'] / 2 for su in (-1, 1) for sv in (-1, 1)]
+                ys = [e['y'] + r[1] * su * e['w'] / 2 + f[1] * sv * e['d'] / 2 for su in (-1, 1) for sv in (-1, 1)]
+                a = (min(xs), min(ys), 0, max(xs), max(ys), 0)
+            else:
+                a = engel_aabb(e, 0.0)
+            if max(abs(a[0]), abs(a[3])) > sz[0] / 2 * 1.25 + 5 or max(abs(a[1]), abs(a[4])) > sz[1] / 2 * 1.25 + 5:
+                sorun.append(f"engel {k} ({e.get('mat')}) parkur alanının dışına taşıyor")
     for p in parkur_baslangiclari(c, 8):
         if W.nokta((p[0], p[1], 0.3), DRON_R) is not None:
             sorun.append(f'başlangıç noktası {p} engelli')

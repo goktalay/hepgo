@@ -219,6 +219,12 @@ def parkur_testleri():
         bas = F.parkur_baslangiclari(c, 8)
         assert len({(p[0], p[1]) for p in bas}) == 8 and min(math.dist(p[:2], q[:2]) for i, p in enumerate(bas) for q in bas[i + 1:]) >= 1.9
     assert {'gate', 'circle', 'window', 'dive', 'ladder', 'tunnel', 'flag', 'slalom', 'start'} <= turler, turler
+    # doğrulayıcı yanlış eksenli kutuyu yakalar (eski hangar doğu duvarı hatası: w/d yer değiştirmiş → alan dışına taşan kiriş)
+    import copy
+    bozuk = copy.deepcopy(F.parkur('hangar'))
+    duvar = next(e for e in bozuk['obstacles'] if e.get('mat') == 'hangar_wall' and e.get('yaw') == 90)
+    duvar['w'], duvar['d'] = duvar['d'], duvar['w']
+    assert any('dışına taşıyor' in x for x in F.parkur_dogrula(bozuk))
     # ayar doğrulama
     for bad in ({'course_id': 'yok'}, {'course_id': 'hangar', 'laps': 0}, {'course_id': 'hangar', 'laps': 11}, {'course_id': 'hangar', 'crash_rule': 'x'},
                 {'course_id': 'hangar', 'crash_penalty_s': 31}, {'course_id': 'hangar', 'time_limit_min': 1}, {'course_id': 'hangar', 'laps': 2.5}):

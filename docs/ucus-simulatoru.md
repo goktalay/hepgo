@@ -3288,3 +3288,126 @@ DEV'de derlenen kurulum `/opt/hepgo/sitl/px4` (5,6 MB: bin 4,9 MB strip + etc 0,
 - Kamera: `setCamera('pilot_eye')` → Yer kipi + `groundView: 'pilot'` (omuz üstü `shoulderCam`, teleobjektif FOV); tuş 6 ya da Yer'de tekrar 5;
   `onCameraChange(mode, {groundView})`; `CAMERA_MODES` değişmedi (HEPGO 1–5). Teşhis: `sim.pilotInfo()`, `sim.getGroundView()`.
 - `flightsim_match3d.ghostPos(id)`: hayalet aracın konumu (karşılaşmada diğer pilotların bakışı). Test: `node tests/test_flightsim_pilot.mjs`.
+
+## 47. HAZIR FPV PARKURLARI + FPV PARKUR YARIŞI + TEK KİŞİLİK KARŞILAŞMA (zaman denemesi, hayalet) (`app/flightsim_fpv.py`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: "FPV için hazır parkurlar ve karşılaşmalar + karşılaşmalarda tek kişilik oynama". Farklı mekanlarda kodla üretilen 3B sahne +
+parkur tanımı (kapı/engel sırası, konum, yön, boyut; başlangıç/bitiş; tur; zorluk), tek kişilik zaman denemesi (tur/sektör süreleri, en iyi tur,
+kaçırılan kapı cezası, kişisel rekor, HAYALET), parkur başına skor tablosu, çok oyunculu "FPV parkur yarışı" (+ yapay zekâ pilot), mevcut
+karşılaşmaların tek oyuncuyla başlatılabilmesi. Kullanıcının paylaştığı referanslar (sivil FPV simülatörleri; Liftoff / Uncrashed / FPV Logic
+tarzı): rafineri boru koridorları, çayır tepesinde ahşap ev iskeleti (pencere/kapı boşluklarında neon kapılar, sıradaki yeşil, sonrakiler
+pembe/mor, başlangıçta yerde parlayan halka, altta iki çubuk-konumu göstergesi), yarım kalmış beton bina (kat kat pencere geçişi, sıradaki kapıya
+ince yönlendirme çizgisi). **KAPSAM:** yalnız spor/yarış ve beceri parkuru — hedefe dalış/çarpma, araç/insan/yapı hedefi vurma ya da "patlayıcı /
+kamikaze" eğitim senaryosu YOKTUR (eklenmedi).
+
+### 47.1 Parkurlar (kodla üretilir, deterministik; `PARKURLAR` → `parkur(cid)`)
+| id | Ad | Mekan | Zorluk | Tur | Bir tur (m) | Kapı | Öne çıkan |
+|---|---|---|---|---|---|---|---|
+| `hangar` | Kapalı Hangar | kapalı depo/hangar 60×36 m, tavan 9 m | 2 Orta | 3 | 171,5 | 9 | raf sıraları, tavan makasları, alçak kanal borusu altından geçiş, bölme duvarında kapı aralığı (pencere kapı), iki katlı merdiven kapı |
+| `forest` | Çam Ormanı | orman | 3 Zor | 2 | 297,0 | 9 | ~190 ağaç (yarış hattından ≥ 4,8 m), devrik gövde (dal) altından geçiş, açıklıkta bayrak dönüşü |
+| `city` | Yarı Yıkık Şehir | şehir / yarı yıkık yapılar | 4 Çok zor | 2 | 229,2 | 9 | binanın batı penceresinden girip doğu penceresinden çıkış, sokak aralığı, yaya köprüsü altı, bayrak |
+| `stadium` | Gece Stadyumu | stadyum | 2 Orta | 3 | 298,8 | 13 | klasik kapılar, tünel (8 m, şişme), bayraklar, dalış kapısı (7 m iskele), merdiven kapı, 4 slalom direği |
+| `refinery` | Rafineri | endüstriyel tesis | 4 Çok zor | 2 | 314,3 | 10 | boru köprüsü altından alçak geçiş (iki yönde), sarı korkuluklu ızgara yürüyüş yolu, tanklar, konteyner koridoru, 42 m baca etrafında tam tur |
+| `canyon` | Kanyon Geçidi | kanyon / dağ geçidi | 5 Uzman | 1 | 293,9 | 9 | iki paralel dar vadi, kaya kemeri, dar boğaz, şelale perdesinin arkasından geçiş |
+| `woodframe` | Tepedeki Ahşap Ev İskeleti | çayır tepesi (sis + dağ manzarası) | 3 Zor | 3 | 135,7 | 9 | ön kapıdan içeri, pencerelerden dışarı, üst kat penceresinden içeri/dışarı — neon kapılar yapının boşluklarında |
+| `concrete` | Yarım Beton Bina | inşaat alanı | 4 Çok zor | 2 | 177,7 | 10 | kolon ızgarası, zemin/2./3. kat pencereleri, merdiven boşluğundan aşağı DALIŞ, küçük pencereden çıkış |
+Engel/kapı türleri: kapı (`gate` kare/dikdörtgen, `circle` daire), `window` (yapı boşluğu; neon çerçeve boşluğa oturur), `dive` (YATAY, yukarıdan
+aşağı), `ladder` (üst üste, ters yönlerde), `tunnel` (kontrol noktası tünel ortası), `flag` (direğin belirtilen yanından — `side` — dönüş),
+`slalom` (sırayla sağ/sol), `start` (başlangıç/bitiş). Tanım (JSON-uyumlu sözlük): `{id, venue, name, difficulty, laps, par_lap_s, bot_vmax,
+start{x, y, yaw, cols, gap}, env{time, fog, sky, ground, light, size, ceiling?, canyon?, hill?}, gates[{kind, x, y, z (ZEMİNDEN), yaw (geçiş yönü),
+w, h | r, frame, sector_end, via?, via_lap?, side?, pole?, label?, a?}], obstacles[ilkel], decor[ilkel], line, length_m, gate_count, sectors}`.
+Koordinatlar karşılaşma merkezine göre yerel ENU (x doğu, y kuzey). İlkeller: `box` (taban z, w sağ ekseni, d ileri ekseni, yaw; `holes` +
+`axis` 'y' → kutu boyunca açık pencere/kapı/tünel/raf aralığı, 'z' → döşeme boşluğu), `cyl`, `sph`, `pipe` (kapsül), `torus` (daire kapı
+çerçevesi). Çerçeveli kapıların çerçeve + ayakları `kapi_engelleri` ile `vis: false` çarpışma ilkeli olarak eklenir (görseli istemci neon çizer).
+Varlıklar tamamen prosedüreldir (dış model/doku yok).
+
+### 47.2 Geçiş, tur/sektör, ceza, çarpışma (`ParkurIzleyici`)
+- **Kontrol noktaları** `kontrol_noktalari(cfg, merkez)`: `[S/F] + (kapı 1…m−1 + S/F) × tur` (S/F ilk geçişi = "holeshot", tur 0); her biri §33 halka
+  alanlarıyla uyumlu (`i, x, y, alt_msl, lat, lon, yaw_deg, nx, ny, radius_m`) + `gate, lap, sector, sector_end, kind, z, nz, w, h, shape, line`.
+  Karşılaşmanın `rings` alanı budur (eski istemciler halka gibi görür).
+- **Geçiş**: ardışık iki konum kapı düzlemini −→+ (geçiş yönünde) keser ve kesişim noktası açıklık içindeyse (dikdörtgen |u| ≤ w/2, |v| ≤ h/2; daire
+  √(u²+v²) ≤ r; dalış kapısında düzlem yatay, normal (0, 0, −1)); ters yön → `wrong_way`; tek adımda > 250 m sıçrama yok sayılır.
+- **Kaçırılan kapı**: sıradaki kapıdan en çok 2 (`ILERI_BAKIS`) ilerideki kapı geçilirse aradakiler `miss` (+ `miss_penalty_s`, varsayılan 3 sn).
+- **Tur / sektör**: S/F her geçişte tur süresi (`lap {lap, s, best}`); sektör sınırı `sector_end` kapıları + S/F (`sector {lap, sector, s, best}`);
+  en iyi tur / sektör izlenir; ara süreler (`splits`, kontrol noktası başına t − t0) hayalet farkı için.
+- **Çarpışma** (§18 çarpışma kuralının parkur ayarı): dron yarıçapı 0,25 m şişirilmiş ilkellerle doğru parçası örneklemesi (0,35 m) + ızgara kaba
+  eleme; temas başlangıcı sayılır (aynı temas ve 1 sn içinde yeni sayım yok). Kural (`crash_rule`): **`penalty`** (varsayılan; + `crash_penalty_s`,
+  varsayılan 2 sn, araç devam eder) · **`reset`** (sunucu oyuncu oturumuna Sıfırla → başlangıca döner, ilerleme korunur — halka yarışındaki gibi; süre
+  işlemeye devam eder) · **`continue`** (yalnız sayılır). SITL engelleri bilmez; çarpışma sunucu çekirdeğinde (oyun kuralı) hesaplanır.
+- Toplam süre = son S/F − yarış başlangıcı + ceza; sıralama ceza dahil süreyle. Hayalet örnekleri 10 Hz (`t, x, y, z, yaw, roll, pitch`).
+
+### 47.3 Yarış hattı, doğrulama, yapay zekâ pilot
+- `yaris_hatti(c)`: her kapı için önceki kapının çıkışı → `via` ara noktaları → giriş (normal boyunca 3 m önce; tünelde `a`) → merkez → çıkış (dalışta
+  yukarıdan girer, aşağıdan çıkar). Bir tur uzunluğu = `length_m`.
+- `parkur_dogrula(c)` (testlerde 8 parkurun hepsi boş liste döndürür): her kapı açıklığı engelsiz (içten 0,3 m pay, düzlemin ±0,4 m'sinde 3×3×3 örnek),
+  yarış hattı tüm engellerden ≥ 0,45 m (dron yarıçapı dahil) ve zeminden ≥ 0,8 m, ilk kapı başlangıç/bitiş, 8 başlangıç noktası engelsiz; ayrıca kapı
+  merkezleri başka kapı çerçevesinin içinde değil.
+- **Bot** (`BotPilot.parkur_adim`): sıradaki kontrol noktasının `line` parçasında en yakın izdüşümden L = 2,5 + 0,35·v m ileri bakış noktasına 3B hız
+  komutu (`_komut3`: yatay dönüş oranı seviye × 2,5, dikey ±3,5/3 m/s); hız = parkurun `bot_vmax` × seviye oranı (Kolay 0,58, Normal 0,79, Zor 1,0),
+  öngörülü dönüş sınırı v ≤ √(ivme·R) (R = L / 2 sin(θ/2), θ: L ve 2L ilerideki doğrultu farkı; ivme sahte 6, gerçek ArduCopter GUIDED 3 m/s²),
+  kapıya 6 m'den yakında %80; kapı merkezinden seviye kaçıklığı (açıklığın yarısı × sapma × 0,45). Kapının düzlemini açıklığın yakınından sayılmadan
+  geçerse (ya da hattın sonunu aşarsa) eksendeki çıkış noktasına, oradan girişe döner ve yeniden dener. Kalkış irtifası = başlangıç kapısının yüksekliği;
+  sahte kinematikte kalkış sırasında yerinde tırmanma hız komutu (sahte aracın "havada daire" davranışı alçak irtifada devreye girmesin; gerçek
+  ArduCopter'a gönderilmez — yerdeyken hız hedefi GUIDED kalkışını iptal eder). Sahte kinematikte (6 m/s² ivme) 8 parkurun hepsinde üç seviye de hiç
+  kapı kaçırmadan, çarpmadan bitirir; Zor < Normal < Kolay (`tests.test_flightsim_fpvcourse`, sn): hangar 89,3 / 110,4 / 150,8 · orman 84,5 / 104,4 /
+  140,5 · şehir 69,9 / 85,8 / 115,4 · stadyum 123,6 / 147,3 / 194,7 · rafineri 89,1 / 107,8 / 143,9 · kanyon 39,2 / 48,0 / 64,3 · ahşap ev 76,1 /
+  92,7 / 127,7 · beton bina 66,7 / 80,8 / 110,9.
+- **Gerçek SITL** (`.venv/bin/python -m tests.fpvcourse_sitl`, ≈ 100 sn): kurucu + Zor kopter botu (ArduCopter SITL), stadyum, 1 tur, çarpma kuralı
+  `continue`: bot GUIDED + ARM (EKF hazır olana dek ~30 sn yineler) + 2,4 m kalkış, S/F → kapı → TÜNEL (2 temas, geçti) → bayrak → DALIŞ kapısı →
+  merdiven kapı: 6 kontrol noktası sırayla geçildi, kaçırma yok (betik ≥ 3 ister; sonra iptal eder). SITL süreçleri PID ile denetlenir.
+
+### 47.4 Karşılaşma çekirdeği (`flightsim_match_core`)
+- Tür `TUR_FPV = 'fpv'` (`TURLER` rings | dogfight | fpv). Ayar `flightsim_fpv.fpv_ayar_dogrula(r, tip)`: `{course_id, laps 1–10, crash_rule,
+  crash_penalty_s 0–30, miss_penalty_s 0–30, time_limit_min 2–30, seed}`; yalnız çok rotorlu (`multirotor | hexarotor | helikopter`).
+  Dünya (`dunya_ayari`): prosedürel, DÜZ merkez (pist/bina/ağaç/su yok), saat ve sis parkurdan, kapalı mekanda rüzgâr 0, `world.fpv_course = cid`
+  (`flightsim.world_dogrula` kabul eder; istemci parkur sahnesini kurar).
+- YARIS'ta her oyuncuya `ParkurIzleyici`; olaylar WS'e: `ring {lap, gate, pen_s}`, `lap`, `sector`, `miss`, `hit {rule, mat, pen_s}`, `reset`,
+  `finish {total_s, pen_s}`; `pos` satırlarında `lap`, `pen`; oyuncu satırında `fpv` özeti, `pen_s`, `lap`; ilerleme (`rings`) kaçırılanlar dahil.
+- **Bitiş**: herkes bitirince `hepsi_bitirdi` (tek kişilikte `tamamlandi`); ilk bitirenden sonra diğerlerine `SON_CAGRI_S` = 30 sn (`son_cagri`);
+  süre sınırı (`sure`). Kazanan ceza dahil en kısa süre. Sonuçta `kind: 'fpv'`, `fpv {course_id, laps, crash_rule}`, `solo`.
+- **Tek kişilik** (tüm türlerde `min_oyuncu`: it dalaşı 2, diğerleri 1): davetli ve bot olmadan kurulan karşılaşma (`tek_kurulum`) hemen HAZIRLIK →
+  geri sayım → yarış (zaman denemesi); halka yarışında ilk/tek bitiren → BITTI. Davetliyle kurulup herkes ayrılırsa kendiliğinden tek kişilik
+  BAŞLAMAZ (eskisi gibi iptal); kurucu "Gelmeyenler olmadan başlat" derse (60 sn sonra) yalnız kendisiyle başlar. HAZIRLIK / GERI_SAYIM'da biri
+  düşerse kalan oyuncu(lar)la sürer. Sonuçta `solo: true`.
+
+### 47.5 HEPGO çalışma zamanı, REST, DB
+- `POST /api/drone/sim/matches {settings, kind: 'fpv', fpv: {...}, invite: [], bots: []}` (davet+bot boş → tek kişilik; it dalaşı 400). Sunucu
+  `settings.world`'ü parkurun dünyasıyla değiştirir. Başlangıç noktaları parkurun başlangıç pedi ızgarası (`parkur_baslangiclari`: `cols` sütun,
+  `gap` m, satırlar 2,5 m geride). `reset` olayında oyuncu oturumuna `reset` komutu. Meta: `limits.fpv {types, laps, crash_rules, penalty_s,
+  time_limit_min, courses, defaults}`, `limits.min_players`.
+- **Katalog / skor / hayalet** (`fpv_router`, yetki `drone.sim`): `GET /api/drone/sim/fpv/courses` (özet + firma rekoru + benim en iyim + koşu sayısı)
+  · `GET /fpv/courses/{cid}?laps=` (tam tanım + firma içi skor tablosu: kullanıcı başına en iyi, aynı tur sayısı) · `GET /fpv/courses/{cid}/ghost?laps=&user_id=`
+  (kişisel rekor hayaleti; `user_id` ile firma içi başka pilotun en iyisi).
+- **Kayıt**: BITTI'de (sonuç olayı yayından önce) bitiren her İNSAN oyuncu için `drone_fpv_records` satırı (süre ceza dahil, en iyi tur, tur/sektör
+  süreleri, ara süreler, kaçırma/çarpma/ceza, çarpma kuralı, hayalet, solo); sonuç satırına `pb_prev` (önceki kişisel en iyi) ve `new_pb`.
+- **DB göçü (idempotent; `app/db.py` SCHEMA `CREATE TABLE IF NOT EXISTS`)**: `drone_fpv_records (id, course_id, user_id → users CASCADE, match_id →
+  drone_sim_matches SET NULL, type, laps, time_s, best_lap_s, lap_times, sectors, splits, misses, hits, penalty_s, crash_rule, ghost, solo,
+  created_at)` + indeksler `(course_id, laps, time_s)`, `(user_id, course_id)`. FPV karşılaşmasında ayar `drone_sim_matches.game_cfg` (it dalaşı
+  gibi; `rings_cfg = '{}'`), `kind = 'fpv'`, `rings` = kontrol noktaları.
+
+### 47.6 Hayalet (ghost) kaydı
+`hayalet_kodla(ornekler)` → `'g1.' + base64url(...)`: önce örnek sayısı, sonra her örnek için 7 alanın bir öncekine farkı zigzag varint olarak —
+t·100 (10 ms), x/y/z·50 (2 cm), yaw/roll/pitch·500 (2 mrad); yaw farkı en kısa yay (mod 3142), çözücü yaw'ı tam sayı uzayında mod 3142 ile
+[−π, π)'ye indirir (sarmalar birikmez). 10 Hz × 60 sn ≈ 5,6 kB. JS çözücüsü `flightsim_fpvcourse.js decodeGhost` (birebir; node testi).
+
+### 47.7 Ön yüz (HEPGO; ortak modüller SIMUMAV'da da kullanılır)
+- **`flightsim_fpvcourse.js`** (saf, node testli): `decodeGhost` (Python `hayalet_coz` ile birebir), `ghostPoseAt`, `ghostDelta`, `fmtLap`/`fmtDelta`,
+  `sectorClass` (mor genel en iyi / yeşil kişisel en iyi / sarı yavaş), `sectorTimesFromSplits`, kapı eksenleri/geçişi (Python ile aynı), başlangıç
+  ızgarası, ilerleme (`gateStates`: next / soon / soon2 / done), galeri kartı + kuş bakışı SVG (`courseSvg`), çubuk konumu (`stickPositions`, mod-2),
+  tercihler (`fs.fpv.sticks`, `fs.fpv.ghost`), tek kişilik doğrulama (`opponentsErrorSolo`, `soloAllowed`), `FPV_TEXTS` (127 `fpv.*` anahtarı).
+- **`flightsim_fpvcourse3d.js`** `createFpvCourseLayer(sim, course, {checkpoints, quality, guide})`: tek sahne/çizici (flightsim3d), mekan atmosferi
+  (`envAtmosphere`: hangar içi sıcak tavan lambaları, sisli altın saat, gece stadyum projektörleri, kanyon, puslu şehir; §43 kademesine göre sis/gölge/
+  dekor), delikli kutular delik çevresi parçalarına bölünür (`splitBoxHoles`), aynı geometri+malzeme INSTANCING; NEON kapılar — sıradaki YEŞİL
+  (nabız), sonraki 1–2 PEMBE/MOR, geçilenler sönük; başlangıçta yerde parlayan yeşil halka; sıradakine ince kılavuz çizgi; bayrak/slalom direkleri ve
+  dönüş oku, tünel, yatay dalış kapısı, merdiven kapı; hayalet dron (yarı saydam, yarış saatiyle). API `setProgress / setGhost / update / flash /
+  setQuality / setGuide / info / stats / dispose`. Ölçüm (Yüksek, 1440×794): sahne 99–130 çizim çağrısı; katmanın kendi payı 5,7 k (hangar) … 33 k
+  (orman) üçgen, 4–14 InstancedMesh.
+- **`flightsim_fpvcourse_hud.js`** `createFpvCourseHud(stage, …)`: tur x/y, anlık tur, en iyi tur, sektör kutuları, hayalete göre ± fark, ceza,
+  kaçırma/çarpma bildirimi, sıradaki kapı çerçevesi/kenar oku + mesafe (FPV OSD açıkken de), altta iki ÇUBUK-KONUMU göstergesi (aç/kapa).
+- **Ses** (`flightsim_sfx.js`): `lap`, `sector_best`, `pb` (kişisel rekor fanfarı), `miss`, `hit`, `ghost_ahead`, `ghost_behind`.
+- **Arayüz** (`flightsim_fpvcourse_ui.js`, `flightsim_match_ui.js`, `flightsim.js`): Yeni Karşılaşma "Tür ve kurallar"da üçüncü kart "FPV parkur yarışı"
+  + Hazır parkurlar galerisi (önizleme, mekan, uzunluk, kapı, zorluk, rekor/en iyim) + tur/çarpma kuralı/ceza/süre; Davet adımında "Tek başına (zaman
+  denemesi)"; Yeni Simülasyon'da "Hazır FPV parkurları" kartı → zaman denemesi; oturumda FPV katmanı + HUD + hayalet (match3d halkaları FPV'de kapalı);
+  sonuç: "Zaman denemesi sonucu" (süre, turlar, sektör tablosu, kaçırma/çarpma/ceza, KİŞİSEL REKOR rozeti + önceki rekorla fark, skor tablosundaki yer);
+  Karşılaşmalar sekmesinde "FPV parkur" türü + "Tek kişilik" rozeti; tek kişilik halka yarışı sonucu "Tamamlandı". Metinler 6 dil.
+- Testler: `node tests/test_flightsim_fpvcourse.mjs` (18). Görseller `./.venv/bin/python -m tests.fpvcourse_shots_hepgo [mekan…]` →
+  `/tmp/fpvcourse-shots/` (8 mekan × FPV + takip, galeri, Yeni Simülasyon kartı, tek kişilik davet/özet, HUD + hayalet, sonuç, Karşılaşmalar).

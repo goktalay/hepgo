@@ -5400,4 +5400,8 @@ registerCatalog('de', {
   "Kapatırsanız hiçbir bayram süslemesi gösterilmez": "Wenn aus, wird keine Feiertagsdekoration angezeigt",
   "Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.": "Automatisch: Ihre eingegebene Adresse oder der Firmenstandort, sonst Zeitzone und Browsersprache. Für den Standort wird keine Internetabfrage gemacht.",
   "Hicri takvime bağlı bayram tarihleri tahminidir; ülkeye göre bir gün kayabilir.": "Feiertage nach dem Hidschra-Kalender sind Schätzungen und können je nach Land um einen Tag abweichen.",
+  "Uçuş sahnesinde bayram süsleri": "Feiertagsdekoration in der Flugszene",
+  "Uçuşta ekran efekti gösterilmez; onun yerine 3B dünyada uçuşu engellemeyen süsler (koyunlar, fenerler, bayraklar …)": "Während des Flugs keine Bildschirmeffekte; stattdessen Dekoration in der 3D-Welt, die den Flug nicht behindert (Schafe, Laternen, Flaggen …)",
+  "Uçuş sahnesi bayram süsleri açıldı": "Feiertagsdekoration in der Flugszene eingeschaltet",
+  "Uçuş sahnesi bayram süsleri kapatıldı": "Feiertagsdekoration in der Flugszene ausgeschaltet",
 });

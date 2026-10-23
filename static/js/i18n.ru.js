@@ -5400,4 +5400,8 @@ registerCatalog('ru', {
   "Kapatırsanız hiçbir bayram süslemesi gösterilmez": "Если выключить, украшения не показываются",
   "Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.": "Автоматически: введённый вами адрес или местоположение компании, иначе часовой пояс и язык браузера. Запросов в интернет для определения места нет.",
   "Hicri takvime bağlı bayram tarihleri tahminidir; ülkeye göre bir gün kayabilir.": "Даты праздников по хиджре приблизительны и могут сдвигаться на день в зависимости от страны.",
+  "Uçuş sahnesinde bayram süsleri": "Праздничное оформление в сцене полёта",
+  "Uçuşta ekran efekti gösterilmez; onun yerine 3B dünyada uçuşu engellemeyen süsler (koyunlar, fenerler, bayraklar …)": "Во время полёта экранных эффектов нет; вместо них — украшения в 3D-мире, не мешающие полёту (овцы, фонари, флаги …)",
+  "Uçuş sahnesi bayram süsleri açıldı": "Праздничное оформление сцены полёта включено",
+  "Uçuş sahnesi bayram süsleri kapatıldı": "Праздничное оформление сцены полёта выключено",
 });

@@ -684,4 +684,8 @@ registerCatalog('en', {
   "Kapatırsanız hiçbir bayram süslemesi gösterilmez": "When off, no holiday decorations are shown",
   "Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.": "Automatic: your entered address or company location, otherwise your time zone and browser language. No internet lookup is made for location.",
   "Hicri takvime bağlı bayram tarihleri tahminidir; ülkeye göre bir gün kayabilir.": "Hijri-calendar holiday dates are estimates and may shift by a day depending on the country.",
+  "Uçuş sahnesinde bayram süsleri": "Flight scene holiday decorations",
+  "Uçuşta ekran efekti gösterilmez; onun yerine 3B dünyada uçuşu engellemeyen süsler (koyunlar, fenerler, bayraklar …)": "No screen effects during flight; instead, decorations in the 3D world that never obstruct flying (sheep, lanterns, flags …)",
+  "Uçuş sahnesi bayram süsleri açıldı": "Flight scene holiday decorations on",
+  "Uçuş sahnesi bayram süsleri kapatıldı": "Flight scene holiday decorations off",
 });

@@ -5400,4 +5400,8 @@ registerCatalog('ar', {
   "Kapatırsanız hiçbir bayram süslemesi gösterilmez": "عند الإيقاف لا تُعرض أي زينة للأعياد",
   "Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.": "تلقائي: العنوان الذي أدخلته أو موقع الشركة، وإلا منطقتك الزمنية ولغة المتصفح. لا يُجرى استعلام عبر الإنترنت لتحديد الموقع.",
   "Hicri takvime bağlı bayram tarihleri tahminidir; ülkeye göre bir gün kayabilir.": "تواريخ الأعياد وفق التقويم الهجري تقديرية وقد تختلف بيوم حسب البلد.",
+  "Uçuş sahnesinde bayram süsleri": "زينة الأعياد في مشهد الطيران",
+  "Uçuşta ekran efekti gösterilmez; onun yerine 3B dünyada uçuşu engellemeyen süsler (koyunlar, fenerler, bayraklar …)": "لا مؤثرات على الشاشة أثناء الطيران؛ بدلاً منها زينة في العالم ثلاثي الأبعاد لا تعيق الطيران (خراف، فوانيس، أعلام …)",
+  "Uçuş sahnesi bayram süsleri açıldı": "تم تفعيل زينة الأعياد في مشهد الطيران",
+  "Uçuş sahnesi bayram süsleri kapatıldı": "تم إيقاف زينة الأعياد في مشهد الطيران",
 });

@@ -108,7 +108,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
     location_work_hours_only: !!cur.location_work_hours_only,   // mobil: mesai dışında konumu kapat
-    holiday: { on: true, country: '', ...(cur.holiday || {}) },   // bayram temaları (static/js/holiday.js; varsayılan açık, ülke '' = otomatik)
+    holiday: { on: true, country: '', scene3d: true, ...(cur.holiday || {}) },   // bayram temaları (static/js/holiday.js; varsayılan açık, ülke '' = otomatik; scene3d: uçuş sahnesinde 3B süs)
   };
   let timer;
   const save = (msg = 'Ayarlar kaydedildi') => {
@@ -222,7 +222,9 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         codes.map(([c, n]) => h('option', { value: c, selected: c === s.holiday.country }, n)));
       sel.addEventListener('change', () => { s.holiday.country = sel.value; save('Bayram ülkesi güncellendi'); refresh(); });
       const cb = h('input', { type: 'checkbox', checked: s.holiday.on !== false });
-      cb.addEventListener('change', () => { s.holiday.on = cb.checked; save(cb.checked ? 'Bayram temaları açıldı' : 'Bayram temaları kapatıldı'); refresh(); });
+      const cb3 = h('input', { type: 'checkbox', checked: s.holiday.scene3d !== false, disabled: s.holiday.on === false });   // uçuş sahnesi 3B süsleri (flightsim_holiday3d.js)
+      cb.addEventListener('change', () => { s.holiday.on = cb.checked; cb3.disabled = !cb.checked; save(cb.checked ? 'Bayram temaları açıldı' : 'Bayram temaları kapatıldı'); refresh(); });
+      cb3.addEventListener('change', () => { s.holiday.scene3d = cb3.checked; save(cb3.checked ? 'Uçuş sahnesi bayram süsleri açıldı' : 'Uçuş sahnesi bayram süsleri kapatıldı'); });
       const cur0 = st.picked?.primary, nx = st.info?.next;
       const status = [cur0 && !cur0.preview ? t('Bugün: {n}', { n: cur0.name || fx.themeName(cur0.theme, L) }) : 'Bugün etkin bir bayram yok',
         nx ? t('Sıradaki: {n} · {d} gün sonra', { n: nx.name || fx.themeName(nx.theme, L), d: nx.in_days }) : null].filter(Boolean).join(' · ');
@@ -237,6 +239,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       }
       clear(wrap, card('Bayram temaları', 'Bayram ve resmî tatil günlerinde panoda hafif kutlama efektleri ve günde bir kez kutlama şeridi. Diğer sayfalarda ve Uçuş Simülatörü açıkken görünmez; “Hareketleri azalt” açıksa yalnız durağan köşe süsü çizilir.',
         h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, 'Bayram temaları açık'), h('small', null, 'Kapatırsanız hiçbir bayram süslemesi gösterilmez'))),
+        h('label', { class: 'set-toggle' }, cb3, h('span', null, h('b', null, 'Uçuş sahnesinde bayram süsleri'), h('small', null, 'Uçuşta ekran efekti gösterilmez; onun yerine 3B dünyada uçuşu engellemeyen süsler (koyunlar, fenerler, bayraklar …)'))),
         line('Ülke', 'Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.', sel),
         h('p', { class: 'small muted' }, status),
         pvRow,

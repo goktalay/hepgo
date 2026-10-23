@@ -142,6 +142,17 @@ function groundCanvas(type, n, wM, dM, r) {
 }
 
 // ---------------------------------------------------------------- katman
+// Bayram süsü engel bölgeleri [{x, y, r}] (yerel m): parkur alanı (env.size'ı kapsayan daire), her kapı/direk ve başlangıç pedi (8 oyuncu ızgarası)
+export function fpvKeepouts(course) {
+  const out = [];
+  const sz = course?.env?.size;
+  if (Array.isArray(sz) && sz.length >= 2) out.push({ x: 0, y: 0, r: Math.round(Math.hypot(Number(sz[0]) || 0, Number(sz[1]) || 0) / 2 + 12) });
+  for (const g of course?.gates || []) out.push({ x: Number(g.x) || 0, y: Number(g.y) || 0, r: Math.max(Number(g.w) || 3, Number(g.h) || 3) + 6 });
+  const st = course?.start;
+  if (st) out.push({ x: Number(st.x) || 0, y: Number(st.y) || 0, r: 15 });
+  return out;
+}
+
 export function createFpvCourseLayer(sim, course, o = {}) {
   const T = sim.three, scene = sim.scene;
   const root = new T.Group(); root.name = 'fpv-course';
@@ -662,6 +673,10 @@ export function createFpvCourseLayer(sim, course, o = {}) {
   const hideHome = () => scene.traverse(x => { if (x.name === 'fs-home-mark' && x.visible) { x.visible = false; homeHidden.add(x); } });
   hideHome();
   const unhook = sim.addFrameHook ? sim.addFrameHook(() => frame()) : null;
+  // bayram 3B süsleri (flightsim_holiday3d) parkur alanına, kapılara ve başlangıç pedine düşmesin: dış engel bölgeleri
+  const KEEP_KEY = 'fpvcourse';
+  const keepouts = fpvKeepouts(course);
+  sim.setDecorKeepouts?.(KEEP_KEY, keepouts);
 
   function setQuality(l) {
     level = l || 'high';
@@ -672,6 +687,7 @@ export function createFpvCourseLayer(sim, course, o = {}) {
 
   function dispose() {
     unhook?.();
+    sim.setDecorKeepouts?.(KEEP_KEY, null);
     if (fogObj && scene.fog === fogObj) scene.fog = fogSaved || null;
     for (const [x, v] of skyHidden) x.visible = v;
     for (const x of homeHidden) x.visible = true;

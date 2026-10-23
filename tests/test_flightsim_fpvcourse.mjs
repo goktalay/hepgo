@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { FPV_LIMITS, FPV_TEXTS, bestSectors, checkpointGate, courseSvg, decodeGhost, envAtmosphere, fmtDelta, fmtLap, fpvBody, fpvDefaults, fpvError, fpvPoints, fpvRow,
   galleryCard, gateAxes, gateCorners, gateCrossing, gateStates, ghostDelta, ghostPoseAt, isSolo, leaderboardPlace, makeFpvT, matchIsSolo, nextCheckpoint, opponentsErrorSolo,
   pbDelta, progressInfo, sectorClass, sectorTimesFromSplits, soloAllowed, startSlots, stars, stickPositions, sticksPref, ghostPref, upcoming } from '../static/js/modules/flightsim_fpvcourse.js';
-import { splitBoxHoles } from '../static/js/modules/flightsim_fpvcourse3d.js';
+import { fpvKeepouts, splitBoxHoles } from '../static/js/modules/flightsim_fpvcourse3d.js';
 import { SFX_EVENTS, sfxPlan, planLength } from '../static/js/modules/flightsim_sfx.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -275,5 +275,17 @@ test('bağlama: sihirbaz FPV kartı + tek kişilik, oturumda 3B + HUD + hayalet,
   const l3 = readFileSync(join(ROOT, 'static/js/modules/flightsim_fpvcourse3d.js'), 'utf8');
   assert.ok(!/new T\.WebGLRenderer|WebGLRenderer\(/.test(l3), 'yeni renderer açılmaz') ;
   assert.ok(/InstancedMesh/.test(l3) && /e\.vis === false\) return/.test(l3));
+});
+test('bayram süsü engel bölgeleri: parkur alanı + kapılar + başlangıç pedi; katman ve match3d setDecorKeepouts çağırır', () => {
+  const c = { env: { size: [60, 36] }, gates: [{ x: 10, y: -5, w: 3, h: 2 }, { x: -4, y: 6, w: 2, h: 2 }], start: { x: -22, y: -11 } };
+  const z = fpvKeepouts(c);
+  assert.equal(z.length, 4);
+  assert.ok(z[0].x === 0 && z[0].y === 0 && z[0].r >= Math.hypot(60, 36) / 2);
+  assert.ok(z[1].x === 10 && z[1].r >= 3 && z[3].x === -22 && z[3].r >= 10);
+  assert.deepEqual(fpvKeepouts({}), []);
+  const l3 = readFileSync(join(ROOT, 'static/js/modules/flightsim_fpvcourse3d.js'), 'utf8');
+  assert.ok(/sim\.setDecorKeepouts\?\.\(KEEP_KEY, keepouts\)/.test(l3) && /sim\.setDecorKeepouts\?\.\(KEEP_KEY, null\)/.test(l3));
+  const m3 = readFileSync(join(ROOT, 'static/js/modules/flightsim_match3d.js'), 'utf8');
+  assert.ok(/setDecorKeepouts\?\.\('match-starts'/.test(m3));
 });
 console.log(`\n${n} test geçti`);

@@ -3411,3 +3411,6 @@ t·100 (10 ms), x/y/z·50 (2 cm), yaw/roll/pitch·500 (2 mrad); yaw farkı en k�
   Karşılaşmalar sekmesinde "FPV parkur" türü + "Tek kişilik" rozeti; tek kişilik halka yarışı sonucu "Tamamlandı". Metinler 6 dil.
 - Testler: `node tests/test_flightsim_fpvcourse.mjs` (18). Görseller `./.venv/bin/python -m tests.fpvcourse_shots_hepgo [mekan…]` →
   `/tmp/fpvcourse-shots/` (8 mekan × FPV + takip, galeri, Yeni Simülasyon kartı, tek kişilik davet/özet, HUD + hayalet, sonuç, Karşılaşmalar).
+- **Bayram 3B süsleri ile uyum** (ana daldan birleşen `flightsim_holiday3d.js`): parkur katmanı `sim.setDecorKeepouts('fpvcourse', fpvKeepouts(course))`
+  ile parkur alanını (env.size'ı kapsayan daire), her kapı/direği ve başlangıç pedini süs yerleşiminden çıkarır (dispose'da kaldırır); `flightsim_match3d`
+  `setPlayers` oyuncuların kalkış noktalarını (`players[].start`) `'match-starts'` anahtarıyla bildirir (HEPGO + SIMUMAV; tüm karşılaşma türleri).

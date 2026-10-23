@@ -593,7 +593,7 @@ export function attachMatch({ stage, getSim, mid, me, sid, homeHref = '#/drone/s
     syncPlayers();
     if (typeof window !== 'undefined') window.__fsMatch = { layer, get match() { return M; }, clock, get sim() { return getSim(); } };   // teşhis (görsel betikler)
   };
-  const syncPlayers = () => layer?.setPlayers((M?.players || []).filter(p => ACTIVE.has(p.status)).map(p => ({ id: p.id, name: p.name, color: colorFor(M.players, p.id), plane: M.settings?.type === 'sabit_kanat' })));
+  const syncPlayers = () => layer?.setPlayers((M?.players || []).filter(p => ACTIVE.has(p.status)).map(p => ({ id: p.id, name: p.name, start: p.start, color: colorFor(M.players, p.id), plane: M.settings?.type === 'sabit_kanat' })));
   const ensureFpv = () => {   // §47
     if (!M || !isFpv(M) || fpv) return;
     fpv = attachFpvMatch({ stage, getSim, me, sfx: fx, getRc, getTele, fpvMenu });

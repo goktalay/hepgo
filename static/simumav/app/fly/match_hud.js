@@ -64,7 +64,7 @@ export function createMatchHud({ stage, getSim, startIntro = () => {}, getTele =
     sim.setPilots(others.map(p => ({ id: p.id, look: playerAvatar(p), home: sim.toLocal(p.start.lat, p.start.lon), yaw: p.start.yaw_deg != null ? Number(p.start.yaw_deg) * Math.PI / 180 : null,
       target: () => layer?.ghostPos?.(p.id) || null })), buildPilotRig);
   };
-  const syncPlayers = () => { layer?.setPlayers((M?.players || []).filter(p => ACTIVE.has(p.status)).map(p => ({ id: p.id, name: p.name, color: colorFor(M.players, p.id), plane: plane() }))); if (layer) syncPilots(); };
+  const syncPlayers = () => { layer?.setPlayers((M?.players || []).filter(p => ACTIVE.has(p.status)).map(p => ({ id: p.id, name: p.name, start: p.start, color: colorFor(M.players, p.id), plane: plane() }))); if (layer) syncPilots(); };
   // Yükseklik ölçeği: sunucu halkaları/konumları ortak ev irtifası (SITL) + eve göre yükseklikle verir; 3B sahnenin ev irtifası (homeAlt) prosedürel
   // dünyada null olabilir → sahneye eve göre yükseklik (agl / alt_rel) + sahnenin kendi homeAlt'ı ile verilir (halka ve araç aynı zeminde)
   const H0 = () => Number(getSim()?.homeAlt ?? 0) || 0;

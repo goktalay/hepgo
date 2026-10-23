@@ -218,6 +218,7 @@ app.include_router(flightsim_presets_router.router)
 from .routers import flightsim_match as flightsim_match_router  # noqa: E402 — Uçuş Simülatörü §33 çok oyunculu karşılaşma
 app.include_router(flightsim_match_router.router)
 app.include_router(flightsim_match_router.ws_router)
+app.include_router(flightsim_match_router.fpv_router)   # §47 hazır FPV parkurları (katalog, skor, hayalet)
 
 app.mount('/static', StaticFiles(directory=config.STATIC_DIR), name='static')
 

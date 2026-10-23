@@ -37,14 +37,16 @@ from pathlib import Path
 PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'app/flightsim_mission.py', 'app/flightsim_rec.py',
                'app/flightsim_bin.py', 'app/flightsim_replay.py', 'app/flightsim_runs.py', 'app/flightsim_models.py',
                'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py', 'app/flightsim_power.py', 'app/flightsim_icept.py', 'app/flightsim_targets.py', 'app/flightsim_gcs.py', 'app/flightsim_launcher.py',
-               'app/flightsim_servotrig.py', 'app/flightsim_match_core.py', 'app/flightsim_match_bot.py', 'app/flightsim_gpws.py', 'app/tlog.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar · §33/SIMUMAV §18 karşılaşma çekirdeği · §44 yapay zekâ pilot · §8.6 tlog araç seçimi (replay) · §42 uçuş uyarıları
+               'app/flightsim_servotrig.py', 'app/flightsim_match_core.py', 'app/flightsim_match_bot.py', 'app/flightsim_gpws.py', 'app/tlog.py',
+               'app/flightsim_fpv.py']   # §47 hazır FPV parkurları (parkurlar, kapı geçişi, çarpışma, hayalet) · §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar · §33/SIMUMAV §18 karşılaşma çekirdeği · §44 yapay zekâ pilot · §8.6 tlog araç seçimi (replay) · §42 uçuş uyarıları
 JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/fs_inputs.js', 'static/js/modules/flightlog_origin.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
             # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)
             'static/js/ui.js', 'static/js/i18n.js', 'static/js/icons.js', 'static/js/segicons.js', 'static/js/fa-icons.js', 'static/js/step3d.js',
             'static/js/engine3d.js', 'static/js/gcode3d.js', 'static/js/imgopt.js', 'static/img/google-logo.png', 'static/models/caymaz-sim.glb',
             'run-simumav.sh', 'deploy/simumav/**', 'docs/simumav.md', 'tests/test_simumav*', 'tests/simumav_*.py', 'tests/__init__.py',
-            'tests/match_bot.py']   # §18 karşılaşma testinin rota pilotu (yalnız test aracı)
+            'tests/match_bot.py',   # §18 karşılaşma testinin rota pilotu (yalnız test aracı)
+            'tests/test_flightsim_fpvcourse.py']   # §47 FPV parkur çekirdeği saf testleri (ortak)
 
 # HEPGO'ya özgü app/ modülleri: SIMUMAV ağacına girmemeli (ERP veritabanı/kullanıcı/yetki/akış). Zincirde çıkarsa UYARI.
 HEPGO_OZGU = {'main', 'db', 'config', 'auth', 'feed', 'users', 'rbac', 'permissions', 'tenants', 'mail', 'chat', 'notify',

@@ -1738,6 +1738,30 @@ CREATE TABLE IF NOT EXISTS drone_sim_matches (
     ended_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_drone_sim_matches_created ON drone_sim_matches(created_at);
+-- §47 HAZIR FPV PARKURLARI: kişisel süreler + hayalet (ghost). Parkur kodla tanımlıdır (app/flightsim_fpv.py; course_id metin). Satır: biten
+-- karşılaşmada (tek kişilik zaman denemesi ya da çok oyunculu FPV yarışı) bitiren her insan oyuncu için. Firma içi skor tablosu: kullanıcı başına en iyi.
+CREATE TABLE IF NOT EXISTS drone_fpv_records (
+    id          INTEGER PRIMARY KEY,
+    course_id   TEXT NOT NULL,                          -- hangar | forest | city | stadium | refinery | canyon | woodframe | concrete
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    match_id    INTEGER REFERENCES drone_sim_matches(id) ON DELETE SET NULL,
+    type        TEXT,                                   -- araç tipi (multirotor | hexarotor | helikopter)
+    laps        INTEGER NOT NULL,
+    time_s      REAL NOT NULL,                          -- toplam süre (yarış başlangıcından son S/F'ye; ceza dahil)
+    best_lap_s  REAL,
+    lap_times   TEXT,                                   -- JSON [s]
+    sectors     TEXT,                                   -- JSON [[s1, s2, …] her tur]
+    splits      TEXT,                                   -- JSON kontrol noktası ara süreleri (hayalet farkı)
+    misses      INTEGER NOT NULL DEFAULT 0,
+    hits        INTEGER NOT NULL DEFAULT 0,
+    penalty_s   REAL NOT NULL DEFAULT 0,
+    crash_rule  TEXT,
+    ghost       TEXT,                                   -- flightsim_fpv.hayalet_kodla ('g1.' + base64)
+    solo        INTEGER NOT NULL DEFAULT 0,             -- tek kişilik zaman denemesi
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_drone_fpv_records_course ON drone_fpv_records(course_id, laps, time_s);
+CREATE INDEX IF NOT EXISTS ix_drone_fpv_records_user ON drone_fpv_records(user_id, course_id);
 CREATE TABLE IF NOT EXISTS drone_sim_clients (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,

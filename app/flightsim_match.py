@@ -14,6 +14,10 @@ sunucuda (`core.ItDalasi`; her iki oyuncunun telemetrisi tele kancasından), ça
 §44 YAPAY ZEKÂ PİLOT: kurucu oluştururken (`bots`) ya da salonda (`POST /{id}/bot`) bot ekler; bot "geldi" sayılır, HAZIRLIK'ta KENDİ SITL oturumu
 açılır (karşılaşma tavanına sayılır; sahibi bot kimliği → insan komut veremez; uçuş kaydı yok), oturum HAZIR olunca hazırdır; YARIS'ta
 `flightsim_match_bot.BotSurucu` ARM + kalkış + 5 Hz GUIDED komutlarıyla uçurur. Bot kazanırsa `winner_id` NULL (kullanıcı değil; sonuç JSON'unda).
+§47 FPV PARKUR YARIŞI (`kind: 'fpv'`): hazır parkurun kontrol noktaları (`flightsim_fpv.kontrol_noktalari`) halka yerine; başlangıç pedi ızgarası
+(`parkur_baslangiclari`); çarpma kuralı `reset` olayında oyuncu aracına Sıfırla; bitişte insan oyuncuların süreleri + hayalet kaydı
+`drone_fpv_records`'a yazılır, sonuç satırlarına kişisel rekor (önceki en iyi, yeni rekor mu) eklenir. Tek kişilik karşılaşma (davetli/bot yok)
+= zaman denemesi (halka yarışı ve FPV parkuru).
 """
 import asyncio
 import json
@@ -21,6 +25,7 @@ import random
 import time
 
 from . import db, flightsim
+from . import flightsim_fpv as fpv
 from . import flightsim_match_bot as mbot
 from . import flightsim_match_core as core
 
@@ -76,6 +81,15 @@ class MatchRuntime:
             return
         durum_degisti = False
         for e in olaylar:
+            if e['t'] == 'result' and self.k.tur == core.TUR_FPV:
+                try:
+                    fpv_kayit_yaz(self.k, e['result'])   # §47 süreler + hayalet; satırlara kişisel rekor bilgisi
+                except Exception:   # noqa: BLE001
+                    pass
+            elif e['t'] == 'reset':   # §47 çarpma kuralı "sıfırla": aracı başlangıca döndür
+                s = self.sessions.get(e['id'])
+                if s is not None:
+                    asyncio.get_running_loop().create_task(_sifirla(s))
             self._yay(e)
             if e['t'] == 'state':
                 durum_degisti = True
@@ -102,6 +116,8 @@ class MatchRuntime:
         pist = (self.settings.get('world') or {}).get('runway_heading') or 0
         if k.tur == core.TUR_IT:   # §41: rol başına (kaçan önde)
             x, y, yaw = core.it_baslangiclari(k.halka_ayar, self.settings['type'], pist)[o.rol or core.KOVALAYAN]
+        elif k.tur == core.TUR_FPV:   # §47: başlangıç pedi ızgarası
+            x, y, yaw = fpv.parkur_baslangiclari(fpv.parkur(k.halka_ayar['course_id']), n)[(o.sira_no or 0) % n]
         else:
             noktalar = core.baslangic_noktalari(n, self.settings['type'], pist, hedef=(k.halkalar[0]['x'], k.halkalar[0]['y']) if k.halkalar else None)
             x, y, yaw = noktalar[o.sira_no % len(noktalar)]
@@ -160,7 +176,7 @@ class MatchRuntime:
             pass
         if self.k.durum == core.YARIS and tele.get('lat') is not None:
             self.isle(self.k.konum(uid, tele['lat'], tele['lon'], float(tele.get('alt_msl') or 0), time.time(), tele.get('groundspeed'),
-                                   heading=tele.get('heading'), pitch=tele.get('pitch')))
+                                   heading=tele.get('heading'), pitch=tele.get('pitch'), roll=tele.get('roll'), yaw=tele.get('yaw')))
 
     def pos_cercevesi(self, now):
         p = []
@@ -169,8 +185,9 @@ class MatchRuntime:
                 continue
             iz = o.iz
             p.append({'id': o.uid, **{k: (round(v, 7) if k in ('lat', 'lon') else round(v, 3)) if isinstance(v, float) else v for k, v in o.poz.items()},
-                      'rings': len(iz.gecisler) if iz else 0, 'next': (iz.sira + 1) if iz and not iz.bitti else None,
-                      'dist': round(iz.mesafe, 1) if iz and iz.mesafe is not None else None})
+                      'rings': (iz.sira if hasattr(iz, 'ozet') else len(iz.gecisler)) if iz else 0, 'next': (iz.sira + 1) if iz and not iz.bitti else None,
+                      'dist': round(iz.mesafe, 1) if iz and iz.mesafe is not None else None,
+                      **({'lap': iz.tur, 'pen': round(iz.ceza, 2)} if iz is not None and hasattr(iz, 'ozet') else {})})
         out = {'t': 'pos', 'ts': round(now, 3), 'p': p}
         if self.k.tur == core.TUR_IT:   # §41 HUD: mesafe, koni açısı, tutma süresi, koruma, roller
             out['df'] = self.k.it_durum()
@@ -311,7 +328,8 @@ class MatchManager:
             cfg['seed'] = random.randint(1, 2 ** 31 - 2)
         merkez = {'lat': float(center['lat']), 'lon': float(center['lon']), 'alt': float(center['alt']) if center.get('alt') is not None else 0.0}
         it = tur == core.TUR_IT
-        halkalar = [] if it else core.halkalar_uret(cfg, merkez)
+        oyun_cfg = tur in (core.TUR_IT, core.TUR_FPV)   # ayar game_cfg sütununda (rings_cfg '{}')
+        halkalar = [] if it else fpv.kontrol_noktalari(cfg, merkez) if tur == core.TUR_FPV else core.halkalar_uret(cfg, merkez)
         now = time.time()
         # çekirdek doğrulaması (davetli sayısı, tavan; it dalaşında tam 2 oyuncu) DB satırından önce
         core.Karsilasma(0, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur, botlar=bot_kayit)
@@ -320,11 +338,11 @@ class MatchManager:
         def ekle():
             with db.connect() as conn:
                 cur = conn.execute('INSERT INTO drone_sim_matches (host_id, state, settings, rings_cfg, rings, players, created_at, kind, game_cfg) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                                   (host['id'], core.LOBI, json.dumps(settings, ensure_ascii=False), '{}' if it else json.dumps(cfg), json.dumps(halkalar), '[]', db.now(),
-                                    tur, json.dumps(cfg) if it else None))
+                                   (host['id'], core.LOBI, json.dumps(settings, ensure_ascii=False), '{}' if oyun_cfg else json.dumps(cfg), json.dumps(halkalar), '[]', db.now(),
+                                    tur, json.dumps(cfg) if oyun_cfg else None))
                 mid = cur.lastrowid
                 db.audit(conn, host['id'], 'Çok oyunculu karşılaşma oluşturdu', 'drone_sim_match', mid,
-                         f"{settings.get('type')} · {center.get('name')} · " + ('it dalaşı' if it else f"{cfg['count']} halka") + f" · davetli: {', '.join(a for _, a in davetliler) or '-'}"
+                         f"{settings.get('type')} · {center.get('name')} · " + ('it dalaşı' if it else f"FPV parkuru {cfg['course_id']} × {cfg['laps']} tur" if tur == core.TUR_FPV else f"{cfg['count']} halka") + f" · davetli: {', '.join(a for _, a in davetliler) or '-'}"
                          + (f" · yapay zekâ: {', '.join(b[1] for b in bot_kayit)}" if bot_kayit else ''))
                 conn.commit()
                 return mid
@@ -336,7 +354,7 @@ class MatchManager:
         r.task = loop.create_task(r.run())
         if davetliler:
             _davet_bildir([u for u, _ in davetliler], host, mid, settings, center, tur)
-        else:   # §44 yalnız yapay zekâ rakip(ler): beklenecek davetli yok → HAZIRLIK
+        else:   # §44 yalnız yapay zekâ rakip(ler) / §47 tek kişilik: beklenecek davetli yok → HAZIRLIK
             r.isle(k.lobi_denetle(time.time()))
         return r
 
@@ -356,10 +374,48 @@ def _davet_bildir(uids, host, mid, settings, center, tur=core.TUR_HALKA):
     try:
         from . import push
         push.send(list(uids), {'type': 'notif', 'title': 'Karşılaşma daveti', 'tag': f'notif-sim-match-{int(mid)}',
-                               'body': f"{host.get('name') or ''} sizi {'it dalaşına' if tur == core.TUR_IT else 'halka yarışına'} davet etti · {center.get('name') or ''}".strip(' ·'),
+                               'body': f"{host.get('name') or ''} sizi {'it dalaşına' if tur == core.TUR_IT else 'FPV parkur yarışına' if tur == core.TUR_FPV else 'halka yarışına'} davet etti · {center.get('name') or ''}".strip(' ·'),
                                'url': f'/app#/drone/sim/match/{int(mid)}'})
     except Exception:   # noqa: BLE001
         pass
+
+
+async def _sifirla(s):
+    try:
+        await s.komut('reset', {})
+    except Exception:   # noqa: BLE001
+        pass
+
+
+def fpv_kayit_yaz(k, sonuc, conn=None):
+    """§47 bitişte insan oyuncuların FPV parkur kaydı (`drone_fpv_records`): süre (ceza dahil), en iyi tur, tur/sektör süreleri, ara süreler,
+    kaçırma/çarpma, hayalet (sıkıştırılmış). Sonuç satırlarına `pb_prev` (önceki kişisel en iyi) ve `new_pb` eklenir (yerinde)."""
+    cid = k.halka_ayar.get('course_id')
+    laps = int(k.halka_ayar.get('laps') or 0)
+    satirlar = {p['id']: p for p in sonuc.get('standings') or []}
+    kendi = conn is None
+    conn = conn or db.connect()
+    try:
+        for o in k.oyuncular.values():
+            p = satirlar.get(o.uid)
+            if o.bot or o.uid <= 0 or p is None or o.iz is None or not hasattr(o.iz, 'ozet'):
+                continue
+            ozet = o.iz.ozet()
+            onceki = conn.execute('SELECT MIN(time_s) FROM drone_fpv_records WHERE course_id = ? AND user_id = ? AND laps = ?', (cid, o.uid, laps)).fetchone()[0]
+            p['pb_prev'] = onceki
+            if ozet['total_s'] is None:
+                p['new_pb'] = False
+                continue
+            p['new_pb'] = onceki is None or ozet['total_s'] < float(onceki)
+            conn.execute('INSERT INTO drone_fpv_records (course_id, user_id, match_id, type, laps, time_s, best_lap_s, lap_times, sectors, splits, misses, hits, '
+                         'penalty_s, crash_rule, ghost, solo, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                         (cid, o.uid, k.id, (k.ayar or {}).get('type'), laps, ozet['total_s'], ozet['best_lap_s'], json.dumps(ozet['lap_times']),
+                          json.dumps(ozet['sectors']), json.dumps(ozet['splits']), ozet['misses'], ozet['hits'], ozet['pen_s'], k.halka_ayar.get('crash_rule'),
+                          fpv.hayalet_kodla(o.iz.ornekler), 1 if sonuc.get('solo') else 0, db.now()))
+        conn.commit()
+    finally:
+        if kendi:
+            conn.close()
 
 
 def satir_dict(r):
@@ -367,7 +423,7 @@ def satir_dict(r):
     j = lambda v, d=None: json.loads(v) if v else d   # noqa: E731
     kind = r.get('kind') or core.TUR_HALKA
     return {'id': r['id'], 'state': r['state'], 'reason': r['reason'], 'host_id': r['host_id'], 'settings': j(r['settings'], {}),
-            'rings_cfg': j(r['game_cfg'], {}) if kind == core.TUR_IT else j(r['rings_cfg'], {}), 'rings': j(r['rings'], []), 'players': j(r['players'], []), 'result': j(r['result']),
+            'rings_cfg': j(r['game_cfg'], {}) if kind in (core.TUR_IT, core.TUR_FPV) else j(r['rings_cfg'], {}), 'rings': j(r['rings'], []), 'players': j(r['players'], []), 'result': j(r['result']),
             'winner': (j(r['result']) or {}).get('winner', r['winner_id']) if r['result'] else r['winner_id'], 'created_at': r['created_at'], 'started_at': r['started_at'], 'ended_at': r['ended_at'], 'live': False, 'kind': kind}
 
 

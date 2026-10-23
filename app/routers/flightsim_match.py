@@ -11,6 +11,9 @@ REST `/api/drone/sim/matches` (yetki `drone.sim`; oluşturma/katılma yazma izni
   §41 tür: POST '' {kind: 'rings' | 'dogfight', dogfight: {distance_m, alt_m, time_limit_min, range_m, cone_deg, hold_s, area_radius_m, roles}}
   §44 yapay zekâ pilot: POST '' {bots: [{level: 'easy' | 'normal' | 'hard'}]} (davet + bot ≥ 1; it dalaşında toplam tam 1 rakip; yalnız botlarla
        kurulursa hemen HAZIRLIK) · POST /{id}/bot {level} (kurucu, LOBI) · bot çıkarma /kick {user_id: <negatif bot kimliği>}
+  §47 FPV PARKUR YARIŞI: POST '' {kind: 'fpv', fpv: {course_id, laps?, crash_rule?, crash_penalty_s?, miss_penalty_s?, time_limit_min?}} (yalnız
+       çok rotorlu; dünya parkurdan) · TEK KİŞİLİK: davet ve bot boş → zaman denemesi (halka yarışı ve FPV; it dalaşı tam 2 oyuncu)
+  §47 parkur kataloğu / skor / hayalet: GET /fpv/courses · GET /fpv/courses/{cid} · GET /fpv/courses/{cid}/ghost?user_id= (kişisel rekor hayaleti)
 WS `/ws/drone/match/{id}` (oturum çerezi; yalnız oyuncular): hello {match, me, chat} · match (anlık görüntü) · player · state · countdown · pos (10 Hz)
   · ring · finish · wrong_way · result · chat. İstemci → ping, ready (3B dünya hazır), chat {text}.
 """
@@ -21,7 +24,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_match, flightsim_presets
+from .. import auth, db, drone_hub, flightsim, flightsim_fpv, flightsim_match, flightsim_presets
 from .. import flightsim_match_core as core
 from .flightsim import MODUL, _centers
 
@@ -39,6 +42,7 @@ class MatchIn(BaseModel):
     kind: Optional[str] = core.TUR_HALKA      # §41 'rings' | 'dogfight'
     dogfight: Optional[dict] = None
     bots: Optional[list] = None               # §44 [{level}] yapay zekâ pilotlar
+    fpv: Optional[dict] = None                # §47 {course_id, laps, crash_rule, crash_penalty_s, miss_penalty_s, time_limit_min}
 
 
 class BotIn(BaseModel):
@@ -79,10 +83,24 @@ def meta(user=Depends(sim_user), conn=db.DB):
                                                     'range_m': list(core.IT_MENZIL), 'cone_deg': list(core.IT_KONI), 'hold_s': list(core.IT_TUTMA),
                                                     'area_radius_m': list(core.IT_ALAN), 'roles': list(core.IT_ROLLER), 'guard_s': core.KORUMA_S,
                                                     'defaults': {'dikey': core.it_ayar_varsayilan('multirotor'), 'ucak': core.it_ayar_varsayilan('sabit_kanat')}},
-           'bot': {'levels': list(core.BOT_SEVIYELER), 'names': list(core.BOT_ADLARI), 'colors': list(core.BOT_RENKLERI), 'default': 'normal'}}
+           'bot': {'levels': list(core.BOT_SEVIYELER), 'names': list(core.BOT_ADLARI), 'colors': list(core.BOT_RENKLERI), 'default': 'normal'},
+           'fpv': fpv_limits(), 'min_players': {k: core.min_oyuncu(k) for k in core.TURLER}}
     return {'users': [{'id': u['id'], 'full_name': u['full_name'], 'username': u.get('username'), 'pilot': u.get('pilot')} for u in _davetliler(conn, user['id'])],
             'limits': lim, 'capacity': {'max': flightsim.MATCH_MAX_SESSIONS, 'used': flightsim_match.MANAGER.ayrilmis_slot()},
             'can_create': MODUL in user.get('write_modules', [])}
+
+
+def fpv_limits():
+    F = flightsim_fpv
+    return {'types': list(F.FPV_TIPLER), 'laps': list(F.TUR), 'crash_rules': list(F.CARPMA_KURALLARI), 'penalty_s': list(F.CEZA_S),
+            'time_limit_min': list(F.SURE_DK), 'courses': F.parkur_listesi(), 'defaults': F.fpv_ayar_varsayilan()}
+
+
+def _fpv_cfg(r, tip):
+    try:
+        return flightsim_fpv.fpv_ayar_dogrula(r or {}, tip)
+    except flightsim_fpv.FpvHata as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post('/rings-preview')
@@ -126,11 +144,15 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
         raise HTTPException(400, 'Karşılaşmada bu araç tipi yok (halkalar havada; kara aracı seçilemez)')
     tur = body.kind or core.TUR_HALKA
     if tur not in core.TURLER:
-        raise HTTPException(400, "kind 'rings' | 'dogfight' olmalı")
-    try:
-        rcfg = core.it_ayar_dogrula(body.dogfight, settings['type']) if tur == core.TUR_IT else core.halka_ayar_dogrula(body.rings, settings['type'])
-    except core.MacHata as e:
-        _hata(e)
+        raise HTTPException(400, "kind 'rings' | 'dogfight' | 'fpv' olmalı")
+    if tur == core.TUR_FPV:   # §47 hazır parkur: ayar + parkurun dünyası (düz prosedürel zemin, ortam)
+        rcfg = _fpv_cfg(body.fpv, settings['type'])
+        settings['world'] = flightsim_fpv.dunya_ayari(rcfg['course_id'], settings.get('world'))
+    else:
+        try:
+            rcfg = core.it_ayar_dogrula(body.dogfight, settings['type']) if tur == core.TUR_IT else core.halka_ayar_dogrula(body.rings, settings['type'])
+        except core.MacHata as e:
+            _hata(e)
     if not isinstance(body.invite, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in body.invite):
         raise HTTPException(400, 'invite kullanıcı kimlikleri listesi olmalı')
     botlar = _bot_seviyeleri(body.bots)
@@ -156,7 +178,73 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
         r = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, s, center, rcfg, davet, tur, botlar)
     except core.MacHata as e:
         _hata(e)
+    except flightsim_fpv.FpvHata as e:
+        raise HTTPException(400, str(e))
     return r.anlik()
+
+
+# ---------------------------------------------------------------- §47 hazır FPV parkurları: katalog, skor tablosu, hayalet
+fpv_router = APIRouter(prefix='/api/drone/sim/fpv')
+
+
+def _skor_tablosu(conn, cid, laps, limit=10):
+    """Firma içi: kullanıcı başına en iyi süre (aynı tur sayısı)."""
+    rows = db.rows(conn.execute(
+        'SELECT r.user_id, u.full_name AS name, MIN(r.time_s) AS time_s FROM drone_fpv_records r JOIN users u ON u.id = r.user_id '
+        'WHERE r.course_id = ? AND r.laps = ? GROUP BY r.user_id ORDER BY time_s LIMIT ?', (cid, laps, limit)))
+    out = []
+    for k, r in enumerate(rows):
+        d = db.row(conn.execute('SELECT best_lap_s, misses, hits, penalty_s, created_at, type FROM drone_fpv_records WHERE course_id = ? AND laps = ? AND user_id = ? '
+                                'ORDER BY time_s LIMIT 1', (cid, laps, r['user_id']))) or {}
+        out.append({'rank': k + 1, 'user_id': r['user_id'], 'name': r['name'], 'time_s': r['time_s'], **d})
+    return out
+
+
+def _benim(conn, cid, laps, uid):
+    return db.row(conn.execute('SELECT id, time_s, best_lap_s, lap_times, sectors, misses, hits, penalty_s, created_at FROM drone_fpv_records '
+                               'WHERE course_id = ? AND laps = ? AND user_id = ? ORDER BY time_s LIMIT 1', (cid, laps, uid)))
+
+
+@fpv_router.get('/courses')
+def fpv_courses(user=Depends(sim_user), conn=db.DB):
+    out = []
+    for c in flightsim_fpv.parkur_listesi():
+        tab = _skor_tablosu(conn, c['id'], c['laps'], 1)
+        me = _benim(conn, c['id'], c['laps'], user['id'])
+        n = conn.execute('SELECT COUNT(*) FROM drone_fpv_records WHERE course_id = ?', (c['id'],)).fetchone()[0]
+        out.append({**c, 'record': tab[0] if tab else None, 'my_best': me['time_s'] if me else None, 'runs': n})
+    return {'courses': out, 'limits': fpv_limits()}
+
+
+@fpv_router.get('/courses/{cid}')
+def fpv_course(cid: str, laps: Optional[int] = None, user=Depends(sim_user), conn=db.DB):
+    try:
+        c = flightsim_fpv.parkur(cid)
+    except flightsim_fpv.FpvHata as e:
+        raise HTTPException(404, str(e))
+    n = int(laps or c['laps'])
+    me = _benim(conn, cid, n, user['id'])
+    if me:
+        me = {**me, 'lap_times': json.loads(me['lap_times'] or '[]'), 'sectors': json.loads(me['sectors'] or '[]')}
+    return {'course': c, 'leaderboard': _skor_tablosu(conn, cid, n), 'my_best': me, 'laps': n}
+
+
+@fpv_router.get('/courses/{cid}/ghost')
+def fpv_ghost(cid: str, laps: Optional[int] = None, user_id: Optional[int] = None, user=Depends(sim_user), conn=db.DB):
+    """Kişisel rekor hayaleti (varsayılan: kendim; `user_id` → firma içi başka kullanıcının en iyisi — skor tablosundaki gibi). Yoksa 404."""
+    try:
+        c = flightsim_fpv.parkur(cid)
+    except flightsim_fpv.FpvHata as e:
+        raise HTTPException(404, str(e))
+    n = int(laps or c['laps'])
+    uid = int(user_id or user['id'])
+    r = db.row(conn.execute('SELECT r.time_s, r.splits, r.ghost, r.lap_times, r.best_lap_s, r.created_at, u.full_name AS name FROM drone_fpv_records r '
+                            'JOIN users u ON u.id = r.user_id WHERE r.course_id = ? AND r.laps = ? AND r.user_id = ? AND r.ghost IS NOT NULL '
+                            'ORDER BY r.time_s LIMIT 1', (cid, n, uid)))
+    if not r:
+        raise HTTPException(404, 'Bu parkurda kayıt yok')
+    return {'course_id': cid, 'laps': n, 'user_id': uid, 'name': r['name'], 'time_s': r['time_s'], 'best_lap_s': r['best_lap_s'],
+            'lap_times': json.loads(r['lap_times'] or '[]'), 'splits': json.loads(r['splits'] or '[]'), 'ghost': r['ghost'], 'created_at': r['created_at']}
 
 
 def _bot_seviyeleri(bots):

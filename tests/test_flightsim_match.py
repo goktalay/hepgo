@@ -128,8 +128,21 @@ def siralama_testi():
 def durum_makinesi_testleri():
     cfg = core.halka_ayar_dogrula({'count': 2, 'seed': 3}, 'multirotor')
     H = core.halkalar_uret(cfg, MERKEZ)
-    assert hata_kodu(core.Karsilasma, 1, (10, 'Kurucu'), [], {}, cfg, MERKEZ, 0, H) == 'invalid'   # en az bir davetli
-    assert hata_kodu(core.Karsilasma, 1, (10, 'Kurucu'), [(10, 'Kendisi')], {}, cfg, MERKEZ, 0, H) == 'invalid'   # kendini davet sayılmaz
+    # §47 tek kişilik: davetli/bot yok → kurulur, lobi denetimi hemen HAZIRLIK; tek oyuncu hazır → geri sayım → yarış → bitirince BITTI
+    ks = core.Karsilasma(1, (10, 'Kurucu'), [], {}, cfg, MERKEZ, 0, H)
+    assert ks.durum == core.LOBI and ks.tek_kurulum
+    assert ks.lobi_denetle(1)[-1]['state'] == core.HAZIRLIK
+    assert ks.hazir(10, 2)[-1]['t'] == 'countdown' and ks.durum == core.GERI_SAYIM
+    ks.tik(2 + core.GERI_SAYIM_S)
+    assert ks.durum == core.YARIS
+    ev, tt = [], ks.baslangic_t
+    for hh in H:
+        for f in (-4, 4):
+            tt += 5
+            ev = ks.konum(10, *core.latlon(MERKEZ['lat'], MERKEZ['lon'], hh['x'] + hh['nx'] * f, hh['y'] + hh['ny'] * f), hh['alt_msl'], tt)
+    assert ks.durum == core.BITTI and ks.kazanan == 10 and ev[-1]['result']['solo'] is True and ev[-1]['result']['standings'][0]['time_s'] is not None, ev
+    assert hata_kodu(core.Karsilasma, 1, (10, 'Kurucu'), [], {}, core.it_ayar_dogrula({}, 'multirotor'), MERKEZ, 0, [], tur='dogfight') == 'invalid'   # it dalaşı tam 2
+    assert core.Karsilasma(1, (10, 'Kurucu'), [(10, 'Kendisi')], {}, cfg, MERKEZ, 0, H).tek_kurulum   # kendini davet sayılmaz (→ tek kişilik)
     assert hata_kodu(core.Karsilasma, 1, (10, 'K'), [(i, f'O{i}') for i in range(20, 28)], {}, cfg, MERKEZ, 0, H) == 'limit'   # 9 oyuncu
     k = core.Karsilasma(1, (10, 'Kurucu'), [(20, 'Ayşe'), (30, 'Mehmet')], {'type': 'multirotor'}, cfg, MERKEZ, 1000.0, H)
     assert k.durum == core.LOBI and k.oyuncu(10).durum == core.GELDI and k.oyuncu(20).durum == core.DAVETLI
@@ -187,8 +200,12 @@ def durum_makinesi_testleri():
     k3.katil(20, 3)
     assert k3.durum == core.HAZIRLIK and len(k3.aktifler()) == 2
     k3.hazir(10, 4)
-    ev = k3.tik(3 + core.HAZIRLIK_ZAMAN_ASIMI_S + 1)   # 20 hazırlanamadı → düşer → < 2 oyuncu → IPTAL
-    assert k3.oyuncu(20).durum == core.DUSTU and k3.durum == core.IPTAL and k3.neden == 'oyuncu_kalmadi', ev
+    ev = k3.tik(3 + core.HAZIRLIK_ZAMAN_ASIMI_S + 1)   # 20 hazırlanamadı → düşer → §47 kalan tek oyuncu (hazır) zaman denemesiyle sürer
+    assert k3.oyuncu(20).durum == core.DUSTU and k3.durum == core.GERI_SAYIM, ev
+    k3b = core.Karsilasma(31, (10, 'K'), [(20, 'A')], {}, cfg, MERKEZ, 0.0, H)
+    k3b.katil(20, 1)
+    ev = k3b.tik(1 + core.HAZIRLIK_ZAMAN_ASIMI_S + 1)   # kimse hazır değil → ikisi de düşer → IPTAL
+    assert k3b.durum == core.IPTAL and k3b.neden == 'oyuncu_kalmadi', ev
     k4 = core.Karsilasma(4, (10, 'K'), [(20, 'A')], {}, cfg, MERKEZ, 0.0, H)
     assert k4.ayril(10, 5)[0]['state'] == core.IPTAL and k4.neden == 'kurucu_ayrildi'
     k5 = core.Karsilasma(5, (10, 'K'), [(20, 'A'), (30, 'B')], {}, cfg, MERKEZ, 0.0, H)
@@ -197,7 +214,11 @@ def durum_makinesi_testleri():
     ev = k5.zorla_baslat(10, core.LOBI_ZORLA_S)
     assert k5.oyuncu(30).durum == core.DUSTU and k5.oyuncu(30).dusme_nedeni == 'gelmedi' and k5.durum == core.HAZIRLIK, ev
     k6 = core.Karsilasma(6, (10, 'K'), [(20, 'A')], {}, cfg, MERKEZ, 0.0, H)
-    assert k6.ayril(20, 1)[-1]['state'] == core.IPTAL   # tek davetli reddetti → kurucu yalnız → iptal
+    assert k6.ayril(20, 1)[-1]['state'] == core.IPTAL   # tek davetli reddetti → kurucu yalnız → iptal (kendiliğinden tek kişilik başlamaz)
+    k6b = core.Karsilasma(61, (10, 'K'), [(20, 'A')], {}, cfg, MERKEZ, 0.0, H)
+    assert k6b.zorla_baslatilabilir(core.LOBI_ZORLA_S)   # §47 kurucu yalnız gelmişse de "gelmeyenler olmadan başlat" → tek kişilik
+    ev = k6b.zorla_baslat(10, core.LOBI_ZORLA_S)
+    assert k6b.durum == core.HAZIRLIK and len(k6b.aktifler()) == 1, ev
     k7 = core.Karsilasma(7, (10, 'K'), [(20, 'A')], {}, cfg, MERKEZ, 0.0, H)
     assert k7.tik(core.LOBI_ZAMAN_ASIMI_S + 1)[0]['state'] == core.IPTAL and k7.neden == 'zaman_asimi'
     assert k7.iptal(99999) == []   # son durumdan çıkılmaz
@@ -425,7 +446,7 @@ def api_testleri():
             ayar = {'type': 'multirotor', 'center_id': c1['id'], 'world': {'mode': 'procedural', 'seed': 4}, 'camera': 'day',
                     'site': {'radar': True, 'station': True, 'eo': True}, 'targets': [{'model': 'x'}], 'drone_id': 999}   # yer kontrol / hedef / dron kaydı yok sayılır
             halka = {'count': 3, 'min_alt_m': 20, 'max_alt_m': 40, 'diameter_m': 10, 'radius_m': 150, 'seed': 11}
-            assert a.post(M, json={'settings': ayar, 'rings': halka, 'invite': []}).status_code == 400
+            # (§47: davetsiz/botsuz = tek kişilik zaman denemesi — fpv_api'de denenir)
             assert a.post(M, json={'settings': ayar, 'rings': halka, 'invite': [me['montaj']]}).status_code == 400   # simülatör yazma izni yok
             assert a.post(M, json={'settings': {**ayar, 'type': 'rover'}, 'rings': halka, 'invite': [me['ayse']]}).status_code == 400
             assert a.post(M, json={'settings': {**ayar, 'center_id': 9999}, 'rings': halka, 'invite': [me['ayse']]}).status_code == 400
@@ -522,8 +543,11 @@ def api_testleri():
                     assert ix[me['admin']]['rank'] == 3 and ix[me['admin']]['rings'] == 0 and ix[me['mehmet']]['rank'] == 2, rs['standings']
                     # kapanış: oturumlar kapanır, drone_sim_runs.match_id
                     assert bekle(lambda: all(flightsim.MANAGER.get(s) is None for s in sids.values()), sn=15)
+            def _runs():   # uçuş kayıtları oturum kapanışında arka planda yazılır (önceden zamanlamaya bağlı kırılgan)
+                with db.connect() as conn:
+                    return db.rows(conn.execute('SELECT owner_id, match_id FROM drone_sim_runs WHERE match_id = ?', (mid,)))
+            runs = bekle(lambda: (lambda r: r if len(r) >= 3 else None)(_runs()), sn=15) or _runs()
             with db.connect() as conn:
-                runs = db.rows(conn.execute('SELECT owner_id, match_id FROM drone_sim_runs WHERE match_id = ?', (mid,)))
                 row = db.row(conn.execute('SELECT * FROM drone_sim_matches WHERE id = ?', (mid,)))
             assert sorted(r['owner_id'] for r in runs) == sorted(me[n] for n in ('admin', 'ayse', 'mehmet')), runs
             assert row['state'] == 'BITTI' and row['winner_id'] == me['ayse'] and json.loads(row['result'])['winner'] == me['ayse'] and row['started_at'] and row['ended_at'], dict(row)
@@ -550,6 +574,7 @@ def api_testleri():
             assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=10)
             it_dalasi_api(a, p1, me, ayar, M)
             bot_api(a, p1, me, ayar, M)
+            fpv_api(a, p1, me, ayar, M)
             print('  API uçtan uca geçti (karşılaşma', mid, ')')
     finally:
         push.send = eski_send
@@ -566,7 +591,7 @@ def it_dalasi_api(a, p1, me, ayar, M):
     assert a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'dogfight': {**df, 'cone_deg': 80}, 'invite': [me['ayse']]}).status_code == 400
     assert a.post(M, json={'settings': ayar, 'kind': 'yaris', 'invite': [me['ayse']]}).status_code == 400
     meta = ok(a.get(f'{M}/meta'))
-    assert meta['limits']['kinds'] == ['rings', 'dogfight'] and meta['limits']['dogfight']['cone_deg'] == [15.0, 45.0], meta['limits'].get('dogfight')
+    assert meta['limits']['kinds'] == ['rings', 'dogfight', 'fpv'] and meta['limits']['dogfight']['cone_deg'] == [15.0, 45.0], meta['limits'].get('dogfight')
     m = ok(a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'dogfight': df, 'invite': [me['ayse']]}), 201)
     mid = m['id']
     assert m['kind'] == 'dogfight' and m['rings'] == [] and m['rings_cfg']['range_m'] == 150, m
@@ -633,6 +658,117 @@ def _bot_mac(a, M, govde):
     ss = {p['id']: flightsim.MANAGER.get(p['session_id']) for p in d['players']}
     assert all(bekle(lambda s=s: s is not None and s.state == 'HAZIR') for s in ss.values())
     return d, ss
+
+
+def fpv_api(a, p1, me, ayar, M):
+    """§47 HAZIR FPV PARKURLARI + TEK KİŞİLİK (HEPGO, sahte kinematik): meta/katalog, doğrulama 400'leri (sabit kanat, bilinmeyen parkur, kural),
+    tek kişilik FPV (davet/bot yok → hemen HAZIRLIK; dünya parkurdan) → yarış hattından tam tur → tamamlandi + kişisel rekor + drone_fpv_records
+    (hayalet çözülür) + skor tablosu + hayalet API; çarpma kuralı 'reset' → Sıfırla; FPV + Zor bot (bot parkuru izler, kaydı yok); tek kişilik halka
+    yarışı (hemen HAZIRLIK)."""
+    from app import db
+    from app import flightsim_fpv as F
+    from tests.match_bot import fpv_pilotu
+    eski_son = core.SON_CAGRI_S
+    core.SON_CAGRI_S = 3.0
+    try:
+        meta = ok(a.get(f'{M}/meta'))
+        assert meta['limits']['min_players'] == {'rings': 1, 'dogfight': 2, 'fpv': 1} and len(meta['limits']['fpv']['courses']) == 8
+        cs = ok(a.get('/api/drone/sim/fpv/courses'))
+        assert [c['id'] for c in cs['courses']] == list(F.PARKUR_IDLER) and cs['courses'][0]['record'] is None
+        assert a.get('/api/drone/sim/fpv/courses/yok').status_code == 404 and a.get('/api/drone/sim/fpv/courses/hangar/ghost').status_code == 404
+        assert ok(a.get('/api/drone/sim/fpv/courses/hangar'))['course']['obstacles']
+        fpv = {'course_id': 'woodframe', 'laps': 1}
+        assert a.post(M, json={'settings': {**ayar, 'type': 'sabit_kanat'}, 'kind': 'fpv', 'fpv': fpv, 'invite': []}).status_code == 400
+        assert a.post(M, json={'settings': ayar, 'kind': 'fpv', 'fpv': {'course_id': 'yok'}, 'invite': []}).status_code == 400
+        assert a.post(M, json={'settings': ayar, 'kind': 'fpv', 'fpv': {**fpv, 'crash_rule': 'x'}, 'invite': []}).status_code == 400
+        assert a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'invite': []}).status_code == 400   # it dalaşı tek kişilik olamaz
+        m = F.parkur('woodframe')['gate_count']
+
+        def kosu(hiz, cfg=fpv):
+            d, ss = _bot_mac(a, M, {'settings': ayar, 'kind': 'fpv', 'fpv': cfg, 'invite': [], 'bots': []})
+            mid = d['id']
+            s = ss[me['admin']]
+            assert d['kind'] == 'fpv' and len(d['players']) == 1 and len(d['rings']) == 1 + m * cfg['laps'] and s.world.get('fpv_course') == 'woodframe', d.keys()
+            assert s.world['mode'] == 'procedural' and s.world['runway'] is False and s.world['building_count'] == 0
+            with a.websocket_connect(f'/ws/drone/match/{mid}') as wa:
+                ws_bekle(wa, lambda x: x['t'] == 'hello')
+                wa.send_text(json.dumps({'t': 'ready'}))
+                ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+                fpv_pilotu(s, d['rings'], d['center'], hiz=hiz)
+                gor = []
+                res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=60, biriktir=gor)
+                assert res, [x['t'] for x in gor][-20:]
+                tip = [x['t'] for x in gor]
+                assert tip.count('ring') == len(d['rings']) and 'lap' in tip and 'sector' in tip and 'hit' not in tip and 'miss' not in tip, tip
+                assert bekle(lambda: flightsim.MANAGER.get(s.id) is None, sn=15)
+            return mid, res['result']
+        mid1, r1 = kosu(14.0)
+        st = r1['standings'][0]
+        assert r1['solo'] and r1['reason'] == 'tamamlandi' and r1['winner'] == me['admin'] and st['new_pb'] and st['pb_prev'] is None, r1
+        with db.connect() as conn:
+            rec = db.row(conn.execute('SELECT * FROM drone_fpv_records WHERE match_id = ?', (mid1,)))
+            row = db.row(conn.execute('SELECT kind, game_cfg, rings_cfg FROM drone_sim_matches WHERE id = ?', (mid1,)))
+        assert rec and rec['user_id'] == me['admin'] and rec['solo'] == 1 and abs(rec['time_s'] - st['time_s']) < 0.01 and rec['type'] == 'multirotor', rec
+        assert row['kind'] == 'fpv' and json.loads(row['game_cfg'])['course_id'] == 'woodframe' and row['rings_cfg'] == '{}'
+        assert len(F.hayalet_coz(rec['ghost'])) > 30
+        mid2, r2 = kosu(10.0)
+        assert r2['standings'][0]['new_pb'] is False and abs(r2['standings'][0]['pb_prev'] - st['time_s']) < 0.01
+        lb = ok(a.get('/api/drone/sim/fpv/courses/woodframe?laps=1'))
+        assert len(lb['leaderboard']) == 1 and lb['leaderboard'][0]['user_id'] == me['admin'] and abs(lb['my_best']['time_s'] - st['time_s']) < 0.01, lb
+        gh = ok(a.get('/api/drone/sim/fpv/courses/woodframe/ghost?laps=1'))
+        assert gh['ghost'].startswith('g1.') and len(gh['splits']) == 1 + m and abs(gh['time_s'] - st['time_s']) < 0.01
+        assert ok(p1.get(f"/api/drone/sim/fpv/courses/woodframe/ghost?laps=1&user_id={me['admin']}"))['user_id'] == me['admin']   # firma içi skor hayaleti
+        g = ok(a.get(f'{M}/{mid1}'))
+        assert g['kind'] == 'fpv' and g['rings_cfg']['course_id'] == 'woodframe' and g['result']['solo']
+        lst = ok(a.get(M))
+        assert lst[0]['kind'] == 'fpv' and len(lst[0]['players']) == 1
+        # çarpma kuralı 'reset': engel teması → oturum Sıfırla (başlangıca döner)
+        d, ss = _bot_mac(a, M, {'settings': ayar, 'kind': 'fpv', 'fpv': {**fpv, 'crash_rule': 'reset'}, 'invite': []})
+        s = ss[me['admin']]
+        with a.websocket_connect(f"/ws/drone/match/{d['id']}") as wa:
+            ws_bekle(wa, lambda x: x['t'] == 'hello')
+            wa.send_text(json.dumps({'t': 'ready'}))
+            ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+            k = s.sahte
+            mer = d['center']
+            st_ = {'p': [-12.0, 0.0, 2.0]}
+
+            def adim(dt):   # batıdan eve doğru: x −12 → +12, y 0, z 2 (dikmelere/duvara çarpar)
+                k.sure_ms += dt * 1000
+                k.armed, k.mode = True, 'GUIDED'
+                st_['p'][0] += 6.0 * dt
+                k.lat, k.lon = core.latlon(mer['lat'], mer['lon'], st_['p'][0], st_['p'][1])
+                k.alt_rel = st_['p'][2]
+            k.adim = adim
+            hit = ws_bekle(wa, lambda x: x['t'] == 'hit', sn=10)
+            assert hit and hit['rule'] == 'reset' and hit['id'] == me['admin'], hit
+            assert ws_bekle(wa, lambda x: x['t'] == 'reset', sn=3)
+            ok(a.post(f"{M}/{d['id']}/cancel"))
+        assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+        # FPV + Zor bot: insan hızlı → kazanır; bot kapıları izler; bot kaydı yazılmaz
+        d, ss = _bot_mac(a, M, {'settings': ayar, 'kind': 'fpv', 'fpv': fpv, 'invite': [], 'bots': [{'level': 'hard'}]})
+        bot = next(p for p in d['players'] if p['is_bot'])
+        with a.websocket_connect(f"/ws/drone/match/{d['id']}") as wa:
+            ws_bekle(wa, lambda x: x['t'] == 'hello')
+            wa.send_text(json.dumps({'t': 'ready'}))
+            ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+            fpv_pilotu(ss[me['admin']], d['rings'], d['center'], hiz=25.0)
+            res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=90)
+            assert res and res['result']['winner'] == me['admin'] and not res['result']['solo'], res
+            br = next(p for p in res['result']['standings'] if p['id'] == bot['id'])
+            assert br['rings'] >= 2, br
+        assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+        with db.connect() as conn:
+            assert conn.execute('SELECT COUNT(*) FROM drone_fpv_records WHERE user_id < 0').fetchone()[0] == 0
+        # tek kişilik halka yarışı: hemen HAZIRLIK
+        halka = {'count': 2, 'min_alt_m': 10, 'max_alt_m': 16, 'diameter_m': 14, 'radius_m': 80, 'seed': 5}
+        d, ss = _bot_mac(a, M, {'settings': ayar, 'rings': halka, 'invite': []})
+        assert len(d['players']) == 1 and d['kind'] == 'rings'
+        ok(a.post(f"{M}/{d['id']}/cancel"))
+        assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+    finally:
+        core.SON_CAGRI_S = eski_son
+    print('  FPV parkurları + tek kişilik API geçti')
 
 
 def bot_api(a, p1, me, ayar, M):

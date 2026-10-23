@@ -184,7 +184,7 @@ test('alt bant görünüm + kamera TEK kapsül: görünüm adı düğmede; kamer
   assert.ok(viewDisabled('fpv', 'none')); assert.ok(!viewDisabled('fpv', 'day')); assert.ok(!viewDisabled('follow', 'none'));
   for (const f of ['../static/js/modules/flightsim.js', '../static/simumav/app/fly/session.js']) {
     const src = fs.readFileSync(new URL(f, import.meta.url), 'utf8');
-    assert.ok(/views: (M3D\.)?CAMERA_MODES, onView: k => sim\?\.setCamera\(k\)/.test(src), `${f}: görünüm listesi kapsülde`);
+    assert.ok(/views: (M3D\.)?CAMERA_MODES(\.concat\([^)]*\]\][^)]*\))?, onView: k => sim\?\.setCamera\(k\)/.test(src), `${f}: görünüm listesi kapsülde`);
     assert.ok(!/camBtns/.test(src), `${f}: ayrı görünüm düğmeleri kalktı`);
     assert.ok(/camCtl\.setView\(mode\)/.test(src), `${f}: 1–5 kısayolu düğme metnini günceller`);
     assert.ok(/class: 'pill-group fs-ops-snd' }, opsBtn\)/.test(src) && /opsSnd\.nextSibling/.test(src), `${f}: Panel + ses TEK kapsül`);

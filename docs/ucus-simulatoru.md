@@ -3276,3 +3276,15 @@ DEV'de derlenen kurulum `/opt/hepgo/sitl/px4` (5,6 MB: bin 4,9 MB strip + etc 0,
 2. PROD: `tar -C /opt/hepgo/caymazbuild/data/sitl -xzf …` · sahiplik servis kullanıcısı (`--chown` kök dizine UYGULANMAZ; yalnız `px4/` alt ağacı).
 3. Bağımlılık yalnız glibc/libstdc++ (Ubuntu 24.04 derlemesi; PROD aynı sürüm olmalı) — `data/sitl/px4/bin/px4 -h` ile denetle.
 4. Kod dağıtımı (`app/flightsim_px4.py` vd.) + servis yeniden başlatma; `/api/drone/sim/meta` `stacks[px4].available = true`.
+
+## 46. Sahnede YER PİLOTU — RC kumandalı tam boy figür + "Pilot gözü" (`static/js/modules/flightsim_pilot.js`; HEPGO + SIMUMAV ortak, varsayılan KAPALI)
+- `createFlightSim3D(…, {pilot: {look, build?}})` ya da `sim.setPilot(look | null, build?)`; HEPGO oturumu açmaz (SIMUMAV açar: docs/simumav.md §28).
+  `build(T, look, {lod})` enjekte edilir (sözleşme modül başında; verilmezse `buildSimplePilot` — basit kasklı figür). Kemikler: torso / head / stickL / stickR.
+- Ev = ilk telemetrideki araç konumu (karşılaşmada oyuncunun kendi kalkış noktası), yön = aracın yönü (telemetri yoksa pist); `placePilot` 8 m geride + 3 m
+  solda, eve dönük; disarm + yerde + > 25 m sıçramada yeniden demirlenir. Diğer pilotlar: `sim.setPilots([{id, look, home | x/y, yaw, target}], build?)`.
+- Kare başına (`pilotFrame`): bakış (gövde %35 ±34°, baş ±63°, ±60°'yi aşınca ayaklar 0,6 rad/s döner; yunuslama −20…+69°), nefes (4 sn), ağırlık
+  aktarma (7 sn), çubuklar (`setPilotSticks` 400 ms taze; yoksa `tele.rc` → `sticksFromRc`, Mod 2), yüzey yüksekliği 1 Hz (Google 3B).
+- Grafik (§43): Düşük → `lod: low` + gölgesiz; diğerlerinde `mid` + gölge al/düşür. Termal: ılık (heatRoots). Aynı çizici/sahne (ek bağlam yok).
+- Kamera: `setCamera('pilot_eye')` → Yer kipi + `groundView: 'pilot'` (omuz üstü `shoulderCam`, teleobjektif FOV); tuş 6 ya da Yer'de tekrar 5;
+  `onCameraChange(mode, {groundView})`; `CAMERA_MODES` değişmedi (HEPGO 1–5). Teşhis: `sim.pilotInfo()`, `sim.getGroundView()`.
+- `flightsim_match3d.ghostPos(id)`: hayalet aracın konumu (karşılaşmada diğer pilotların bakışı). Test: `node tests/test_flightsim_pilot.mjs`.

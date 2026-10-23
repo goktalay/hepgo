@@ -11,7 +11,7 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from .. import agentkeys, auth, db, drone_hub, drone_params, drone_sitl
@@ -375,6 +375,51 @@ def _bridges(conn, where='1=1', args=()):
         r['online'] = r['id'] in online
         r['live'] = online.get(r['id'])
     return rows
+
+
+# ---------- Köprü uygulaması indirme (Hepgo Dron Köprüsü; bridge/dron_koprusu, CI: .github/workflows/dron-koprusu.yml) ----------
+# Dosyalar: <DATA_DIR>/releases/kopru/<sürüm>/ (HepgoDronKoprusu.exe …). En yüksek sürüm klasörü "son sürüm" sayılır.
+KOPRU_DIR_ADI = 'kopru'
+_KOPRU_DOSYA = re.compile(r'^[A-Za-z0-9._-]{1,120}$')
+
+
+def _kopru_kok():
+    from .. import config
+    return config.DATA_DIR / 'releases' / KOPRU_DIR_ADI
+
+
+def _surum_anahtari(v):
+    return [int(x) if x.isdigit() else x for x in re.split(r'[.\-]', v)]
+
+
+@router.get('/bridge-app')
+def bridge_app(user=Depends(bridges_user)):
+    """Köprü uygulamasının son sürümü: {version, files:[{name, os, size, sha256, url}]} (yoksa version None)."""
+    import hashlib
+    kok = _kopru_kok()
+    surumler = sorted([d.name for d in kok.iterdir() if d.is_dir()], key=_surum_anahtari) if kok.is_dir() else []
+    if not surumler:
+        return {'version': None, 'files': []}
+    v = surumler[-1]
+    out = []
+    for f in sorted((kok / v).iterdir()):
+        if not f.is_file() or not _KOPRU_DOSYA.match(f.name) or f.name.endswith('.sha256'):
+            continue
+        sha_f = f.with_name(f.name + '.sha256')
+        sha = sha_f.read_text().split()[0] if sha_f.is_file() else hashlib.sha256(f.read_bytes()).hexdigest()
+        os_ad = 'windows' if f.suffix.lower() in ('.exe', '.msix', '.msi') else 'linux' if f.suffix.lower() in ('.gz', '.appimage', '') else 'other'
+        out.append({'name': f.name, 'os': os_ad, 'size': f.stat().st_size, 'sha256': sha, 'url': f'/api/drone/bridge-app/{v}/{f.name}'})
+    return {'version': v, 'files': out}
+
+
+@router.get('/bridge-app/{version}/{name}')
+def bridge_app_file(version: str, name: str, user=Depends(bridges_user)):
+    if not _KOPRU_DOSYA.match(version) or not _KOPRU_DOSYA.match(name):
+        raise HTTPException(404, 'Bulunamadı')
+    f = _kopru_kok() / version / name
+    if not f.is_file():
+        raise HTTPException(404, 'Bulunamadı')
+    return FileResponse(f, filename=name, media_type='application/octet-stream')
 
 
 @router.get('/bridges')

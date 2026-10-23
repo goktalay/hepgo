@@ -384,7 +384,8 @@ async function renderBridges(view, ctx, m, head) {
       onClose: () => clearInterval(iv),
       body: h('div', null, codeEl,
         h('p', { class: 'small muted', style: { marginTop: '10px' } }, 'Köprü yazılımında "Eşleştir"e basıp bu kodu girin. Kod ', left, ' içinde ve yalnız bir kez kullanılabilir; köprü kalıcı anahtarını alır ve bir daha kod gerekmez.'),
-        h('p', { class: 'small muted' }, 'Sunucu adresi: ', h('code', null, bridgeWsUrl()))),
+        h('p', { class: 'small muted' }, 'Sunucu adresi: ', h('code', null, bridgeWsUrl())),
+        h('p', { class: 'small muted' }, 'Köprü uygulaması yoksa: Dron Köprüleri sayfasının üstündeki "Windows için indir" düğmesinden indirin.')),
       actions: [{ label: 'Kapat' }, { label: 'Adresi kopyala', onClick: async () => { await copy(bridgeWsUrl(), 'Adres kopyalandı'); return true; } },
         { label: 'Kodu kopyala', class: 'primary', onClick: async () => { await copy(r.code, 'Kod kopyalandı'); return true; } }],
     });
@@ -393,8 +394,23 @@ async function renderBridges(view, ctx, m, head) {
     const rows = await api.get(`/api/drone/bridges/${b.id}/sessions`);
     modal({ title: tr('{name} · oturumlar', { name: b.name }), wide: true, body: rows.length ? sessionsTable(rows) : h('div', { class: 'small muted' }, 'Henüz oturum yok'), actions: [{ label: 'Kapat' }] });
   };
+  // Köprü uygulamasını indir (Hepgo Dron Köprüsü — Windows; sunucu: /api/drone/bridge-app)
+  const appBox = h('div', { class: 'card card-pad dr-bridge-app', style: { marginBottom: '12px' } });
+  api.get('/api/drone/bridge-app').then(app => {
+    const exe = (app.files || []).filter(f => f.os === 'windows' && f.name.toLowerCase().endsWith('.exe'));
+    clear(appBox, h('div', { style: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' } },
+      h('div', { style: { flex: '1 1 320px' } },
+        h('b', null, 'Hepgo Dron Köprüsü uygulaması'), app.version ? h('span', { class: 'badge blue', style: { marginLeft: '8px' } }, `sürüm ${app.version}`) : null,
+        h('div', { class: 'small muted', style: { marginTop: '4px' } },
+          'Pilot bilgisayarına kurulur: drona USB/telemetri radyosu (seri), TCP ya da UDP ile bağlanır ve telemetriyi buraya taşır. ',
+          'Kurulum: 1) indirip çalıştırın · 2) sunucu adresini girin · 3) aşağıdaki köprünün "Eşleştir" kodunu girin.')),
+      exe.length ? exe.map(f => h('a', { class: 'btn primary', href: f.url, download: f.name, title: `SHA-256: ${f.sha256}` },
+        '⬇ Windows için indir', h('span', { class: 'small', style: { marginLeft: '6px', opacity: .8 } }, `(${(f.size / 1048576).toFixed(0)} MB)`)))
+        : h('span', { class: 'small muted' }, 'Köprü uygulaması henüz sunucuya yüklenmedi.')));
+  }).catch(() => appBox.remove());
   clear(view, head('Dron Köprüleri · pilot cihazındaki köprü yazılımları, köprü kodu ve oturumlar'),
     stats,
+    appBox,
     moduleToolbar(h('button', { class: 'btn primary', onclick: () => bridgeForm(null, m, load) }, '＋ Yeni Köprü'),
       h('span', { class: 'small muted' }, 'Köprü adresi: ', h('code', null, bridgeWsUrl()))),
     body);

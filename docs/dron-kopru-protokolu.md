@@ -175,3 +175,59 @@ Rota başlat sabit kanatta da çalışır (rotanın başındaki TAKEOFF öğesi 
 
 Uygulama sırası: sunucu (CMD_NAMES + state alanları + kalib oturumu) → tarayıcı köprüsü (hepgo_ws.js: dron_bakim.js / Log Yönetimi tipleri) →
 GÖKTUNGU köprüsü (kullanıcı onayıyla).
+
+## v1.3 — Görüntü köprüsü (cap `video`; Dron Yönetimi › Kameralar)
+
+Sunucu: `app/drone_video.py` (`/ws/drone/video` köprü, `/ws/drone/video/watch` tarayıcı), REST `app/routers/drone.py`; köprü çekirdeği
+`bridge/dron_koprusu/goruntu_core.py` (Linux/Jetson servisi `bridge/dron_koprusu_linux/hepgo_kopru.py` kullanır). Görüntü telemetriden AYRI ikinci
+bir WebSocket'tir (büyük ikili parçalar MAVLink/komut gecikmesini etkilemesin); köprü yine yalnız DIŞA DOĞRU bağlanır (NAT / 4G arkası).
+
+**Kamera kaydı (siteden):** tablo `drone_cameras {id, name, drone_id?, bridge_id?, kind 'rtsp'|'rtp', url (rtsp://host:port/yol, kimliksiz), username,
+password_enc (cameras.encrypt), transport 'tcp'|'udp', rtp_port, codec 'h264'|'h265', payload_type (96–127), sdp?, fps (0 = kaynak; 5/10/15/20/25/30),
+width?/height? (çift, 160×120…3840×2160), bitrate_kbps? (100–20000), active, note}`. Parola yanıtlarda/izleyiciye ASLA dönmez (`has_password`); yalnız
+köprüye `video_cfg` içinde gider. Görev bağlamı `field_task_cameras {task_id, camera_id, bridge_id?, drone_id?}`: görev AÇIKKEN (BASLANGIC/GOREVDE)
+`bridge_id` doluysa kameranın kayıtlı köprüsü yerine o köprü kullanılır (**etkin köprü**, `drone_video.EFF_BRIDGE`); `drone_id` HUD telemetrisinin dronudur.
+`drone_bridges.caps` köprünün son bildirdiği yetenekleri saklar (çevrimdışıyken de "Görüntü köprüsü" rozeti).
+
+**Köprü → sunucu (`/ws/drone/video`):** ilk metin çerçevesi telemetriyle aynı: `{v:1,t:'auth',key,host,platform,bridge_ver,caps:['video',…]}`
+(15 sn; yanlış anahtar → `{t:'auth_err',code:4403}` + kapanış 4403; aynı anahtarla ikinci görüntü bağlantısı eskisini 4409 ile kapatır; IP hız sınırı 4429).
+Sonra: `{t:'ping'}` · `{t:'vstate',camera_id,state,detail,mime?}` (state: `basliyor|canli|kare_yok|hata|h265|bekliyor|durdu`) ·
+`{t:'stat',camera_id,kbps,fps,codec,copy,src_fps,mime}` (2 sn'de bir) · `{t:'snap_err',camera_id,rid,error}`.
+İkili çerçeve: `[tür:1][camera_id:4 big-endian][yük]` — tür **1** init (ftyp+moov), **2** anahtar kareyle başlayan parça (moof+mdat; öncesinde
+styp/sidx/prft olabilir), **3** ara parça, **4** JPEG anlık görüntü. Tek çerçeve ≤ 4 MB. Köprüde tanımlı olmayan `camera_id` yok sayılır.
+Parçalı MP4: `-movflags frag_keyframe+empty_moov+default_base_moof -frag_duration 500000` (anahtar kare + 0,5 sn); anahtar/ara ayrımı köprüde trun/tfhd
+`sample_is_non_sync_sample` bayrağından yapılır.
+
+**Sunucu → köprü:** `{t:'auth_ok',v,bridge_id,name,server_time,cameras:[cfg…]}` · `{t:'video_cfg',cameras:[cfg…]}` (kamera/görev ataması değişince ve
+30 sn'lik eşitlemede liste değiştiyse) · `{t:'want',camera_id,on}` (ilk izleyici → on:true; son izleyici gidince 20 sn sonra on:false) ·
+`{t:'snap',camera_id,rid}` · `{t:'pong'}`. Sunucu köprüye ikili çerçeve göndermez.
+`cfg = {id,name,kind,url,username,password,transport,rtp_port,codec,payload_type,sdp,fps,width,height,bitrate_kbps}`. `cameras` anahtarı YOKSA (eski
+sunucu) köprü yerel conf'taki `[kamera.N]` bölümlerini kullanır (yedek).
+
+**Köprü davranışı (goruntu_core):** izleyici yokken kaynak açılmaz (4G bant tasarrufu; conf `surekli = evet` ile sürekli). Kaynak ffprobe ile yoklanır;
+H.264 + FPS kaynak/aynı (±0,6) + ölçek yok → **yeniden kodlamadan** `ffmpeg -c:v copy`. Aksi hâlde yeniden kodlama: Jetson'da GStreamer
+`rtspsrc|udpsrc → depay → parse → nvv4l2decoder → nvvidconv → videorate → nvv4l2h264enc (bitrate, iframeinterval = 2×FPS, insert-sps-pps)` →
+H.264 bayt akışı → `ffmpeg -f h264 -c copy` fMP4; donanım kodlayıcı yoksa ffmpeg `libx264 -preset ultrafast -tune zerolatency` (ya da conf
+`kodlayici = x264enc`). H.265 kaynak: conf `h265 = uyar` → hvc1 olarak kopyalanır + `vstate h265` uyarısı; `h265 = yeniden_kodla` → H.264.
+RTP: SDP verilmezse `m=video <port> RTP/AVP <pt>` + `a=rtpmap:<pt> H264|H265/90000` üretilir. NOFRAME_S (10 sn) parça gelmezse `kare_yok` + süreç
+yeniden başlatılır (2→30 sn artan bekleme). Gönderim kuyruğu kamera başına 4 MB: ağ yavaşsa parçalar atlanır, sonraki anahtar parçadan devam edilir.
+Anlık görüntü: yayın açıksa önbellekteki init + son anahtar parçadan (kaynağa ikinci bağlantı yok — RTP portu meşgul olsa da), değilse kaynaktan tek kare.
+RTSP kimliği URL'ye yalnız köprü sürecinde eklenir; günlükte `rtsp://kullanıcı:***@` olarak gizlenir.
+
+**Sunucu dağıtımı:** kamera başına son init + son GOP önbelleği (≤ 6 MB); yeni izleyici init + anahtar parçadan başlayan GOP'u hemen alır. İzleyici
+kuyruğu ≤ 3 MB: aşılınca parçalar atlanır ve izleyici sonraki anahtar parçadan devam eder (yavaş izleyici diğerlerini/köprüyü bekletmez). Kamera başına
+≤ 20 izleyici (4429).
+
+**Tarayıcı (`/ws/drone/video/watch?camera_id=N`, oturum çerezi):** yetki `drone.cameras`, `field.live` ya da `drone.drones` okuma (yoksa
+`{t:'error',error:'auth'}` + 4403; kamera yok/pasif 4404). ← `{t:'hello',camera{id,name,kind,codec,fps},bridge_online,state,detail,mime,stat}` ·
+`{t:'init',mime}` + ikili `[1][init]` · ikili `[2|3][parça]` · `{t:'state',state,detail,mime}` · `{t:'stat',kbps,fps,…,age}` · `{t:'pong',age}`;
+→ `{t:'ping'}`. Oynatıcı (static/js/modules/drone_camera.js) MSE `sequence` kipinde ekler, canlı ucu korur (gecikme > 1 sn → 1,1×; > 2,5 sn → uca atla),
+10 sn'den eski tamponu siler; MSE yok / kodek desteklenmiyor (H.265) → 2 sn'de bir JPEG.
+
+**REST:** `GET/POST /api/drone/cameras`, `GET/PUT/DELETE /api/drone/cameras/{id}` (PUT `password`: null = koru, metin = değiştir; `password_clear`),
+`POST /cameras/{id}/active {active}`, `GET /cameras/{id}/snapshot.jpg` (503: köprü çevrim dışı / zaman aşımı / köprü hatası) — yetki `drone.cameras`
+(GET okuma, diğerleri yazma; anlık görüntü görüntüleme yetkisiyle). `GET /api/drone/camera-list?task_id=&drone_id=` (kısa liste, adres yok).
+Canlı Uçuş: `GET /api/drone/tasks/{görev}/cameras` → `{assigned[…, task_bridge_id, hud_drone_id, hud], available[], bridges[], drones[{drone_id,label,
+bridge_id,sysid}], can_edit}`; `PUT …/cameras/{kamera} {bridge_id?, drone_id?}` (gönderilmeyen alan korunur; dron görevin uçuşlarında olmalı; aynı
+köprüde aynı RTP portu reddedilir); `DELETE …/cameras/{kamera}` — görev üyesi ya da saha yöneticisi + `field.live` (yazma için yazma izni).
+`GET /api/drone/bridge-app`: işletim sistemi başına (windows / linux-arm64 / linux) o sistemin dosyası olan EN YÜKSEK sürüm klasörü; dosya satırında `version`.

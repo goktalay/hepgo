@@ -1063,6 +1063,8 @@ function renderShell() {
   }
   initPanelCollapse(view);
   route();
+  // Bayram temaları (Kişisel Ayarlar › Bayram temaları; varsayılan açık): yalnız panoda, simülatör sahnesinde kapalı — tembel yüklenir
+  import('./holiday.js').then(m => m.initHoliday(ctx)).catch(e => console.warn('bayram teması', e));
 }
 
 // Tüm arayüzlerde panelleri (başlıkla başlayan .card/.set-card) katlanabilir yapar. Modülleri tek tek değiştirmeden
@@ -1415,6 +1417,7 @@ async function hardReload() {
 
 async function logout() {
   for (const k of Object.keys(seen)) delete seen[k];   // sonraki oturumda ilk yükleme yine "görüldü" sayılır
+  import('./holiday.js').then(m => m.stopHoliday()).catch(() => {});
   clearInterval(alertTimer);
   clearInterval(notifyTimer);
   clearInterval(spotifyTimer);

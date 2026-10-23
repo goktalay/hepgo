@@ -108,6 +108,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
     location_work_hours_only: !!cur.location_work_hours_only,   // mobil: mesai dışında konumu kapat
+    holiday: { on: true, country: '', ...(cur.holiday || {}) },   // bayram temaları (static/js/holiday.js; varsayılan açık, ülke '' = otomatik)
   };
   let timer;
   const save = (msg = 'Ayarlar kaydedildi') => {
@@ -201,6 +202,47 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Orta alana yumuşak bir desen. “✦” işaretliler hareketlidir (Hareketleri azalt açıksa durur).'),
       bgGrid,
       h('div', { class: 'set-actions' }, resetAll));
+  }
+
+  // ---------- Bayram temaları (docs/bayram-temalari.md): aç/kapa + ülke (Otomatik / liste) + Sistem Yöneticisi / MASTER için önizleme
+  function holidayBody() {
+    const wrap = h('div', null, card('Bayram temaları', null, h('div', { class: 'loading' }, 'Yükleniyor…')));
+    const isAdmin = ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi');
+    Promise.all([import('../holiday.js'), import('./holiday_fx.js')]).then(async ([hm, fx]) => {
+      let st = hm.holidayState();
+      if (!st.me) { await hm.refreshHoliday(); st = hm.holidayState(); }
+      const L = getLang() || 'tr';
+      const refresh = () => hm.refreshHoliday();
+      const codes = (st.me?.countries || []).map(c => [c, fx.countryName(c, L)]).sort((a, b) => a[1].localeCompare(b[1], L));
+      const auto = st.me?.located || (st.detected?.source && st.detected.source !== 'setting' ? st.detected.country : fx.detectCountry({}).country);
+      const SRC = { address: 'adresinizden', company: 'firma adreslerinden', timezone: 'saat diliminizden', language: 'tarayıcı dilinden', location: 'konumdan' };
+      const autoSrc = st.me?.located ? SRC[st.me.located_source] || SRC.location : (st.detected?.source && st.detected.source !== 'setting' ? SRC[st.detected.source] : SRC.timezone);
+      const sel = h('select', { class: 'input', 'aria-label': 'Ülke' },
+        h('option', { value: '' }, auto ? t('Otomatik — {c} ({src})', { c: fx.countryName(auto, L), src: t(autoSrc) }) : 'Otomatik'),
+        codes.map(([c, n]) => h('option', { value: c, selected: c === s.holiday.country }, n)));
+      sel.addEventListener('change', () => { s.holiday.country = sel.value; save('Bayram ülkesi güncellendi'); refresh(); });
+      const cb = h('input', { type: 'checkbox', checked: s.holiday.on !== false });
+      cb.addEventListener('change', () => { s.holiday.on = cb.checked; save(cb.checked ? 'Bayram temaları açıldı' : 'Bayram temaları kapatıldı'); refresh(); });
+      const cur0 = st.picked?.primary, nx = st.info?.next;
+      const status = [cur0 && !cur0.preview ? t('Bugün: {n}', { n: cur0.name || fx.themeName(cur0.theme, L) }) : 'Bugün etkin bir bayram yok',
+        nx ? t('Sıradaki: {n} · {d} gün sonra', { n: nx.name || fx.themeName(nx.theme, L), d: nx.in_days }) : null].filter(Boolean).join(' · ');
+      let pvRow = null;
+      if (isAdmin) {
+        const pv = h('select', { class: 'input', 'aria-label': 'Temayı önizle' }, fx.THEMES.map(code => h('option', { value: code }, fx.themeName(code, L))));
+        const go = h('button', { class: 'btn', type: 'button', onclick: () => {
+          location.hash = '#/';
+          setTimeout(() => hm.refreshHoliday({ preview: { themes: [pv.value], country: s.holiday.country || auto || null } }), 300);
+        } }, 'Panoda önizle');
+        pvRow = line('Temayı önizle', '20 temayı tarih beklemeden panoda görün (yalnız bu ekranda; kaydedilmez). Adres çubuğuna /?bayram=<tema> da yazılabilir.', h('div', { class: 'set-color-ctl' }, pv, go));
+      }
+      clear(wrap, card('Bayram temaları', 'Bayram ve resmî tatil günlerinde panoda hafif kutlama efektleri ve günde bir kez kutlama şeridi. Diğer sayfalarda ve Uçuş Simülatörü açıkken görünmez; “Hareketleri azalt” açıksa yalnız durağan köşe süsü çizilir.',
+        h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, 'Bayram temaları açık'), h('small', null, 'Kapatırsanız hiçbir bayram süslemesi gösterilmez'))),
+        line('Ülke', 'Otomatik: girdiğiniz adres ya da firma konumu, yoksa saat diliminiz ve tarayıcı diliniz. Konum için internete sorgu yapılmaz.', sel),
+        h('p', { class: 'small muted' }, status),
+        pvRow,
+        h('p', { class: 'small muted' }, 'Hicri takvime bağlı bayram tarihleri tahminidir; ülkeye göre bir gün kayabilir.')));
+    }).catch(e => clear(wrap, h('div', { class: 'card empty' }, e.message)));
+    return wrap;
   }
 
   // ---------- Bildirimler
@@ -458,6 +500,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s, 'motion', 'Hareketleri azalt', 'Geçiş ve animasyonları kapatır'),
         line('Metin biçimi', 'Tüm görünen metinlerin yazımı (kodlar ve giriş alanları hariç)', textCaseSeg),
         line('Açılış sayfası', 'Giriş yapınca açılacak sayfa', startSel)) },
+    { key: 'holiday', title: 'Bayram temaları', desc: 'Bayram ve tatil günlerinde pano süslemeleri, ülke seçimi', icon: 'calendar', body: holidayBody },
     { key: 'appearance', title: 'Görünüm & Renkler', desc: 'Üst/alt bar, footer, zemin renkleri; gövde arka planı; toolbar hizası', icon: 'card', body: appearanceBody },
     { key: 'notifications', title: 'Bildirimler', desc: 'Bildirim kutusu, masaüstü bildirimi', icon: 'bell',
       body: () => card('Bildirimler', 'Yeni uyarı, bildirim ya da mesaj geldiğinde nasıl haber verileceği.',
@@ -771,8 +814,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   ]).filter(x => x.key !== 'mascot' || ctx.user.ai);   // Claude API anahtarı yoksa maskot ayarı da gizli
   // Mobilde iOS Ayarlar gibi: gruplanmış renkli ikonlu satır listesi; kategoriye dokununca alt-sayfa açılır.
   const COLORS = { ui: '#0a84ff', notifications: '#ff3b30', sounds: '#ff2d55', screensaver: '#5856d6', voice: '#34c759',
-    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', mydata: '#30d158', dashboard: '#30b0c7', upload: '#5ac8fa', account: '#007aff' };
-  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy', 'mydata'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard', 'upload']];
+    radio: '#ff9500', holiday: '#ff9f0a', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', mydata: '#30d158', dashboard: '#30b0c7', upload: '#5ac8fa', account: '#007aff' };
+  const SECTIONS = [['ui', 'holiday', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy', 'mydata'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard', 'upload']];
   const used = new Set([...SECTIONS.flat(), 'account']);   // hesap, en üstte iPhone tarzı kart olarak gösterilir
   const rest = GROUPS.filter(gr => !used.has(gr.key)).map(gr => gr.key);
   const allSections = rest.length ? [...SECTIONS, rest] : SECTIONS;

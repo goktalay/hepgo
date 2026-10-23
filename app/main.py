@@ -218,6 +218,8 @@ app.include_router(flightsim_presets_router.router)
 from .routers import flightsim_match as flightsim_match_router  # noqa: E402 — Uçuş Simülatörü §33 çok oyunculu karşılaşma
 app.include_router(flightsim_match_router.router)
 app.include_router(flightsim_match_router.ws_router)
+from .routers import holiday as holiday_router  # noqa: E402 — Bayram temaları (docs/bayram-temalari.md; SIMUMAV ile ortak app/holiday_themes.py)
+app.include_router(holiday_router.router)
 
 app.mount('/static', StaticFiles(directory=config.STATIC_DIR), name='static')
 

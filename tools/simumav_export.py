@@ -37,9 +37,12 @@ from pathlib import Path
 PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'app/flightsim_mission.py', 'app/flightsim_rec.py',
                'app/flightsim_bin.py', 'app/flightsim_replay.py', 'app/flightsim_runs.py', 'app/flightsim_models.py',
                'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py', 'app/flightsim_power.py', 'app/flightsim_icept.py', 'app/flightsim_targets.py', 'app/flightsim_gcs.py', 'app/flightsim_launcher.py',
-               'app/flightsim_servotrig.py', 'app/flightsim_match_core.py', 'app/flightsim_match_bot.py', 'app/flightsim_gpws.py', 'app/tlog.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar · §33/SIMUMAV §18 karşılaşma çekirdeği · §44 yapay zekâ pilot · §8.6 tlog araç seçimi (replay) · §42 uçuş uyarıları
-JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/fs_inputs.js', 'static/js/modules/flightlog_origin.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
+               'app/flightsim_servotrig.py', 'app/flightsim_match_core.py', 'app/flightsim_match_bot.py', 'app/flightsim_gpws.py', 'app/tlog.py',
+               'app/holiday_themes.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar · §33/SIMUMAV §18 karşılaşma çekirdeği · §44 yapay zekâ pilot · §8.6 tlog araç seçimi (replay) · §42 uçuş uyarıları
+JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/holiday_*.js', 'static/js/modules/fs_inputs.js', 'static/js/modules/flightlog_origin.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
+            # Bayram temaları (docs/bayram-temalari.md): derlenmiş tatil verisi + sınırlar, bayrak SVG'leri (flag-icons, MIT), saf modüller
+            'static/data/holidays/**', 'static/vendor/flag-icons/**', 'docs/bayram-temalari.md',
             # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)
             'static/js/ui.js', 'static/js/i18n.js', 'static/js/icons.js', 'static/js/segicons.js', 'static/js/fa-icons.js', 'static/js/step3d.js',
             'static/js/engine3d.js', 'static/js/gcode3d.js', 'static/js/imgopt.js', 'static/img/google-logo.png', 'static/models/caymaz-sim.glb',

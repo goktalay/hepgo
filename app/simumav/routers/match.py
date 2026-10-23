@@ -305,6 +305,7 @@ async def mine(user=User):
     """Son 20 karşılaşmam (oyuncusu olduklarım)."""
     with db.connect() as conn:
         rs = db.rows(conn.execute('SELECT m.id, m.state, m.reason, m.host_id, m.settings, m.winner_id, m.created_at, m.ended_at, m.kind, mp.rank, mp.status, mp.flight_id, '
+                                  "CASE WHEN m.kind = 'fpv' AND json_valid(m.game_cfg) THEN json_extract(m.game_cfg, '$.course_id') END AS course_id, "
                                   '(SELECT COUNT(*) FROM match_players x WHERE x.match_id = m.id) AS n, '
                                   '(SELECT name FROM match_players x WHERE x.match_id = m.id AND x.user_id = m.winner_id) AS winner_name '
                                   'FROM matches m JOIN match_players mp ON mp.match_id = m.id AND mp.user_id = ? ORDER BY m.id DESC LIMIT 20', (user['id'],)))

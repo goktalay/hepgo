@@ -7,25 +7,31 @@ protocol mavlink | sanal (sunucu içi simülatör) | dji; köprü eklenince <dom
 Rol Yönetimi düğümleri: field.drones (Dron Envanteri), field.live (Canlı Uçuş), field.routes (Rotalar), field.bridges
 (Dron Köprüleri). Ayar yoksa 'field' modülünün izni miras alınır (rbac.node_chain).
 """
+import json
 import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
-from .. import agentkeys, auth, db, drone_hub, drone_params, drone_sitl
+from .. import agentkeys, auth, cameras, db, drone_hub, drone_params, drone_sitl, drone_video
 
 router = APIRouter(prefix='/api/drone')
 drones_user = auth.require_module('drone.drones')
 live_user = auth.require_module('field.live')
 routes_user = auth.require_module('drone.routes')
 bridges_user = auth.require_module('drone.bridges')
+cameras_user = auth.require_module('drone.cameras')   # Dron Kameraları (görüntü köprüsü; app/drone_video.py)
 
 DRONE_STATUS = {'AKTIF': 'Aktif', 'BAKIMDA': 'Bakımda', 'ARIZALI': 'Arızalı', 'PASIF': 'Pasif'}
 PROTOCOLS = {'mavlink': 'MAVLink', 'sanal': 'Sanal Dron', 'dji': 'DJI'}
 SESSION_STATUS = {'ACIK': 'Açık', 'KAPANDI': 'Kapandı', 'KOPTU': 'Koptu', 'KESILDI': 'Kesildi (sunucu yeniden başladı)'}
 PLATFORMS = ('android', 'windows', 'linux', 'macos', 'other')
+CAMERA_KINDS = {'rtsp': 'RTSP', 'rtp': 'RTP'}   # Dron Kameraları bağlantı türü (şimdilik yalnız bu ikisi)
+CAMERA_STATUS = {'canli': 'Canlı', 'hazir': 'Hazır (izleyen yok)', 'goruntu_yok': 'Görüntü yok', 'kopru_cevrimdisi': 'Köprü çevrim dışı',
+                 'kopru_yok': 'Köprü seçilmedi', 'pasif': 'Pasif'}
+_RTSP_URL = re.compile(r'^rtsps?://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:(\d{1,5}))?(/[^\s]*)?$')
 CONN_TYPES = ('tcp', 'udp', 'serial')   # uçuşun link.type seçenekleri (field_flights.link; routers/field.py doğrular)
 ROUTE_KINDS = {'line': 'Hat', 'loop': 'Döngü', 'survey': 'Tarama'}
 WP_ACTIONS = {'waypoint': 'Ara nokta', 'loiter': 'Bekle (loiter)', 'takeoff': 'Kalkış', 'land': 'İniş', 'rtl': 'Eve dön (RTL)'}
@@ -50,6 +56,33 @@ class BridgeIn(BaseModel):
     owner_id: Optional[int] = None
     note: Optional[str] = None
     active: bool = True
+
+
+class CameraIn(BaseModel):
+    """Dron kamerası. password: None = değiştirme, metin = yeni parola; password_clear = parolayı sil. Parola yanıtlarda ASLA dönmez."""
+    name: str
+    drone_id: Optional[int] = None
+    bridge_id: Optional[int] = None
+    kind: str = 'rtsp'                 # rtsp | rtp
+    url: Optional[str] = None          # RTSP: rtsp://host:port/yol
+    username: Optional[str] = None
+    password: Optional[str] = None
+    password_clear: bool = False
+    transport: str = 'tcp'             # RTSP: tcp | udp
+    rtp_port: Optional[int] = None     # RTP: köprüde dinlenen UDP portu
+    codec: str = 'h264'                # RTP: h264 | h265
+    payload_type: Optional[int] = None
+    sdp: Optional[str] = None
+    fps: int = 0                       # 0 = kaynak FPS'i
+    width: Optional[int] = None
+    height: Optional[int] = None
+    bitrate_kbps: Optional[int] = None
+    note: Optional[str] = None
+    active: bool = True
+
+
+class CameraActiveIn(BaseModel):
+    active: bool
 
 
 class CenterIn(BaseModel):
@@ -137,9 +170,11 @@ def meta(user=Depends(auth.current_user)):
             'conn_types': CONN_TYPES, 'route_kinds': ROUTE_KINDS, 'wp_actions': WP_ACTIONS, 'commands': sorted(drone_hub.CMD_NAMES),
             'can': {'drones': 'drone.drones' in user['modules'], 'live': 'field.live' in user['modules'],
                     'routes': 'drone.routes' in user['modules'], 'bridges': 'drone.bridges' in user['modules'],
-                    'sim': 'drone.sim' in user['modules'],
+                    'sim': 'drone.sim' in user['modules'], 'cameras': 'drone.cameras' in user['modules'],
+                    'camera_view': drone_video.can_view(user),
                     'command': drone_hub.can_command(user) if 'write_modules' in user else False},
-            'write': {'drones': 'drone.drones' in user.get('write_modules', [])}}
+            'write': {'drones': 'drone.drones' in user.get('write_modules', []), 'cameras': drone_video.can_edit(user)},
+            'camera_kinds': CAMERA_KINDS, 'camera_fps': list(drone_video.FPS_CHOICES), 'camera_status': CAMERA_STATUS}
 
 
 # ---------------- Dron envanteri ----------------
@@ -192,6 +227,7 @@ def get_drone(did: int, user=Depends(drones_user), conn=db.DB):
            LEFT JOIN field_locations loc ON loc.id = t.location_id
            LEFT JOIN flight_logs l ON l.id = (SELECT MAX(id) FROM flight_logs WHERE flight_id = f.id)
            WHERE f.drone_id = ? ORDER BY t.id DESC''', (did,)))
+    d['cameras'] = _cameras(conn, 'c.drone_id = ? AND c.active = 1', (did,)) if drone_video.can_view(user) else []
     d['sessions'] = db.rows(conn.execute(
         '''SELECT s.*, b.name AS bridge_name, u.full_name AS started_by_name FROM drone_bridge_sessions s
            JOIN drone_bridges b ON b.id = s.bridge_id LEFT JOIN users u ON u.id = s.started_by
@@ -363,7 +399,8 @@ def _bridges(conn, where='1=1', args=()):
     """Köprü satırları: anahtar/kod ASLA dönmez (has_key yalnız tanımlı mı); flight_count = köprüye bağlı uçuşlar (açık görevler)."""
     rows = db.rows(conn.execute(
         f'''SELECT b.id, b.name, b.platform, b.owner_id, b.host, b.bridge_ver, b.status, b.last_seen, b.note, b.active, b.created_at,
-                   b.key_enc IS NOT NULL AS has_key, u.full_name AS owner_name,
+                   b.key_enc IS NOT NULL AS has_key, u.full_name AS owner_name, b.caps,
+                   (SELECT COUNT(*) FROM drone_cameras c WHERE c.bridge_id = b.id) AS camera_count,
                    (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                     WHERE f.bridge_id = b.id AND t.status IN ('BASLANGIC', 'GOREVDE')) AS flight_count,
                    (SELECT COUNT(*) FROM drone_bridge_sessions s WHERE s.bridge_id = b.id) AS session_count
@@ -374,6 +411,14 @@ def _bridges(conn, where='1=1', args=()):
         r['drone_count'] = r['flight_count']   # eski alan adı (liste sütunu) — açık görevlerdeki bağlı uçuş sayısı
         r['online'] = r['id'] in online
         r['live'] = online.get(r['id'])
+        try:
+            r['caps'] = json.loads(r['caps']) if r['caps'] else []
+        except ValueError:
+            r['caps'] = []
+        if r['live']:
+            r['caps'] = r['live'].get('caps') or r['caps']
+        r['video_online'] = drone_video.bridge_online(r['id'])   # görüntü bağlantısı (/ws/drone/video) açık
+        r['video'] = drone_video.CAP in r['caps'] or r['video_online']
     return rows
 
 
@@ -389,6 +434,19 @@ def _kopru_kok():
     from pathlib import Path
     from .. import config
     return Path(os.environ.get('HEPGO_KOPRU_DIR') or (config.BASE_DIR / 'data' / 'releases' / KOPRU_DIR_ADI))
+
+
+def _kopru_os(name):
+    """İndirme kartı için işletim sistemi: .exe/.msix → windows; Linux/Jetson tar.gz (kurulum betiği + kaynak; tools/kopru_linux_paket.py)
+    → linux-arm64 (adında 'jetson' ya da 'arm64'/'aarch64' geçen) ya da linux."""
+    n = name.lower()
+    if n.endswith(('.exe', '.msix', '.msi')):
+        return 'windows'
+    if n.endswith(('.tar.gz', '.tgz')) and any(k in n for k in ('jetson', 'arm64', 'aarch64')):
+        return 'linux-arm64'
+    if n.endswith(('.gz', '.appimage')) or '.' not in n:
+        return 'linux'
+    return 'other'
 
 
 def _surum_anahtari(v):
@@ -410,7 +468,7 @@ def bridge_app(user=Depends(bridges_user)):
             continue
         sha_f = f.with_name(f.name + '.sha256')
         sha = sha_f.read_text().split()[0] if sha_f.is_file() else hashlib.sha256(f.read_bytes()).hexdigest()
-        os_ad = 'windows' if f.suffix.lower() in ('.exe', '.msix', '.msi') else 'linux' if f.suffix.lower() in ('.gz', '.appimage', '') else 'other'
+        os_ad = _kopru_os(f.name)
         out.append({'name': f.name, 'os': os_ad, 'size': f.stat().st_size, 'sha256': sha, 'url': f'/api/drone/bridge-app/{v}/{f.name}'})
     return {'version': v, 'files': out}
 
@@ -472,7 +530,7 @@ def delete_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
     old = db.row(conn.execute('SELECT * FROM drone_bridges WHERE id = ?', (bid,)))
     if not old:
         raise HTTPException(404, 'Köprü bulunamadı')
-    if bid in drone_hub.BRIDGES:
+    if bid in drone_hub.BRIDGES or drone_video.bridge_online(bid):
         raise HTTPException(400, 'Köprü şu an bağlı; önce bağlantıyı kesin')
     conn.execute('DELETE FROM drone_bridges WHERE id = ?', (bid,))   # oturumlar CASCADE, uçuşların (field_flights) bridge_id NULL
     db.audit(conn, user['id'], 'Dron köprüsü sildi', 'drone_bridge', bid, old['name'])
@@ -505,12 +563,14 @@ def rekey_bridge(bid: int, request: Request, user=Depends(bridges_user), conn=db
             asyncio.get_running_loop().create_task(drone_hub.disconnect_bridge(bid, 'KAPANDI'))
         except RuntimeError:
             pass
+    drone_video.disconnect_threadsafe(bid)   # eski anahtarla açık görüntü bağlantısı da düşer
     return {'key': key, 'code': bridge_code(conn, _req_host(request), key)}
 
 
 @router.post('/bridges/{bid}/disconnect')
 async def disconnect_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
-    if not await drone_hub.disconnect_bridge(bid, 'KAPANDI'):
+    video = await drone_video.disconnect(bid)
+    if not await drone_hub.disconnect_bridge(bid, 'KAPANDI') and not video:
         raise HTTPException(400, 'Köprü bağlı değil')
     db.audit(conn, user['id'], 'Dron köprüsü bağlantısını kesti', 'drone_bridge', bid)
     return {'ok': True}
@@ -525,6 +585,299 @@ def bridge_sessions(bid: int, limit: int = 100, user=Depends(bridges_user), conn
     for r in rows:
         r['status_text'] = SESSION_STATUS.get(r['status'], r['status'])
     return rows
+
+
+# ---------------- Dron Kameraları (görüntü köprüsü; app/drone_video.py, protokol v1.3) ----------------
+def _cameras(conn, where='1=1', args=()):
+    """Kamera satırları: parola ASLA dönmez (has_password); durum drone_video'dan (canlı / hazır / görüntü yok / köprü çevrim dışı)."""
+    rows = db.rows(conn.execute(
+        f'''SELECT c.id, c.name, c.drone_id, c.bridge_id, c.kind, c.url, c.username, c.password_enc IS NOT NULL AS has_password, c.transport,
+                   c.rtp_port, c.codec, c.payload_type, c.sdp, c.fps, c.width, c.height, c.bitrate_kbps, c.active, c.note, c.created_at, c.updated_at,
+                   d.code AS drone_code, d.name AS drone_name, b.name AS bridge_name, b.caps AS bridge_caps, {drone_video.EFF_BRIDGE} AS eff_bridge_id
+            FROM drone_cameras c LEFT JOIN drone_drones d ON d.id = c.drone_id LEFT JOIN drone_bridges b ON b.id = c.bridge_id
+            WHERE {where} ORDER BY c.active DESC, c.name COLLATE NOCASE''', args))
+    for r in rows:
+        r['has_password'] = bool(r['has_password'])
+        r['active'] = bool(r['active'])
+        try:
+            caps = json.loads(r.pop('bridge_caps') or '[]')
+        except ValueError:
+            caps = []
+        r['bridge_video'] = drone_video.CAP in caps or drone_video.bridge_online(r['bridge_id'])
+        eb = r['eff_bridge_id']
+        r['bridge_online'] = eb in drone_hub.BRIDGES or drone_video.bridge_online(eb)
+        r['video_online'] = drone_video.bridge_online(eb)
+        r['kind_text'] = CAMERA_KINDS.get(r['kind'], r['kind'])
+        r.update(drone_video.camera_status(r))
+        r['status_text'] = CAMERA_STATUS.get(r['status'], r['status'])
+    return rows
+
+
+def _check_camera(conn, body, cid=None):
+    """Doğrulama: ad, köprü/dron var mı, RTSP adresi (kimlik bilgisi URL'de değil ayrı alanda), RTP portu/yük türü/SDP, FPS ve çözünürlük/bitrate."""
+    name = _clean(body.name, 80)
+    if not name:
+        raise HTTPException(400, 'Kamera adı gerekli')
+    if conn.execute('SELECT 1 FROM drone_cameras WHERE name = ? COLLATE NOCASE AND id != ?', (name, cid or 0)).fetchone():
+        raise HTTPException(400, 'Bu adda kamera var')
+    if body.kind not in CAMERA_KINDS:
+        raise HTTPException(400, 'Bağlantı türü RTSP ya da RTP olmalı')
+    if body.bridge_id and not conn.execute('SELECT 1 FROM drone_bridges WHERE id = ?', (body.bridge_id,)).fetchone():
+        raise HTTPException(400, 'Köprü bulunamadı')
+    if body.drone_id and not conn.execute('SELECT 1 FROM drone_drones WHERE id = ?', (body.drone_id,)).fetchone():
+        raise HTTPException(400, 'Dron bulunamadı')
+    if body.fps not in drone_video.FPS_CHOICES:
+        raise HTTPException(400, 'FPS 5, 10, 15, 20, 25, 30 ya da kaynak FPS (0) olmalı')
+    if (body.width is None) != (body.height is None):
+        raise HTTPException(400, 'Çözünürlük için genişlik ve yükseklik birlikte girilmeli')
+    if body.width is not None and not (160 <= body.width <= 3840 and 120 <= body.height <= 2160 and body.width % 2 == 0 and body.height % 2 == 0):
+        raise HTTPException(400, 'Çözünürlük 160×120 … 3840×2160 arasında ve çift sayı olmalı')
+    if body.bitrate_kbps is not None and not (100 <= body.bitrate_kbps <= 20000):
+        raise HTTPException(400, 'Bit hızı 100 … 20000 kbit/sn olmalı')
+    out = {'name': name, 'url': None, 'transport': 'tcp', 'rtp_port': None, 'codec': 'h264', 'payload_type': None, 'sdp': None,
+           'username': _clean(body.username, 120)}
+    if body.kind == 'rtsp':
+        url = (body.url or '').strip()
+        m = _RTSP_URL.match(url)
+        if not m:
+            if re.match(r'^rtsps?://[^/\s]*@', url):
+                raise HTTPException(400, 'Kullanıcı adı ve parolayı adrese değil ayrı alanlara yazın (parola şifreli saklanır)')
+            raise HTTPException(400, 'RTSP adresi rtsp://sunucu:port/yol biçiminde olmalı')
+        if m.group(3) and not (1 <= int(m.group(3)) <= 65535):
+            raise HTTPException(400, 'RTSP portu 1 … 65535 olmalı')
+        if len(url) > 500:
+            raise HTTPException(400, 'RTSP adresi çok uzun')
+        if body.transport not in ('tcp', 'udp'):
+            raise HTTPException(400, 'RTSP taşıması TCP ya da UDP olmalı')
+        out.update(url=url, transport=body.transport)
+    else:
+        if body.rtp_port is None or not (1024 <= body.rtp_port <= 65535):
+            raise HTTPException(400, 'RTP dinleme portu 1024 … 65535 olmalı')
+        if body.codec not in ('h264', 'h265'):
+            raise HTTPException(400, 'RTP kodeki H.264 ya da H.265 olmalı')
+        pt = body.payload_type if body.payload_type is not None else 96
+        if not (96 <= pt <= 127):
+            raise HTTPException(400, 'RTP yük türü 96 … 127 olmalı (dinamik)')
+        sdp = (body.sdp or '').strip() or None
+        if sdp:
+            if len(sdp) > 4000:
+                raise HTTPException(400, 'SDP metni çok uzun (en çok 4000 karakter)')
+            if not sdp.startswith('v=0') or 'm=video' not in sdp:
+                raise HTTPException(400, 'SDP metni "v=0" ile başlamalı ve bir "m=video" satırı içermeli')
+        if body.bridge_id and body.active and conn.execute(
+                'SELECT 1 FROM drone_cameras WHERE bridge_id = ? AND kind = \'rtp\' AND rtp_port = ? AND active = 1 AND id != ?',
+                (body.bridge_id, body.rtp_port, cid or 0)).fetchone():
+            raise HTTPException(400, 'Bu köprüde aynı RTP portunu dinleyen başka bir kamera var')
+        out.update(rtp_port=body.rtp_port, codec=body.codec, payload_type=pt, sdp=sdp, username=None)
+    return out
+
+
+def _camera_or_404(conn, cid):
+    r = db.row(conn.execute('SELECT * FROM drone_cameras WHERE id = ?', (cid,)))
+    if not r:
+        raise HTTPException(404, 'Kamera bulunamadı')
+    return r
+
+
+def _view_user(user=Depends(auth.current_user)):
+    if not drone_video.can_view(user):
+        raise HTTPException(403, 'Kamera görüntüsü için yetkiniz yok')
+    return user
+
+
+@router.get('/cameras')
+def list_cameras(user=Depends(cameras_user), conn=db.DB):
+    return _cameras(conn)
+
+
+@router.get('/cameras/{cid}')
+def get_camera(cid: int, user=Depends(cameras_user), conn=db.DB):
+    rows = _cameras(conn, 'c.id = ?', (cid,))
+    if not rows:
+        raise HTTPException(404, 'Kamera bulunamadı')
+    return rows[0]
+
+
+@router.post('/cameras')
+def add_camera(body: CameraIn, user=Depends(cameras_user), conn=db.DB):
+    v = _check_camera(conn, body)
+    pw = body.password if (body.kind == 'rtsp' and body.password) else None
+    cur = conn.execute(
+        '''INSERT INTO drone_cameras (name, drone_id, bridge_id, kind, url, username, password_enc, transport, rtp_port, codec, payload_type, sdp,
+                                      fps, width, height, bitrate_kbps, active, note, created_by, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (v['name'], body.drone_id, body.bridge_id, body.kind, v['url'], v['username'], cameras.encrypt(pw[:200]) if pw else None, v['transport'],
+         v['rtp_port'], v['codec'], v['payload_type'], v['sdp'], body.fps, body.width, body.height, body.bitrate_kbps, int(body.active),
+         _clean(body.note, 1000), user['id'], db.now()))
+    db.audit(conn, user['id'], 'Dron kamerası ekledi', 'drone_camera', cur.lastrowid, f"{v['name']} · {CAMERA_KINDS[body.kind]}")
+    conn.commit()   # köprüye gönderilecek yapılandırma ayrı bağlantıdan okunur
+    drone_video.notify_changed(body.bridge_id)
+    return {'id': cur.lastrowid}
+
+
+@router.put('/cameras/{cid}')
+def update_camera(cid: int, body: CameraIn, user=Depends(cameras_user), conn=db.DB):
+    old = _camera_or_404(conn, cid)
+    v = _check_camera(conn, body, cid)
+    pw_enc = old['password_enc']
+    if body.kind != 'rtsp' or body.password_clear:
+        pw_enc = None
+    elif body.password:
+        pw_enc = cameras.encrypt(body.password[:200])
+    conn.execute(
+        '''UPDATE drone_cameras SET name = ?, drone_id = ?, bridge_id = ?, kind = ?, url = ?, username = ?, password_enc = ?, transport = ?, rtp_port = ?,
+                  codec = ?, payload_type = ?, sdp = ?, fps = ?, width = ?, height = ?, bitrate_kbps = ?, active = ?, note = ?, updated_at = ? WHERE id = ?''',
+        (v['name'], body.drone_id, body.bridge_id, body.kind, v['url'], v['username'], pw_enc, v['transport'], v['rtp_port'], v['codec'],
+         v['payload_type'], v['sdp'], body.fps, body.width, body.height, body.bitrate_kbps, int(body.active), _clean(body.note, 1000), db.now(), cid))
+    db.audit(conn, user['id'], 'Dron kamerası güncelledi', 'drone_camera', cid, v['name'] + (' · parola değişti' if pw_enc != old['password_enc'] else ''))
+    conn.commit()
+    drone_video.notify_changed(old['bridge_id'], body.bridge_id)
+    return {'ok': True}
+
+
+@router.post('/cameras/{cid}/active')
+def set_camera_active(cid: int, body: CameraActiveIn, user=Depends(cameras_user), conn=db.DB):
+    old = _camera_or_404(conn, cid)
+    if body.active and old['kind'] == 'rtp' and old['bridge_id'] and conn.execute(
+            "SELECT 1 FROM drone_cameras WHERE bridge_id = ? AND kind = 'rtp' AND rtp_port = ? AND active = 1 AND id != ?",
+            (old['bridge_id'], old['rtp_port'], cid)).fetchone():
+        raise HTTPException(400, 'Bu köprüde aynı RTP portunu dinleyen başka bir kamera etkin')
+    conn.execute('UPDATE drone_cameras SET active = ?, updated_at = ? WHERE id = ?', (int(body.active), db.now(), cid))
+    db.audit(conn, user['id'], 'Dron kamerasını etkinleştirdi' if body.active else 'Dron kamerasını pasife aldı', 'drone_camera', cid, old['name'])
+    conn.commit()
+    drone_video.notify_changed(old['bridge_id'])
+    return {'ok': True}
+
+
+@router.delete('/cameras/{cid}')
+def delete_camera(cid: int, user=Depends(cameras_user), conn=db.DB):
+    old = _camera_or_404(conn, cid)
+    conn.execute('DELETE FROM drone_cameras WHERE id = ?', (cid,))
+    db.audit(conn, user['id'], 'Dron kamerası sildi', 'drone_camera', cid, old['name'])
+    conn.commit()
+    drone_video.notify_changed(old['bridge_id'])
+    return {'ok': True}
+
+
+@router.get('/cameras/{cid}/snapshot.jpg')
+async def camera_snapshot(cid: int, user=Depends(_view_user)):
+    """JPEG anlık görüntü (düşük bant; yayın açık olmasa da köprü tek kare çeker)."""
+    def load():
+        with db.connect() as conn:
+            return db.row(conn.execute(f'SELECT c.id, {drone_video.EFF_BRIDGE} AS bridge_id, c.active FROM drone_cameras c WHERE c.id = ?', (cid,)))
+    import asyncio
+    cam = await asyncio.to_thread(load)
+    if not cam or not cam['active']:
+        raise HTTPException(404, 'Kamera bulunamadı ya da pasif')
+    try:
+        jpg = await drone_video.snapshot(cid, cam['bridge_id'])
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    return Response(jpg, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
+@router.get('/camera-list')
+def camera_list(task_id: Optional[int] = None, drone_id: Optional[int] = None, user=Depends(_view_user), conn=db.DB):
+    """İzleme penceresi için kısa liste (Canlı Uçuş / dron paneli): görevdeki dronların kameraları ve görevin uçuş köprülerine bağlı kameralar.
+    Ayrıntılı alanlar (adres, kullanıcı adı) DÖNMEZ."""
+    where, args = ['c.active = 1'], []
+    if task_id:
+        where.append('''(c.drone_id IN (SELECT drone_id FROM field_flights WHERE task_id = ? AND drone_id IS NOT NULL)
+                         OR c.bridge_id IN (SELECT bridge_id FROM field_flights WHERE task_id = ? AND bridge_id IS NOT NULL))''')
+        args += [task_id, task_id]
+    if drone_id:
+        where.append('c.drone_id = ?')
+        args.append(drone_id)
+    keep = ('id', 'name', 'drone_id', 'drone_code', 'drone_name', 'bridge_id', 'bridge_name', 'kind', 'codec', 'fps', 'status', 'status_text', 'bridge_online')
+    return [{k: r.get(k) for k in keep} for r in _cameras(conn, ' AND '.join(where), tuple(args))]
+
+
+# ---------------- Canlı Uçuş › Kameralar (görev bazında kamera seçimi; tablo field_task_cameras) ----------------
+class TaskCameraIn(BaseModel):
+    bridge_id: Optional[int] = None    # None = kameranın kayıtlı köprüsü
+    drone_id: Optional[int] = None     # HUD telemetrisi; None = kamera kaydındaki dron (uçuştaysa)
+
+
+def _task_access(conn, user, tid, write=False):
+    """Görev üyesi ya da saha yöneticisi + Canlı Uçuş izni (okuma); yazma için field.live yazma izni (require_module yöntemden)."""
+    from .field import _member, get_task, is_manager
+    t = get_task(conn, tid)
+    if not (is_manager(user) or _member(t, user)):
+        raise HTTPException(403, 'Bu görevin kameralarını yalnız görev üyeleri ve saha yöneticileri görebilir')
+    return t
+
+
+def task_cameras(conn, tid):
+    """Görevin kamera seçimleri + seçilebilecek kameralar/köprüler/dronlar (adres, kullanıcı adı DÖNMEZ)."""
+    task, flights = drone_hub.task_live(conn, tid)
+    drones = [{'drone_id': f['drone_id'], 'label': f['label'], 'name': f['name'], 'bridge_id': f['bridge_id'] if f['sim_bridge_id'] is None else f['sim_bridge_id'],
+               'sysid': f['sysid'] or 1} for f in flights if f['drone_id']]
+    task_drones = {d['drone_id'] for d in drones}
+    rows = db.rows(conn.execute(
+        '''SELECT a.camera_id, a.bridge_id, a.drone_id, a.updated_at, b.name AS bridge_name FROM field_task_cameras a
+           LEFT JOIN drone_bridges b ON b.id = a.bridge_id WHERE a.task_id = ? ORDER BY a.id''', (tid,)))
+    sel = {r['camera_id']: r for r in rows}
+    cams = _cameras(conn, 'c.active = 1')
+    keep = ('id', 'name', 'drone_id', 'drone_code', 'drone_name', 'bridge_id', 'bridge_name', 'eff_bridge_id', 'kind', 'codec', 'fps', 'status', 'status_text',
+            'bridge_online', 'video_online')
+    available = [{k: c.get(k) for k in keep} for c in cams]
+    assigned = []
+    for c in cams:
+        a = sel.get(c['id'])
+        if not a:
+            continue
+        drone_id = a['drone_id'] or (c['drone_id'] if c['drone_id'] in task_drones else None)
+        assigned.append({**{k: c.get(k) for k in keep}, 'task_bridge_id': a['bridge_id'], 'task_bridge_name': a['bridge_name'],
+                         'hud_drone_id': drone_id, 'hud': next((d for d in drones if d['drone_id'] == drone_id), None)})
+    bridges = [{'id': b['id'], 'name': b['name'], 'video': b['video'], 'online': b['online'], 'video_online': b['video_online']}
+               for b in _bridges(conn, 'b.active = 1')]
+    return {'task': {'id': task['id'], 'code': task['code'], 'status': task['status']} if task else None, 'assigned': assigned,
+            'available': available, 'bridges': bridges, 'drones': drones}
+
+
+@router.get('/tasks/{tid}/cameras')
+def get_task_cameras(tid: int, user=Depends(live_user), conn=db.DB):
+    _task_access(conn, user, tid)
+    out = task_cameras(conn, tid)
+    out['can_edit'] = 'field.live' in user.get('write_modules', [])
+    return out
+
+
+@router.put('/tasks/{tid}/cameras/{cid}')
+def put_task_camera(tid: int, cid: int, body: TaskCameraIn, user=Depends(live_user), conn=db.DB):
+    """Kamerayı göreve ekler / köprüsünü ve HUD dronunu değiştirir (görev açıkken köprü seçimi kameranın kayıtlı köprüsünü ezer)."""
+    t = _task_access(conn, user, tid, True)
+    cam = _camera_or_404(conn, cid)
+    if not cam['active']:
+        raise HTTPException(400, 'Kamera pasif')
+    if body.bridge_id and not conn.execute('SELECT 1 FROM drone_bridges WHERE id = ? AND active = 1', (body.bridge_id,)).fetchone():
+        raise HTTPException(400, 'Köprü bulunamadı ya da pasif')
+    if body.drone_id and not conn.execute('SELECT 1 FROM field_flights WHERE task_id = ? AND drone_id = ?', (tid, body.drone_id)).fetchone():
+        raise HTTPException(400, 'Dron bu görevin uçuşlarında yok')
+    bridge = body.bridge_id if body.bridge_id != cam['bridge_id'] else None   # kayıtlı köprüyle aynıysa ezme gerekmez
+    if bridge and cam['kind'] == 'rtp' and conn.execute(
+            f"SELECT 1 FROM drone_cameras c WHERE c.id != ? AND c.active = 1 AND c.kind = 'rtp' AND c.rtp_port = ? AND {drone_video.EFF_BRIDGE} = ?",
+            (cid, cam['rtp_port'], bridge)).fetchone():
+        raise HTTPException(400, 'Seçilen köprüde aynı RTP portunu dinleyen başka bir kamera var')
+    conn.execute('''INSERT INTO field_task_cameras (task_id, camera_id, bridge_id, drone_id, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(task_id, camera_id) DO UPDATE SET bridge_id = excluded.bridge_id, drone_id = excluded.drone_id, updated_at = excluded.updated_at''',
+                 (tid, cid, bridge, body.drone_id, user['id'], db.now(), db.now()))
+    db.audit(conn, user['id'], 'Canlı uçuşta kamera seçti', 'field_task', tid, f"{t.get('code') or tid} · {cam['name']}")
+    conn.commit()
+    drone_video.notify_changed()
+    return {'ok': True}
+
+
+@router.delete('/tasks/{tid}/cameras/{cid}')
+def delete_task_camera(tid: int, cid: int, user=Depends(live_user), conn=db.DB):
+    t = _task_access(conn, user, tid, True)
+    n = conn.execute('DELETE FROM field_task_cameras WHERE task_id = ? AND camera_id = ?', (tid, cid)).rowcount
+    if not n:
+        raise HTTPException(404, 'Kamera bu görevde seçili değil')
+    db.audit(conn, user['id'], 'Canlı uçuştan kamerayı kaldırdı', 'field_task', tid, f"{t.get('code') or tid} · #{cid}")
+    conn.commit()
+    drone_video.notify_changed()
+    return {'ok': True}
 
 
 # ---------------- Canlı uçuş ----------------

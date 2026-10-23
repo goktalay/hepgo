@@ -378,14 +378,17 @@ def _bridges(conn, where='1=1', args=()):
 
 
 # ---------- Köprü uygulaması indirme (Hepgo Dron Köprüsü; bridge/dron_koprusu, CI: .github/workflows/dron-koprusu.yml) ----------
-# Dosyalar: <DATA_DIR>/releases/kopru/<sürüm>/ (HepgoDronKoprusu.exe …). En yüksek sürüm klasörü "son sürüm" sayılır.
+# Dosyalar: <BASE_DIR>/data/releases/kopru/<sürüm>/ (tüm kiracılar ortak) (HepgoDronKoprusu.exe …). En yüksek sürüm klasörü "son sürüm" sayılır.
 KOPRU_DIR_ADI = 'kopru'
 _KOPRU_DOSYA = re.compile(r'^[A-Za-z0-9._-]{1,120}$')
 
 
 def _kopru_kok():
+    # Tüm kiracılar için ORTAK (SITL ikilileri gibi): <BASE_DIR>/data/releases/kopru — kiracı DATA_DIR'inden bağımsız; HEPGO_KOPRU_DIR ile değiştirilebilir
+    import os
+    from pathlib import Path
     from .. import config
-    return config.DATA_DIR / 'releases' / KOPRU_DIR_ADI
+    return Path(os.environ.get('HEPGO_KOPRU_DIR') or (config.BASE_DIR / 'data' / 'releases' / KOPRU_DIR_ADI))
 
 
 def _surum_anahtari(v):

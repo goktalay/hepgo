@@ -50,7 +50,7 @@ import { createWorldFx } from './flightsim_worldfx.js';   // §31 gerçekçi dü
 import { GFX_LEGACY, frameGate, pixelRatioFor, recordFloor, resolveGfx } from './flightsim_gfx.js';   // §43 grafik kalitesi (saf: ön ayar → parametre, piksel oranı, kare sınırı)
 import { createGfxPipeline } from './flightsim_gfx3d.js';   // §43 son işlem hattı (MSAA hedefi, SSAO, bloom, ACES, FXAA) — aynı renderer
 import { PILOT_PLACE, createPilotLayer, placePilot, shoulderCam, sticksFromRc } from './flightsim_pilot.js';   // §46 sahnede yer pilotu (RC kumandalı; varsayılan kapalı — opts.pilot)
-import { CAM_FRAG, CAM_VERT, GIMBAL_ZOOM, PIP_RES_SCALE, camFxApplies, camTypeIndex, camUniforms, clampZoom, gimbalZoomFov, nightGain, thermalGain, normCamType, normPalette, paletteIndex, pipInterval, pipSourceFor, pipSwapTarget, isNoCam } from './flightsim_camera.js';   // §22.3–22.5 kamera türü + PiP
+import { CAM_FRAG, CAM_VERT, GIMBAL_ZOOM, PIP_RES_SCALE, camFxApplies, camTypeIndex, camUniforms, clampZoom, gimbalZoomFov, nightGain, thermalGain, normCamType, normPalette, paletteIndex, pipInterval, pipSourceFor, pipSwapTarget, isNoCam, CAM_STAB_TAU, stabStep } from './flightsim_camera.js';   // §22.3–22.5 kamera türü + PiP
 
 const LIB = '/static/vendor/three/';
 export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
@@ -933,6 +933,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     buildingsAABB = []; waterPolys = []; heatWorld.length = 0; treeChunks = []; sock = null;
     if (g3d) buildGoogle(Wn); else if (real) buildReal(Wn, real); else buildProcedural(Wn);
     applyCast(); heatAt = -Infinity;   // §43 bina/ağaç/arazi gölge düşürme ön ayara göre; termal ısı listesi yeni nesnelerle
+    hol.gen++;   // bayram süsleri yeni zemine yeniden yerleşir
     if (!quiet) onProgress?.({ stage: 'done', real: !!real, google: !!g3d, counts: terrain.counts || null, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null });
   }
 
@@ -2284,6 +2285,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     // İkincil kameralar (radar / EO / PiP / nişangâh) de karo yükleyicisine kayıtlı: kendi bakış bölgeleri için karo + LOD (yoksa "yarım" görüntü)
     if (g3d) { try { g3d.setAuxCameras?.(preview ? [] : auxCameras()); g3d.update(camera, tele.has && tele.armed && tele.speed > 1, now); } catch { /* karo hatası kareyi durdurmasın */ } }
     if (pil.layer) pilotFrame(now, Math.min(0.5, rawDt));   // §46 yer pilotu (bakış, nefes, çubuklar)
+    if (hol.layer && hol.spec) { holSync(now); hol.layer.update(now, rawDt, { wind: windNow(now) }); }   // bayram süsleri (koyun, bayrak, fişek …)
+    updateCamStab(Math.min(0.5, rawDt));   // araç kamerası stabilizasyonu (gövde titreşimi süzülür; gimbal + FPV + PiP + HUD ufku aynı yönelim)
     // Kamera kipleri
     if (preview && previewFocus === 'rig' && rig) {   // §27 / §13 sihirbaz Kalkış adımı: düzeneğin çevresinde yavaş tur
       previewAngle += dt * 0.22;
@@ -2365,6 +2368,14 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   const viewQ = new T.Quaternion(), viewTmp = new T.Quaternion(), viewAx = new T.Vector3(1, 0, 0), viewNose = new T.Vector3();
   const hoverFactor = q => { if (drone.type !== 'interceptor') return 0; viewNose.set(0, 1, 0).applyQuaternion(q); const e = Math.asin(clamp(viewNose.z, -1, 1)) / DEG; return smooth(30, 70, e); };
   const viewQuat = q => { const hf = hoverFactor(q); return hf <= 0 ? viewQ.copy(q) : viewQ.copy(q).multiply(viewTmp.setFromAxisAngle(viewAx, -Math.PI / 2 * hf)); };
+  // Titreme düzeltmesi (flightsim_camera.js stabStep): gimbal (stab.g ← viewQuat(cur.q)) ve FPV (stab.p ← viewQuat(gösterilen gövde)) yönelimleri gövdenin
+  // alçak geçiren süzgecidir; her karede bir kez, kamera pozlarından önce güncellenir. getPose (HUD/OSD ufku) da etkin kipin süzülmüş yönelimini verir.
+  const stab = { g: new T.Quaternion(), p: new T.Quaternion(), has: false };
+  function updateCamStab(dt) {
+    if (!stab.has) { stab.g.copy(viewQuat(cur.q)); stab.p.copy(viewQuat(drone.group.quaternion)); stab.has = true; return; }
+    stabStep(stab.g, viewQuat(cur.q), dt, CAM_STAB_TAU.gimbal);
+    stabStep(stab.p, viewQuat(drone.group.quaternion), dt, CAM_STAB_TAU.pilot);
+  }
   function poseGimbal(cam) {
     if (drone.type === 'rover' && drone.rover) {   // §31: gimbal = aracın sensör başlığı (EO/IR topu / kule kamerası); gövde zemine oturmuş yönelimle
       const sp = drone.rover.sensor;
@@ -2374,11 +2385,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       cam.quaternion.copy(drone.group.quaternion).multiply(tmpQ);
       return;
     }
-    const vq = viewQuat(cur.q);
     tmpV.set(0, drone.nose, 0.12 * (drone.scale || MODEL_SCALE)).applyQuaternion(cur.q);
     cam.position.copy(cur.pos).add(tmpV);
     tmpQ.setFromAxisAngle(tmpV2.set(1, 0, 0), (90 + gimbal) * DEG);
-    cam.quaternion.copy(vq).multiply(tmpQ);
+    cam.quaternion.copy(stab.has ? stab.g : viewQuat(cur.q)).multiply(tmpQ);   // stabilize gimbal (titreme düzeltmesi)
   }
   // §22.4 düzeltme — yere yakın araç kamerası: yerdeki sabit kanadın gimbal kamerası zeminden ~0,3 m yüksekte; sabit 0,5 m yakın düzlem önündeki zemini
   // kesiyordu → alt yarıdaki ışınlar zeminin "altına" geçip su düzlemini / gökyüzünü gösteriyordu (PiP'in alt yarısı düz mavi; dpr / ön ayardan bağımsız).
@@ -2410,7 +2420,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     tmpV.set(0, drone.nose + back, up).applyQuaternion(drone.group.quaternion);
     cam.position.copy(drone.group.position).add(tmpV);
     tmpQ.setFromAxisAngle(tmpV2.set(1, 0, 0), 90 * DEG);   // gövde +Y (burun) → kamera −Z (bakış)
-    cam.quaternion.copy(viewQuat(drone.group.quaternion)).multiply(tmpQ);   // §25 tailsitter askıda: VTOL görünümü
+    cam.quaternion.copy(stab.has ? stab.p : viewQuat(drone.group.quaternion)).multiply(tmpQ);   // §25 tailsitter askıda: VTOL görünümü; süzülmüş (titreme düzeltmesi)
   }
   // Kamera PiP'i (§22.4): kaynak = pipSourceFor(ana kip, önceki ana kip) — ana gimbal değilse gimbal kamerası (tür efekti ve yakınlaştırma ile), gimbalse
   // önceki ana kip (takip: kullanıcının yörünge ofseti; FPV: balıkgözü). Render hedefi PiP'in CSS boyutu × min(dpr,1.5) × 0.75; pipInterval ile
@@ -2950,6 +2960,41 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   }
   const frameHooks = new Set();   // §17 ekran kaydı: her karede render edilen tuvali okuyan kancalar (drawImage → birleşik kayıt tuvali)
 
+  // ---------- bayram süsleri (docs/bayram-temalari.md › Uçuş sahnesi): 3B dünyada hafif, ÇARPIŞMASIZ süs — ./flightsim_holiday3d.js (tembel yüklenir) ----------
+  // Süs buildingsAABB'ye / çarpışma denetimine EKLENMEZ. Yerleşim pist + uç koridorları, ev, düzenek, §26 saha, yer kamerası, tulum, alçak §24 yörüngeleri,
+  // pilotlar ve dış engel bölgeleri (setDecorKeepouts(anahtar, [{x, y, r, r0?}]): FPV kapıları/halkaları, karşılaşma başlangıçları) çevresinde boş kalır.
+  // Dünya / pist yönü / saat / §43 kademe / engeller değişince (1 Hz anahtar karşılaştırması) yeniden yerleşir.
+  const hol = { layer: null, spec: null, keep: new Map(), key: '', at: 0, gen: 0, mod: null };
+  const r1 = v => Math.round(v);
+  const holCtx = () => ({
+    heading: num(W.runway_heading, 0), runwayL: RUNWAY_L, runwayW: RUNWAY_W, time: W.time, level: preview ? 'medium' : (gfx.level || 'high'), google: !!g3d, seed: num(W.seed, 1),
+    far: scene.fog?.far || 4000, rig: rig ? { x: r1(rig.group.position.x), y: r1(rig.group.position.y) } : null, camSpot: { x: RUNWAY_W / 2 + 25, y: -70 },   // yer kamerası noktası (setCamera 'ground')
+    site: site.L ? [site.L.station, site.L.tower, site.L.rack].filter(Boolean).map(p => ({ x: r1(p.x), y: r1(p.y) })) : [], sock: sock ? { x: r1(sock.pos.x), y: r1(sock.pos.y) } : null,
+    targets: tg.items.filter(e => !e.it.dyn).map(e => ({ x: num(e.it.east_m, 0), y: num(e.it.north_m, 0), r: num(e.it.diameter_m, 0) / 2, alt: num(e.it.alt_m, 0) })),
+    extra: [...[...hol.keep.values()].flat(), ...(pil.layer ? pil.layer.info().map(p => ({ id: 'pilot', x: r1(p.x), y: r1(p.y), r: 6 })) : [])],
+    roofs: buildingsAABB.map(b => ({ x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2, z: b.z2 })).filter(b => Math.hypot(b.x, b.y) < 900),
+  });
+  function holSync(now, force = false) {
+    if (!hol.layer || !hol.spec || (!force && now - hol.at < 1000)) return;
+    hol.at = now;
+    const c = holCtx(), key = JSON.stringify([hol.gen, hol.spec, c.heading, c.time, c.level, c.rig, c.site, c.sock, c.targets, c.extra, c.roofs.length]);
+    if (key === hol.key) return;
+    hol.key = key;
+    c.blocked = (x, y) => { const z = terrainHeight(x, y); return z < (terrain?.waterZ ?? -Infinity) + 0.6 || inWater(x, y, z) || buildingsAABB.some(b => x > b.x1 - 4 && x < b.x2 + 4 && y > b.y1 - 4 && y < b.y2 + 4); };
+    hol.layer.place(hol.spec.themes, hol.spec.country, c);
+  }
+  /** spec: { themes: ['kurban', …] (en çok 2), country } | null (kaldır) → Promise<info | null> */
+  async function setHoliday(spec) {
+    hol.spec = spec && Array.isArray(spec.themes) && spec.themes.length ? { themes: spec.themes.slice(0, 2), country: spec.country || null } : null;
+    hol.key = '';
+    if (!hol.spec) { hol.layer?.clear(); return null; }
+    hol.mod ??= await import('./flightsim_holiday3d.js');
+    if (disposed) return null;
+    if (!hol.layer) { hol.layer = hol.mod.createHolidayDecor(T, scene, { terrainHeight: (x, y) => terrainHeight(x, y) }); heatRoots.push(hol.layer.root); }   // termal: koyun ılık
+    holSync(performance.now(), true);
+    return hol.layer.info();
+  }
+
   // ---------- kurulum ----------
   // §24.4 stüdyo kipi (SIMUMAV hedef adımı: o adımda başka 3B sahne yok → tek bağlam): dünya/dron/kare döngüsü kurulmaz; yalnız model görüntüleyici
   if (opts.studio) {
@@ -3003,6 +3048,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     g3d?.dispose(); g3d = null;
     rig?.dispose(); rig = null;
     pil.layer?.dispose(); pil.layer = null;   // §46
+    hol.layer?.dispose(); hol.layer = null;   // bayram süsleri
     cancelAnimationFrame(raf);
     clearTimeout(gfxSt.rebuildT); window.removeEventListener('blur', onBlur); window.removeEventListener('focus', onFocus); gpipe.dispose();   // §43
     ro.disconnect();
@@ -3092,7 +3138,7 @@ pipStats: () => ({ ...pipStats, interval: pipInterval(frameMs), frameMs, rt: pip
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),
     cameraPose: () => { camera.updateMatrixWorld(); const e = camera.matrixWorld.elements; return { x: e[12], y: e[13], z: e[14], fx: -e[8], fy: -e[9], fz: -e[10], ux: e[4], uy: e[5], uz: e[6] }; },   // §16 uzaysal ses: dinleyici konumu + ileri/üst (ENU)
-    getPose: () => { if (drone.type === 'rover' && rov.fit) return { roll: rov.fit.roll, pitch: rov.fit.pitch, yaw: rov.yaw }; tmpE.setFromQuaternion(viewQuat(cur.q), 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // §31 kara aracı: zemine oturmuş gövde   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD; §25 tailsitter askıda VTOL görünümü)
+    getPose: () => { if (drone.type === 'rover' && rov.fit) return { roll: rov.fit.roll, pitch: rov.fit.pitch, yaw: rov.yaw }; tmpE.setFromQuaternion(!stab.has ? viewQuat(cur.q) : camMode === 'pilot' ? stab.p : camMode === 'fpv' ? stab.g : viewQuat(cur.q), 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // gimbal/FPV: kameranın süzülmüş yönelimi (HUD ufku görüntüyle örtüşür)   // §31 kara aracı: zemine oturmuş gövde   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD; §25 tailsitter askıda VTOL görünümü)
     getBodyPose: () => { tmpE.setFromQuaternion(cur.q, 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z, hover: hoverFactor(cur.q) }; },   // §25 teşhis: gövde (SITL fiziği) yönelimi + askı oranı
     // §24 hedefler
     createModelViewer,   // §24.4 sihirbaz hedef önizlemesi (aynı bağlam)
@@ -3121,6 +3167,8 @@ pipStats: () => ({ ...pipStats, interval: pipInterval(frameMs), frameMs, rt: pip
     setPilot, setPilots, setPilotSticks: s => { pil.sticks = s ? { thr: num(s.thr, 0), yaw: num(s.yaw, 0), pitch: num(s.pitch, 0), roll: num(s.roll, 0) } : null; pil.sticksAt = s ? performance.now() : -Infinity; },
     getGroundView: () => (camMode === 'ground' ? pil.groundView : null), hasPilot: () => !!pil.layer?.has('me'),
     pilotInfo: () => (pil.layer ? { home: pil.home, groundView: pil.groundView, pilots: pil.layer.info() } : null),
+    setHoliday, holidayInfo: () => (hol.layer && hol.spec ? hol.layer.info() : null), holidaySheep: () => hol.layer?.sheepState() || [],   // bayram süsleri (docs/bayram-temalari.md)
+    setDecorKeepouts: (k, zones) => { if (zones?.length) hol.keep.set(String(k), zones.map(z => ({ id: String(k), x: Math.round(num(z.x, 0)), y: Math.round(num(z.y, 0)), r: num(z.r, 10), r0: num(z.r0, 0) }))); else hol.keep.delete(String(k)); },
     setGraphics, getGraphics, gfxStats, setRecordFloor: v => { gfxSt.floor = !!v; resize(); }, resolveGfx,
     get gfxCaps() { return { maxSamples: gpipe.maxSamples, maxAniso: renderer.capabilities.getMaxAnisotropy?.() || 1, maxTex: renderer.capabilities.maxTextureSize, halfFloat: gpipe.halfFloat, nativeAA, gpu: gpuName() }; },
   };

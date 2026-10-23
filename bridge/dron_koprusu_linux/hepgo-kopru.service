@@ -1,0 +1,31 @@
+# Hepgo Dron Köprüsü — Linux / Jetson (telemetri + görüntü). install.sh /etc/systemd/system/ altına kurar.
+[Unit]
+Description=Hepgo Dron Köprüsü (telemetri + görüntü)
+Documentation=https://caymaz.app
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=hepgo-kopru
+Group=hepgo-kopru
+SupplementaryGroups=dialout video
+ExecStart=/opt/hepgo-kopru/venv/bin/python -u /opt/hepgo-kopru/app/hepgo_kopru.py calistir
+Environment=PYTHONUNBUFFERED=1
+RuntimeDirectory=hepgo-kopru
+RuntimeDirectoryMode=0755
+# ağ/USB koparsa servis kendi yeniden bağlanır; süreç çökerse 5 sn sonra yeniden başlar
+Restart=on-failure
+RestartSec=5
+# çıkış 3 = köprü kodu yok / geçersiz: sonsuz döngü yerine durur (sudo hepgo-kopru eslestir <kod> yeniden başlatır)
+RestartPreventExitStatus=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hepgo-kopru
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

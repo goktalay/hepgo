@@ -455,22 +455,31 @@ def _surum_anahtari(v):
 
 @router.get('/bridge-app')
 def bridge_app(user=Depends(bridges_user)):
-    """Köprü uygulamasının son sürümü: {version, files:[{name, os, size, sha256, url}]} (yoksa version None)."""
+    """Köprü uygulamasının son sürümleri: {version, files:[{name, os, version, size, sha256, url}]} (yoksa version None).
+    İşletim sistemi başına (windows / linux-arm64 / linux) o sistemin dosyası bulunan EN YÜKSEK sürüm klasörü kullanılır — Windows ve
+    Linux/Jetson paketleri ayrı sürüm numarası taşıyabilir."""
     import hashlib
     kok = _kopru_kok()
-    surumler = sorted([d.name for d in kok.iterdir() if d.is_dir()], key=_surum_anahtari) if kok.is_dir() else []
+    surumler = sorted([d.name for d in kok.iterdir() if d.is_dir() and _KOPRU_DOSYA.match(d.name)], key=_surum_anahtari) if kok.is_dir() else []
     if not surumler:
         return {'version': None, 'files': []}
-    v = surumler[-1]
-    out = []
-    for f in sorted((kok / v).iterdir()):
-        if not f.is_file() or not _KOPRU_DOSYA.match(f.name) or f.name.endswith('.sha256'):
-            continue
-        sha_f = f.with_name(f.name + '.sha256')
-        sha = sha_f.read_text().split()[0] if sha_f.is_file() else hashlib.sha256(f.read_bytes()).hexdigest()
-        os_ad = _kopru_os(f.name)
-        out.append({'name': f.name, 'os': os_ad, 'size': f.stat().st_size, 'sha256': sha, 'url': f'/api/drone/bridge-app/{v}/{f.name}'})
-    return {'version': v, 'files': out}
+    out, seen = [], set()
+    for v in reversed(surumler):
+        cur = {}
+        for f in sorted((kok / v).iterdir()):
+            if not f.is_file() or not _KOPRU_DOSYA.match(f.name) or f.name.endswith('.sha256'):
+                continue
+            os_ad = _kopru_os(f.name)
+            if os_ad in seen:
+                continue
+            sha_f = f.with_name(f.name + '.sha256')
+            sha = sha_f.read_text().split()[0] if sha_f.is_file() else hashlib.sha256(f.read_bytes()).hexdigest()
+            cur.setdefault(os_ad, []).append({'name': f.name, 'os': os_ad, 'version': v, 'size': f.stat().st_size, 'sha256': sha,
+                                              'url': f'/api/drone/bridge-app/{v}/{f.name}'})
+        for os_ad, files in cur.items():
+            seen.add(os_ad)
+            out += files
+    return {'version': surumler[-1], 'files': out}
 
 
 @router.get('/bridge-app/{version}/{name}')

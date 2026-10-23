@@ -1,0 +1,51 @@
+# Hepgo Dron Köprüsü — Linux / Jetson yapılandırması (/etc/hepgo-kopru/kopru.conf)
+# Değişiklikten sonra: sudo systemctl restart hepgo-kopru     Durum: hepgo-kopru durum     Günlük: hepgo-kopru log -f
+
+[kopru]
+# HEPGO › Dron Yönetimi › Dron Köprüleri › Yeni Köprü ile verilen köprü kodu (<alan>/<anahtar>).
+# Elle yazmak yerine: sudo hepgo-kopru eslestir <köprü kodu>
+kod =
+
+[baglanti]
+# Dronun uçuş kontrolcüsüne yerel bağlantı (köprü açılınca kurulur; koparsa 5 sn'de bir yeniden denenir).
+# tur = serial | udp | tcp | yok   (yok: bağlantı HEPGO Canlı Uçuş › Bağlan ile uçuş ayarından açılır)
+tur = serial
+# Jetson Nano / Xavier NX J41 başlığı UART: /dev/ttyTHS1 (pin 8 TX, pin 10 RX, pin 6 GND) ↔ Pixhawk TELEM2
+# USB ile bağlı uçuş kontrolcüsü: /dev/ttyACM0
+cihaz = /dev/ttyTHS1
+# ArduPilot SERIAL2_BAUD = 921 → 921600
+baud = 921600
+# udp: adres = 0.0.0.0, port = 14550 (dinler) · tcp: adres = 127.0.0.1, port = 5760 (bağlanır)
+adres = 0.0.0.0
+port = 14550
+# boş: ilk kalp atışı gönderen dron
+sysid =
+
+[goruntu]
+# Görüntü köprüsü (RTSP/RTP → fMP4 → HEPGO). Kamera ayarları SİTEDEN gelir: Dron Yönetimi › Kameralar.
+etkin = evet
+# hayir: yalnız HEPGO'da izleyen varken yayınla (4G bant tasarrufu) · evet: sürekli
+surekli = hayir
+ffmpeg = ffmpeg
+ffprobe = ffprobe
+# yeniden kodlama gerekirse (FPS / çözünürlük değişimi): otomatik | nvv4l2h264enc (Jetson donanım) | x264enc | libx264
+kodlayici = otomatik
+# H.265 kaynak: uyar (olduğu gibi gönder, tarayıcı oynatamayabilir) | yeniden_kodla (H.264'e çevir)
+h265 = uyar
+
+# YEDEK kamera (sunucu kamera listesi göndermezse / hepgo-kopru kamera-dene için). Bölüm adındaki sayı HEPGO kamera kimliğidir.
+# [kamera.1]
+# ad = Gimbal (Siyi A8)
+# tur = rtsp
+# adres = rtsp://192.168.144.25:8554/main.264
+# tasima = tcp
+# kullanici =
+# parola =
+# fps = 0
+#
+# [kamera.2]
+# ad = RTP kamera
+# tur = rtp
+# rtp_port = 5600
+# kodek = h264
+# yuk_turu = 96

@@ -224,6 +224,17 @@ def disconnect_threadsafe(bridge_id):
             pass
 
 
+def mime_from_init(init):
+    """init segmentinden MSE tipi (köprünün vstate.mime'ı init'ten sonra gelebilir): avcC → avc1.PPCCLL; hvc1/hev1 → yaklaşık dizge."""
+    i = init.find(b'avcC')
+    if i >= 0 and i + 8 <= len(init):
+        return 'video/mp4; codecs="avc1.{:02x}{:02x}{:02x}"'.format(init[i + 5], init[i + 6], init[i + 7])
+    for tag in (b'hvc1', b'hev1'):
+        if init.find(tag) >= 0:
+            return f'video/mp4; codecs="{tag.decode()}.1.6.L93.B0"'
+    return None
+
+
 # ---------------- köprüden gelen ikili çerçeveler ----------------
 def _on_frame(vb, data):
     if len(data) < 6 or len(data) > FRAME_MAX + 5:
@@ -237,6 +248,7 @@ def _on_frame(vb, data):
         if payload[4:8] != b'ftyp':
             return
         st.init = bytes(payload)
+        st.mime = mime_from_init(st.init) or st.mime
         st.gop, st.gop_bytes = [], 0
         for v in list(st.viewers):   # yeni init: herkes yeniden başlatır (kodek/çözünürlük değişmiş olabilir)
             v.need_key = True

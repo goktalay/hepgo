@@ -1,8 +1,11 @@
 // Dron Yönetimi (Saha Yönetimi alt modülleri — Faz 1): Dron Envanteri, Canlı Uçuş, Rotalar, Dron Köprüleri.
-// Adresler: #/drone/drones[/id] · #/field/live?task=<görev id> · #/drone/routes (routes.js) · #/drone/bridges
+// Adresler: #/drone/drones[/id] · #/field/live?task=<görev id> · #/drone/routes (routes.js) · #/drone/bridges · #/drone/cameras (drone_cameras.js)
 // Bağlantı bilgileri (köprü, seri/tcp/udp, sysid) DRON KAYDINDA TUTULMAZ; saha görevindeki uçuş (field_flights) düzeyinde seçilir.
 // Canlı telemetri: /ws/drone/live (oturum çerezi) — harekât ekranı (static/ops) yalnız bir saha görevi bağlamında açılır.
 import { api } from '../api.js';
+import { createCameraWindows, createTelemetryFeed, ensureCamCss, icon as camIcon } from './drone_camera.js';
+import { loadOpen, saveOpen } from './drone_camera_core.js';
+import { droneCamerasCard, statusBadge as camStatusBadge } from './drone_cameras.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, goBack, h, matches, modal, moduleToolbar, onLeave, pageHead, segmented, statStrip,
   toast, t as tr,
@@ -10,7 +13,7 @@ import {
 
 // Canlı Uçuş sekmesi yok: harekât ekranı yalnız saha görevinden açılır (#/field/live?task=<id>; renderLive aşağıda)
 // Uçuş Simülatörü (#/drone/sim[/<oturum>]): flightsim.js dinamik yüklenir; yetki m.can.sim (RBAC 'drone.sim'). `?mock=1` arka uçsuz deneme.
-const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['sim', 'Uçuş Simülatörü']];
+const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['cameras', 'Kameralar'], ['sim', 'Uçuş Simülatörü']];
 const DRONE_BADGE = { AKTIF: 'green', BAKIMDA: 'yellow', ARIZALI: 'red', PASIF: 'gray' };
 const SESSION_BADGE = { ACIK: 'green', KAPANDI: 'gray', KOPTU: 'red', KESILDI: 'yellow' };
 // Dron türü (protocol): ürettiğimiz tüm Caymaz dronları MAVLink; sanal dron sunucu içi simülatör (köprü gerekmez); DJI ileride.
@@ -55,6 +58,11 @@ export async function render(view, params, ctx) {
     return fs.render(view, params, ctx, { m, head, mock: simMock });
   }
   if (cur === 'drones') return params[1] ? renderDroneDetail(view, Number(params[1]), ctx, m) : renderDrones(view, ctx, m, head);
+  if (cur === 'cameras') {
+    // Kameralar (görüntü köprüsü; RBAC 'drone.cameras') ayrı modülde: drone_cameras.js
+    const cams = await import('./drone_cameras.js');
+    return cams.render(view, ctx, m, head);
+  }
   if (cur === 'routes') {
     // Rotalar sekmesi ayrı modülde (routes.js: sol dar sütun + Cesium harita); yalnız gerekince yüklenir.
     const routes = await import('./routes.js');
@@ -214,6 +222,7 @@ async function renderDroneDetail(view, id, ctx, m) {
               f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}`, onclick: e => e.stopPropagation() }, 'Uçuş Raporu') : null)))))))
           : h('div', { class: 'small muted' }, 'Bu dron henüz bir saha görevine eklenmedi. Görev detayı › Uçuş Yönetimi › "Dron Ekle" ile ya da Yeni Saha Görevi penceresinden eklenir.')),
       d.protocol === 'sanal' ? sitlParamsCard(d, m) : null,
+      droneCamerasCard(d),
       sessions.length ? h('div', { class: 'card card-pad', style: { marginTop: '14px' } }, h('h3', null, 'Köprü oturumları'), sessionsTable(sessions)) : null);
   };
   clear(view, box);
@@ -340,6 +349,8 @@ async function renderBridges(view, ctx, m, head) {
       h('thead', null, h('tr', null, ['Köprü', 'Platform', 'Sahibi', 'Bağlantı', 'Cihaz', 'Canlı dron', ''].map(c => h('th', null, c)))),
       h('tbody', null, rows.map(b => h('tr', null,
         h('td', null, h('b', null, b.name), b.active ? null : h('span', { class: 'badge gray', style: { marginLeft: '6px' } }, 'Pasif'),
+          b.video ? h('span', { class: `badge ${b.video_online ? 'teal' : 'gray'}`, style: { marginLeft: '6px' }, title: b.video_online ? 'Görüntü bağlantısı açık (/ws/drone/video)' : 'Görüntü köprüsü (şu an görüntü bağlantısı yok)' }, 'Görüntü') : null,
+          b.camera_count ? h('a', { class: 'small', href: '#/drone/cameras', style: { marginLeft: '6px' } }, tr('{n} kamera', { n: b.camera_count })) : null,
           h('div', { class: 'small muted' }, b.note || '')),
         h('td', null, b.platform || '—'),
         h('td', null, b.owner_name || h('span', { class: 'muted' }, '—')),
@@ -385,7 +396,7 @@ async function renderBridges(view, ctx, m, head) {
       body: h('div', null, codeEl,
         h('p', { class: 'small muted', style: { marginTop: '10px' } }, 'Köprü yazılımında "Eşleştir"e basıp bu kodu girin. Kod ', left, ' içinde ve yalnız bir kez kullanılabilir; köprü kalıcı anahtarını alır ve bir daha kod gerekmez.'),
         h('p', { class: 'small muted' }, 'Sunucu adresi: ', h('code', null, bridgeWsUrl())),
-        h('p', { class: 'small muted' }, 'Köprü uygulaması yoksa: Dron Köprüleri sayfasının üstündeki "Windows için indir" düğmesinden indirin.')),
+        h('p', { class: 'small muted' }, 'Köprü uygulaması yoksa: Dron Köprüleri sayfasının üstünden Windows ya da Linux / Jetson paketini indirin. Jetson\'da: sudo hepgo-kopru eslestir --alan <alan adı> <kod>')),
       actions: [{ label: 'Kapat' }, { label: 'Adresi kopyala', onClick: async () => { await copy(bridgeWsUrl(), 'Adres kopyalandı'); return true; } },
         { label: 'Kodu kopyala', class: 'primary', onClick: async () => { await copy(r.code, 'Kod kopyalandı'); return true; } }],
     });
@@ -394,19 +405,37 @@ async function renderBridges(view, ctx, m, head) {
     const rows = await api.get(`/api/drone/bridges/${b.id}/sessions`);
     modal({ title: tr('{name} · oturumlar', { name: b.name }), wide: true, body: rows.length ? sessionsTable(rows) : h('div', { class: 'small muted' }, 'Henüz oturum yok'), actions: [{ label: 'Kapat' }] });
   };
-  // Köprü uygulamasını indir (Hepgo Dron Köprüsü — Windows; sunucu: /api/drone/bridge-app)
+  // Köprü uygulamasını indir (Hepgo Dron Köprüsü — Windows exe + Linux / Jetson tar.gz; sunucu: /api/drone/bridge-app, işletim sistemi başına son sürüm)
   const appBox = h('div', { class: 'card card-pad dr-bridge-app', style: { marginBottom: '12px' } });
   api.get('/api/drone/bridge-app').then(app => {
-    const exe = (app.files || []).filter(f => f.os === 'windows' && f.name.toLowerCase().endsWith('.exe'));
-    clear(appBox, h('div', { style: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' } },
+    const files = app.files || [];
+    const exe = files.filter(f => f.os === 'windows' && f.name.toLowerCase().endsWith('.exe'));
+    const lin = files.filter(f => f.os === 'linux-arm64' || (f.os === 'linux' && f.name.endsWith('.tar.gz')));
+    const mb = f => h('span', { class: 'small', style: { marginLeft: '6px', opacity: .8 } }, `(${f.size >= 1048576 ? `${(f.size / 1048576).toFixed(0)} MB` : `${Math.max(1, Math.round(f.size / 1024))} KB`})`);
+    const cmd = txt => h('code', { class: 'mono', style: { cursor: 'copy' }, title: 'Kopyala', onclick: () => copy(txt, 'Komut kopyalandı') }, txt);
+    const linName = lin[0]?.name || 'HepgoDronKoprusu-Linux-Jetson-<sürüm>.tar.gz';
+    const linDir = linName.replace(/\.tar\.gz$/, '');
+    clear(appBox, h('div', { style: { display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' } },
       h('div', { style: { flex: '1 1 320px' } },
         h('b', null, 'Hepgo Dron Köprüsü uygulaması'), app.version ? h('span', { class: 'badge blue', style: { marginLeft: '8px' } }, `sürüm ${app.version}`) : null,
         h('div', { class: 'small muted', style: { marginTop: '4px' } },
           'Pilot bilgisayarına kurulur: drona USB/telemetri radyosu (seri), TCP ya da UDP ile bağlanır ve telemetriyi buraya taşır. ',
           'Kurulum: 1) indirip çalıştırın · 2) sunucu adresini girin · 3) aşağıdaki köprünün "Eşleştir" kodunu girin.')),
-      exe.length ? exe.map(f => h('a', { class: 'btn primary', href: f.url, download: f.name, title: `SHA-256: ${f.sha256}` },
-        '⬇ Windows için indir', h('span', { class: 'small', style: { marginLeft: '6px', opacity: .8 } }, `(${(f.size / 1048576).toFixed(0)} MB)`)))
-        : h('span', { class: 'small muted' }, 'Köprü uygulaması henüz sunucuya yüklenmedi.')));
+      exe.length ? exe.map(f => h('a', { class: 'btn primary', href: f.url, download: f.name, title: `SHA-256: ${f.sha256}` }, '⬇ Windows için indir', mb(f)))
+        : h('span', { class: 'small muted' }, 'Windows uygulaması henüz sunucuya yüklenmedi.')),
+    h('div', { style: { display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--line, #e5e7eb)' } },
+      h('div', { style: { flex: '1 1 320px' } },
+        h('b', null, 'Linux / Jetson (arm64)'), lin[0] ? h('span', { class: 'badge blue', style: { marginLeft: '8px' } }, `sürüm ${lin[0].version}`) : null,
+        h('div', { class: 'small muted', style: { marginTop: '4px' } },
+          'NVIDIA Jetson Nano / Orin (ya da herhangi bir Ubuntu) üzerinde başsız servis: telemetri köprüsü (UART /dev/ttyTHS1, USB, UDP, TCP) + görüntü köprüsü (RTSP/RTP gimbal kamera → HEPGO). Yalnız dışa doğru bağlanır; 4G / NAT arkasında çalışır.'),
+        h('ol', { class: 'small', style: { margin: '6px 0 0', paddingLeft: '18px', lineHeight: 1.9 } },
+          h('li', null, 'İndirin ve Jetson\'a kopyalayın'),
+          h('li', null, cmd(`tar xzf ${linName}`), ' ', cmd(`cd ${linDir}`)),
+          h('li', null, cmd('sudo ./install.sh'), h('span', { class: 'muted' }, tr(' (JetPack 4.6: python3.8 + ffmpeg kurulur)'))),
+          h('li', null, cmd('sudo hepgo-kopru eslestir <köprü kodu>'), h('span', { class: 'muted' }, tr(' — kod: köprü ekleyince ya da "Kodu yenile"'))),
+          h('li', null, cmd('hepgo-kopru durum'), ' · ', cmd('hepgo-kopru log -f')))),
+      lin.length ? lin.map(f => h('a', { class: 'btn primary', href: f.url, download: f.name, title: `SHA-256: ${f.sha256}` }, '⬇ Linux / Jetson için indir', mb(f)))
+        : h('span', { class: 'small muted' }, 'Linux / Jetson paketi henüz sunucuya yüklenmedi.')));
   }).catch(() => appBox.remove());
   clear(view, head('Dron Köprüleri · pilot cihazındaki köprü yazılımları, köprü kodu ve oturumlar'),
     stats,
@@ -474,7 +503,9 @@ async function renderLive(view, ctx, m, head, sp) {
     if (e.data.t === 'ops-back') goBack(`#/field/task/${task}`);
   };
   window.addEventListener('message', onMsg);
+  const cams = m.can?.camera_view ? liveCameras(view, task) : null;   // Canlı Uçuş › Kameralar: yüzen kamera pencereleri + seçim paneli
   onLeave(() => {
+    cams?.then(c => c?.dispose());
     window.removeEventListener('message', onMsg);
     delete view.dataset.immersive;
     document.body.classList.remove('immersive');
@@ -482,4 +513,73 @@ async function renderLive(view, ctx, m, head, sp) {
     scroller?.classList.remove('ops-scroll');
   });
   clear(view, frame);
+}
+
+// ======================================================================
+// Canlı Uçuş › Kameralar — görev için kamera seçimi (Dron Yönetimi › Kameralar kayıtlarından), köprü seçimi (varsayılan: kameranın kayıtlı
+// köprüsü; burada değiştirilirse görev AÇIKKEN geçerli), HUD dronu (uçuştaki dronlardan). Seçilen kameralar harekât ekranının üstünde YÜZEN
+// pencerelerde (drone_camera.createCameraWindows: taşı / oran korunarak boyutlandır / kenara yapış; yerleşim kamera başına, açık pencereler
+// görev başına localStorage). Çift tık → ayrı tarayıcı penceresi. HUD telemetrisi /ws/drone/live (watch task_id).
+// API: GET/PUT/DELETE /api/drone/tasks/{görev}/cameras[/{kamera}] (görev üyesi; yazma field.live yazma izni).
+// ======================================================================
+async function liveCameras(view, task) {
+  let data;
+  try { data = await api.get(`/api/drone/tasks/${task}/cameras`); } catch { return null; }
+  ensureCamCss();
+  const store = window.localStorage;
+  const feed = createTelemetryFeed(task);
+  const byId = id => data.assigned.find(c => c.id === id);
+  const droneOf = cam => data.drones.find(d => d.drone_id === cam?.hud_drone_id);
+  const persistOpen = () => saveOpen(store, task, wins.ids());
+  const wins = createCameraWindows(view, {
+    taskId: task,
+    getHud: id => { const d = droneOf(byId(id)); return d ? feed.get(d.bridge_id, d.sysid) : null; },
+    droneOptions: cam => ({ list: data.drones, value: cam.hud_drone_id, onChange: v => assign(cam.id, { drone_id: v }) }),
+    onClose: persistOpen,
+  });
+  const panel = h('div', { class: 'drc-panel', hidden: true });
+  const fab = h('button', { class: 'btn sm primary drc-fab', title: 'Bu görevin kameraları: seç, köprü ve dron bağla, pencerede aç' });
+  const setFab = () => { clear(fab, camIcon('cam'), ` ${tr('Kameralar')} (${data.assigned.length})`); };
+  fab.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) drawPanel(); });
+  wins.layer.append(fab, panel);
+  const reload = async () => { data = await api.get(`/api/drone/tasks/${task}/cameras`); setFab(); for (const id of wins.ids()) if (!byId(id)) wins.close(id); if (!panel.hidden) drawPanel(); };
+  const assign = async (camId, body) => { await api.put(`/api/drone/tasks/${task}/cameras/${camId}`, body); await reload(); };
+  function drawPanel() {
+    const can = data.can_edit;
+    const free = data.available.filter(c => !byId(c.id));
+    const add = h('select', { class: 'input' }, h('option', { value: '' }, 'Kamera ekle…'), free.map(c => h('option', { value: c.id }, `${c.name}${c.drone_code ? ` · ${c.drone_code}` : ''}`)));
+    add.addEventListener('change', async () => { if (!add.value) return; const id = Number(add.value); await assign(id, {}); const c = byId(id); if (c) { wins.open(c); persistOpen(); } });
+    const bridgeSel = c => {
+      const s = h('select', { class: 'input', disabled: !can },
+        h('option', { value: '' }, tr('Kayıtlı köprü ({name})', { name: data.available.find(x => x.id === c.id)?.bridge_name || tr('yok') })),
+        [...data.bridges].sort((a, b) => (b.video - a.video) || a.name.localeCompare(b.name, 'tr')).map(b => h('option', { value: b.id, selected: b.id === c.task_bridge_id },
+          `${b.name}${b.video ? tr(' · görüntü') : ''}${b.video_online ? tr(' · çevrimiçi') : ''}`)));
+      s.addEventListener('change', () => assign(c.id, { bridge_id: s.value ? Number(s.value) : null }));
+      return s;
+    };
+    const droneSel = c => {
+      const s = h('select', { class: 'input', disabled: !can }, h('option', { value: '' }, '— dron —'),
+        data.drones.map(d => h('option', { value: d.drone_id, selected: d.drone_id === c.hud_drone_id }, `${d.label}${d.name ? ` · ${d.name}` : ''}`)));
+      s.addEventListener('change', () => assign(c.id, { drone_id: s.value ? Number(s.value) : null }));
+      return s;
+    };
+    clear(panel,
+      h('div', { class: 'drc-ph' }, camIcon('cam'), h('b', null, 'Kameralar'), h('span', { style: { flex: 1 } }), h('button', { class: 'btn sm', onclick: () => { panel.hidden = true; } }, '×')),
+      data.assigned.length ? data.assigned.map(c => h('div', { class: 'drc-row' },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, h('b', null, c.name), camStatusBadge(c), h('span', { style: { flex: 1 } }),
+          h('button', { class: `btn sm ${wins.has(c.id) ? 'primary' : ''}`, onclick: () => { if (wins.has(c.id)) wins.close(c.id); else wins.open(c); persistOpen(); drawPanel(); } }, wins.has(c.id) ? 'Pencereyi kapat' : 'Pencerede aç')),
+        h('label', null, 'Köprü (bu görev için)'), bridgeSel(c),
+        h('label', null, 'Bağlı dron (HUD telemetrisi)'), droneSel(c),
+        can ? h('div', { style: { marginTop: '6px', display: 'flex', gap: '6px' } },
+          h('button', { class: 'btn sm', title: 'Pencere konum/boyutunu varsayılana döndür', onclick: () => wins.resetLayout(c.id) }, '⟲ Yerleşim'),
+          h('button', { class: 'btn sm danger', onclick: async () => { await api.del(`/api/drone/tasks/${task}/cameras/${c.id}`); wins.close(c.id); persistOpen(); await reload(); } }, 'Görevden kaldır')) : null))
+        : h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Bu görev için seçilmiş kamera yok. Dron Yönetimi › Kameralar\'da tanımlı kameralardan ekleyin.'),
+      can ? (free.length ? add : h('div', { class: 'small muted' }, data.available.length ? 'Tüm kameralar bu görevde.' : 'Tanımlı kamera yok (Dron Yönetimi › Kameralar).')) : null,
+      h('p', { class: 'small muted', style: { marginTop: '8px' } }, 'Pencereyi başlığından sürükleyin, köşe/kenar tutamağıyla büyütün (oran korunur). Çift tık: ayrı tarayıcı penceresi. HUD yalnız göstergedir.'));
+  }
+  setFab();
+  const want = loadOpen(store, task);
+  for (const c of data.assigned) if (!want || want.includes(c.id)) wins.open(c);
+  const timer = setInterval(() => reload().catch(() => {}), 15000);
+  return { dispose() { clearInterval(timer); feed.close(); wins.dispose(); } };
 }

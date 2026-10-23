@@ -311,6 +311,9 @@ def main():
             ok(a.put(f"/api/drone/tasks/{t['id']}/cameras/{cam1}", json={'bridge_id': b2['id'], 'drone_id': d['id']}))
             vc = recv_json(br, 'video_cfg')
             assert vc['cameras'] == [], vc
+            ok(a.put(f"/api/drone/tasks/{t['id']}/cameras/{cam1}", json={'drone_id': None}))   # yalnız dron: köprü seçimi korunur
+            ta = ok(a.get(f"/api/drone/tasks/{t['id']}/cameras"))['assigned'][0]
+            assert ta['task_bridge_id'] == b2['id'] and ta['hud_drone_id'] == d['id'], ta   # dron boş → kamera kaydının dronu (görevde)
             with a.websocket_connect('/ws/drone/video') as br2:
                 br2.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key2, 'host': 'jetson-2', 'caps': ['video']}))
                 ao2 = json.loads(br2.receive_text())

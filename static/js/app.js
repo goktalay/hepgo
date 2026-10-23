@@ -211,6 +211,7 @@ const FEATURES = [
   ['ses tanima konusmaci egitim', 'Ses Tanıma Eğitimi', '#/rehber', 'Rehber › kişi › Yapay Zeka', 'rehber'],
   ['yapay zeka egitim resmi konum', 'Yapay Zeka (yüz/ses eğitimi)', '#/rehber', 'Rehber › kişi › Yapay Zeka', 'rehber'],
   ['ucus simulatoru simulator sitl mission planner sanal dunya 3b ucus', 'Uçuş Simülatörü', '#/drone/sim', 'Dron Yönetimi › Uçuş Simülatörü', 'drone'],
+  ['dron kamera kameralar gimbal rtsp rtp goruntu koprusu jetson canli goruntu', 'Kameralar', '#/drone/cameras', 'Dron Yönetimi › Kameralar', 'drone'],
 ];
 
 // Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?
@@ -1478,7 +1479,7 @@ const SUB_PAGES = {
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,
   stock: p => `Ürün #${p[0]}`,
-  drone: p => { const k = (p[0] || '').split('?')[0], id = (p[1] || '').split('?')[0]; return ({ drones: 'Dron Envanteri', routes: 'Rotalar', bridges: 'Dron Köprüleri', sim: 'Uçuş Simülatörü' }[k] || p.join('/')) + (id ? ` #${id}` : ''); },
+  drone: p => { const k = (p[0] || '').split('?')[0], id = (p[1] || '').split('?')[0]; return ({ drones: 'Dron Envanteri', routes: 'Rotalar', bridges: 'Dron Köprüleri', cameras: 'Kameralar', sim: 'Uçuş Simülatörü' }[k] || p.join('/')) + (id ? ` #${id}` : ''); },
   field: p => {
     const d = { drones: 'Dron Envanteri', live: 'Canlı Uçuş', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]];
     const sub = { places: 'Görev Yerleri', vehicles: 'Araçlar' }[p[0]];

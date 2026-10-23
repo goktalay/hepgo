@@ -859,6 +859,12 @@ def put_task_camera(tid: int, cid: int, body: TaskCameraIn, user=Depends(live_us
     cam = _camera_or_404(conn, cid)
     if not cam['active']:
         raise HTTPException(400, 'Kamera pasif')
+    old = db.row(conn.execute('SELECT bridge_id, drone_id FROM field_task_cameras WHERE task_id = ? AND camera_id = ?', (tid, cid))) or {}
+    given = body.model_fields_set   # gönderilmeyen alan korunur (HUD'dan yalnız dron değişince köprü seçimi silinmesin)
+    if 'bridge_id' not in given:
+        body.bridge_id = old.get('bridge_id') or cam['bridge_id']
+    if 'drone_id' not in given:
+        body.drone_id = old.get('drone_id')
     if body.bridge_id and not conn.execute('SELECT 1 FROM drone_bridges WHERE id = ? AND active = 1', (body.bridge_id,)).fetchone():
         raise HTTPException(400, 'Köprü bulunamadı ya da pasif')
     if body.drone_id and not conn.execute('SELECT 1 FROM field_flights WHERE task_id = ? AND drone_id = ?', (tid, body.drone_id)).fetchone():

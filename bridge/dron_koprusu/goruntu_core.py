@@ -346,6 +346,13 @@ def build_commands(cfg, tools, pl, sdp_path=None):
     if via_gst and not tools.gst:
         raise RuntimeError("Bu ffmpeg {} girişini desteklemiyor ve GStreamer yok: sudo apt install --reinstall ffmpeg gstreamer1.0-tools "
                            "gstreamer1.0-plugins-good gstreamer1.0-plugins-bad".format(cfg.get('kind', '').upper()))
+    if via_gst:
+        src_codec = 'h265' if (pl.get('src_codec') or cfg.get('codec')) == 'h265' else 'h264'
+        need = ['rtspsrc' if cfg.get('kind') == 'rtsp' else 'udpsrc', 'rtp{}depay'.format(src_codec), '{}parse'.format(src_codec)]
+        missing = [e for e in need if not tools.gst_has(e)]
+        if missing:
+            raise RuntimeError('GStreamer eklentisi eksik: {} — sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad '
+                               'gstreamer1.0-libav'.format(', '.join(missing)))
     if pl['copy']:
         tag = ['-tag:v', 'hvc1'] if pl['codec'] == 'h265' else []
         if via_gst:
@@ -518,7 +525,8 @@ class CameraWorker:
                         os.unlink(sdp_path)
                     except OSError:
                         pass
-            tail = redact(' / '.join(self.err_tail[-3:]))[:280]
+            gst_err = [e for e in self.err_tail if e.startswith('gst: ')]   # GStreamer kaynağı düştüyse asıl neden odur (ffmpeg yalnız "akış yok" der)
+            tail = redact(' / '.join((gst_err[-2:] + [e for e in self.err_tail if not e.startswith('gst: ')][-1:]) if gst_err else self.err_tail[-3:]))[:280]
             if self.state not in ('hata',):
                 self._set('kare_yok', 'Kaynaktan görüntü gelmiyor; {} sn sonra yeniden denenecek{}'.format(backoff, (' — ' + tail) if tail else ''))
             await asyncio.sleep(backoff)
@@ -544,7 +552,8 @@ class CameraWorker:
             self.procs = [p1, p2]
             reader = p2.stdout
             errs = [p1.stderr, p2.stderr]
-        err_tasks = [asyncio.ensure_future(self._stderr(s)) for s in errs]
+        tags = ['gst', 'ffmpeg'] if len(errs) == 2 else ['']
+        err_tasks = [asyncio.ensure_future(self._stderr(s, t)) for s, t in zip(errs, tags)]
         sp = Fmp4Splitter()
         got = False
         try:
@@ -577,7 +586,7 @@ class CameraWorker:
             for t in err_tasks:
                 t.cancel()
 
-    async def _stderr(self, stream):
+    async def _stderr(self, stream, tag=''):
         try:
             while True:
                 line = await stream.readline()
@@ -585,7 +594,8 @@ class CameraWorker:
                     return
                 txt = line.decode('utf-8', 'replace').strip()
                 if txt:
-                    self.err_tail = (self.err_tail + [txt])[-8:]
+                    txt = (tag + ': ' + txt) if tag else txt
+                    self.err_tail = (self.err_tail + [txt])[-12:]
                     self.log('kamera #{} süreç: {}'.format(self.id, redact(txt)[:200]))
         except (asyncio.CancelledError, Exception):   # noqa: BLE001
             return

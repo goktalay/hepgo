@@ -9,6 +9,7 @@
 //     (kurucu; herkes hazır + ≥ 2), Ayrıl / İptal. WS /ws/match/<id> canlı; HAZIRLIK'ta oyuncu yarış ekranına geçer; BITTI'de sonuç tablosu.
 //   • Yarış ekranı (#/fly/match/<id>/race; renderRace): oyuncunun uçuşu (GET /api/fly/<flight_id>) → session.js openSession + ctx.match
 //     (match_hud.js katmanı). Yarış başlayana kadar ARM/kalkış sunucuda kilitli (komut kapısı); simülasyon hızı 1×; MP köprüsü yok.
+import { createInviteMailBox } from './invite_box.js';   // yol haritası: e-posta daveti + arkadaşlardan seç
 import { clear, h, toast, toastError, confirmDialog, t as tr, onLeave } from './simui.js';
 import { net, wsUrl } from './net.js';
 import { genPassword, inviteLink, LIMITS, lobbyHref, lobbyView, joinErrorKey, OUT, passwordErrorKey, phaseOf, playersErrorKey, raceHref, REASON_KEY, resultRows,
@@ -332,7 +333,7 @@ export async function renderLobby(view, id, ctx = {}) {
   }
   const me = M.me;
   ensureAvatarCss(); ensureFpvCss();
-  let left = false, ws = null, wsT = 0, pollT = 0, closed = false, entering = false;
+  let left = false, ws = null, wsT = 0, pollT = 0, closed = false, entering = false, mailBox = null;
   const players = h('ul', { class: 'sm-mt-players' });
   const side = h('div', { class: 'sm-mt-side' });
   const actions = h('div', { class: 'sm-mt-actions' });
@@ -358,14 +359,16 @@ export async function renderLobby(view, id, ctx = {}) {
       V.isHost && !p.host && ph === 'lobby' ? h('button', { class: 'x-btn', type: 'button', title: tr(isBot(p) ? 'ai.remove' : 'match.kick'), 'aria-label': tr(isBot(p) ? 'ai.remove' : 'match.kick'), onclick: async () => {
         if (isBot(p) || await confirmDialog(tr('match.kick'), tr('match.kick_q', { n: p.name }), { okLabel: tr('match.kick'), danger: true })) act(`/api/match/${M.id}/kick`, { user_id: p.id });
       } }, '✕') : null)),
-    Array.from({ length: Math.max(0, (M.max_players || 0) - (M.players || []).length) }, (_, k) => h('li', { class: 'empty' }, h('span', { class: 'dot' }), h('span', { class: 'nm muted' }, tr('match.slot_empty')),
+    // yol haritası: yapay zekâ insan sınırına sayılmaz → boş insan yerleri (max_players − insan) + araç tavanına (max_vehicles) kadar "AI ekle" satırı
+    Array.from({ length: Math.max((M.players || []).length < (M.max_vehicles || M.max_players || 0) ? 1 : 0, (M.max_players || 0) - (M.players || []).filter(p => !isBot(p)).length) }, (_, k) => h('li', { class: 'empty' }, h('span', { class: 'dot' }), h('span', { class: 'nm muted' }, tr('match.slot_empty')),
       // HEPGO §44: kurucu boş yere yapay zekâ pilot ekler (seviye seçimi; bot hazır sayılır, BAŞLAT'ta kendi simülatörünü alır)
-      k === 0 && V.isHost && ph === 'lobby' ? h('span', { class: 'sm-ai-add' }, ...['easy', 'normal', 'hard'].map(l => h('button', { class: 'btn sm', type: 'button', 'data-level': l, title: tr('ai.add'),
+      k === 0 && V.isHost && ph === 'lobby' && (M.players || []).length < (M.max_vehicles || M.max_players || 0) ? h('span', { class: 'sm-ai-add' }, ...['easy', 'normal', 'hard'].map(l => h('button', { class: 'btn sm', type: 'button', 'data-level': l, title: tr('ai.add'),
         onclick: () => act(`/api/match/${M.id}/bot`, { level: l }, 'ai.added') }, '🤖 ', tr(`ai.level_${l}`)))) : null)));
-    // yan sütun: davet + ayarlar + parkur
+    // yan sütun: e-posta daveti (kurucu; yol haritası) + davet bağlantısı/şifre + ayarlar + parkur
+    if (V.isHost && ph === 'lobby' && M.max_players !== 1 && !(isDf(M) && (M.players || []).filter(p => !isBot(p)).length >= 2)) { mailBox ||= createInviteMailBox(M.id); } else mailBox = null;
     const link = M.code ? inviteLink(location.origin, M.code) : null;
     let pwTxt = null; try { pwTxt = sessionStorage.getItem(PW_KEY(M.id)); } catch { /* */ }
-    clear(side,
+    clear(side, mailBox,
       ph === 'lobby' && link && M.max_players !== 1 ? h('div', { class: 'sm-mt-card sm-mt-invite' },   // §29 tek kişilik (en çok 1 oyuncu): davet kutusu yok h('h3', null, '✉ ', tr('match.invite_box')),
         h('p', { class: 'small muted' }, tr(V.isHost ? 'match.invite_box_host' : 'match.invite_box_guest')),
         h('div', { class: 'sm-mt-copyrow' }, h('input', { class: 'mono', readonly: true, value: link, 'aria-label': tr('match.link'), onfocus: e => e.target.select() }),

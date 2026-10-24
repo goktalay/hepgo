@@ -13,7 +13,8 @@ import { satPickerMap } from './satmap.js';
 import { parseTracksParam } from '../fly/match_core.js';   // §29 sekme rotası (saf)
 
 export const WORLD_DEFAULTS = { size_m: 4000, tree_density: 0.3, building_count: 40, runway: true, runway_heading: 0, fog: 0.2 };
-const WORLD_KEYS = ['seed', 'size_m', 'tree_density', 'mountain_height', 'mountain_count', 'building_count', 'runway', 'runway_heading', 'water', 'fog', 'landing_circle_m'];
+const WORLD_KEYS = ['seed', 'size_m', 'tree_density', 'mountain_height', 'mountain_count', 'building_count', 'runway', 'runway_heading', 'water', 'fog', 'landing_circle_m',
+  'biome', 'vehicle_count', 'people_count', 'elevation_m'];   // yol haritası özel parkur alanları (sunucu bridge.WORLD_EXTRA) — düzenlemede korunur
 export const PRESETS = [
   { name: 'TR TEST Kalecik', lat: 40.0990, lon: 33.4101 },
   { name: 'Ankara', lat: 39.9250, lon: 32.8370 },
@@ -32,6 +33,16 @@ const newTrack = () => ({ name: '', lat: PRESETS[0].lat, lon: PRESETS[0].lon, ra
 let active = null;   // etkin temizleyici (mount içten yeniden çağrılır: editör iptal/kaydet)
 export async function mount(root, ctx) {
   await active?.(); active = null;
+  // yol haritası: #/tracks → üç seçenek (Karşılaşma · Özel · Gerçek); #/tracks/match|custom|real[/new] → tracks/landing.js
+  const [sec, sub] = String(ctx.param || '').split('/');
+  if (!ctx.param || ['match', 'custom', 'real'].includes(sec)) {
+    const L = await import('./landing.js');
+    let cleanup = null;
+    await L.mountSection(root, ctx, sec || '', sub, f => { cleanup = f; });
+    active = () => cleanup?.();
+    return () => { const f = active; active = null; return f?.(); };
+  }
+  const editId = sec === 'mine' && /^\d+$/.test(sub || '') ? Number(sub) : null;   // #/tracks/mine/<id> → ayrıntılı editör
   const viewers = [];
   let dead = false, gen = 0;   // gen: kart listesi yenilenince bekleyen önizleme sözleri atılır
   const tp = parseTracksParam(ctx.param);
@@ -53,7 +64,7 @@ export async function mount(root, ctx) {
   const grid = h('div', { class: 'grid' });
   sc.append(grid);
   clear(root, sc);
-  ctx.setBack(t('common.menu'));
+  ctx.setBack(t('tracks.title'), '#/tracks');
   let tracks = [];
 
   const card = (tr, idx) => {
@@ -199,13 +210,16 @@ export async function mount(root, ctx) {
       const body = { name: T.name.trim(), lat: T.lat, lon: T.lon, radius_m: T.radius_m, wind: T.wind, time_of_day: normTime(T.time_of_day), weather: T.weather, world_mode: T.world_mode, world, gates: T.gates };
       try {
         if (existing) await api.put(`/api/tracks/${existing.id}`, body); else await api.post('/api/tracks', body);
-        toast(t('common.saved'), 'ok'); edDispose?.(); edDispose = null; mount(root, ctx);
+        toast(t('common.saved'), 'ok'); edDispose?.(); edDispose = null;
+        if (editId != null) { history.back(); return; }   // özel/gerçek listesinden gelindi → oraya dön
+        mount(root, ctx);
       } catch (e) { toastErr(e); }
     }
   }
 
   await load();
   if (tp.new) openEditor(null);
+  if (editId != null) { const tr = tracks.find(x => x.id === editId); if (tr) openEditor(tr); }
   active = () => { dead = true; gen++; viewers.splice(0).forEach(v => v.dispose()); edDispose?.(); edDispose = null; };
   return () => { const f = active; active = null; return f?.(); };
 }

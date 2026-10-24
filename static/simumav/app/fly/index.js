@@ -16,7 +16,8 @@ import { createCameraPick } from './camera_pick.js';   // kamera türü kartlar�
 import { createTargetsStep } from './targets.js';   // HEDEFLER adımı (HEPGO §24)
 import { isFpvType, isMatchType, lobbyHref, parseFlyParam, ringsLine } from './match_core.js';   // §18 çok oyunculu karşılaşma (saf)
 import { createAiMatch, createAiStep, createInviteStep, createMatch, createRingsStep, createSoloMatch, historyEl, matchMeta, renderJoin, renderLobby, renderRace } from './match.js';
-import { FT, TT, courseName, createCourseStep, createRulesStep, ensureFpvCss, fpvApi } from './fpv.js';   // §29 hazır FPV parkurları (galeri, kurallar)
+import { FT, TT, courseName, createCourseStep, createRulesStep, ensureFpvCss, fpvApi } from './fpv.js';
+import { renderFlow, takeFlowPreset } from './flow.js';   // yol haritası Uçuş akışı (dron → parkur → oyun türü → tek/çok oyunculu → Uç)   // §29 hazır FPV parkurları (galeri, kurallar)
 
 const here = new URL('.', import.meta.url);
 function ensureCss() {
@@ -67,10 +68,12 @@ export async function render(view, params = {}, ctx = {}) {
   if (P.kind === 'lobby') return renderLobby(view, P.id, c);
   if (P.kind === 'race') return renderRace(view, P.id, c, { openSession });
   if (P.kind === 'fpv') return renderWizard(view, { ...c, fpvSolo: true, course: P.course });   // §29 Tek oyunculu › FPV parkuru (zaman denemesi)
-  if (P.kind === 'solo' || ctx.preset) return renderWizard(view, c);
+  if (P.kind === 'solo' || ctx.preset) { const fp = !ctx.preset && takeFlowPreset(); return renderWizard(view, fp ? { ...c, preset: fp } : c); }
   if (P.kind === 'multi') return renderWizard(view, { ...c, match: true });
   if (P.kind === 'ai') return renderWizard(view, { ...c, match: true, ai: true });   // HEPGO §44 yapay zekâya karşı
-  return renderChoice(view, c);
+  if (params.id === 'classic') return renderChoice(view, c);   // eski seçim ekranı (Tek / FPV / Çok oyunculu / yapay zekâ / davet kodu)
+  const un = await renderFlow(view, c);
+  onLeave(() => un?.());
 }
 
 // ======================================================================
@@ -155,6 +158,7 @@ async function renderWizard(view, ctx) {
     let pl = null; try { pl = JSON.parse(sessionStorage.getItem('sm.fpv.laps') || 'null'); sessionStorage.removeItem('sm.fpv.laps'); } catch { /* */ }   // Parkur ayrıntısında seçilen tur sayısı
     if (c0) W.set('fpv', { course_id: c0.id, laps: pl?.cid === c0.id && Number(pl.laps) ? Number(pl.laps) : Number(c0.laps) || W.state.fpv.laps });
   }
+  if (ctx.preset?.skip_to) { for (let k = 0; k < 4 && ['drone', 'track'].includes(W.step()) && W.next();) k++; }   // Uçuş akışından: dron + parkur seçili
   const camPick = createCameraPick({ h, tr, getDrone: () => W.drone() });
   const PREVIEW_URL = '/sim/flightsim3d.js';
   let preview = null, previewBox = null, previewType = null, previewModelId = null, destroyed = false;

@@ -35,7 +35,7 @@ CSP = ("default-src 'self'; "
        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
        "connect-src 'self' blob: https://mastertool.download https://www.google-analytics.com https://analytics.google.com https://*.google-analytics.com https://www.googletagmanager.com "
        "https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.ggpht.com "
-       "https://tile.googleapis.com https://cdn.jsdelivr.net https://*.cesium.com https://*.arcgisonline.com https://*.amazonaws.com "
+       "https://tile.googleapis.com https://cdn.jsdelivr.net https://*.cesium.com https://*.arcgisonline.com https://geocode.arcgis.com https://*.amazonaws.com "
        "wss://simumav.com wss://www.simumav.com ws://127.0.0.1:8600 ws://localhost:8600; "
        "img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob: https://cdn.jsdelivr.net; "
        "child-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'")

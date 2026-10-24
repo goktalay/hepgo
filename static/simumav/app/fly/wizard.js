@@ -193,6 +193,7 @@ export function createWizard(data = {}, init = {}, { match = false, ai = false, 
     rings: init.rings ?? null, rings_err: null, max_players: init.max_players ?? 2, password: init.password ?? '', invite_err: null,
     kind: init.kind ?? 'rings', dogfight: init.dogfight ?? null,   // HEPGO §41 karşılaşma türü + it dalaşı ayarı
     ai_level: init.ai_level ?? 'normal', ai_bots: init.ai_bots ?? 1,   // HEPGO §44 yapay zekâya karşı
+    mode: init.mode ?? null,            // yol haritası oyun türü (fly/flow.js; POST /api/fly/start {mode})
     // §29 FPV parkuru: ayar (course_id, laps, crash_rule, ceza süreleri, süre sınırı) + hayalet tercihi ('pb' | 'off'); fpv_err adım doğrulaması
     fpv: { ...FPV_SM_DEFAULTS, ...(init.fpv || {}), ...(init.course_id ? { course_id: init.course_id } : {}) }, fpv_err: null, ghost: init.ghost === 'off' ? 'off' : 'pb',
   };
@@ -266,6 +267,7 @@ export function createWizard(data = {}, init = {}, { match = false, ai = false, 
     if (S.site && (S.site.station || S.site.radar || S.site.eo)) body.site = { ...S.site };   // HEPGO §26
     const mk = (data.missions || []).find(m => m.id === S.mission_id)?.kind;
     if (S.defend && type() === 'interceptor' && mk !== 'defend') body.defend = { ...S.defend };   // görev kaydı defend ise sunucu planı kullanır
+    if (S.mode) body.mode = S.mode;   // yol haritası oyun türü (sunucu modes.dogrula; savunmada defend/site sunucuda tamamlanır)
     return body;
   };
   const missionsFor = () => (data.missions || []).filter(m => S.track_id == null || m.track_id === S.track_id);

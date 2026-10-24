@@ -7,13 +7,13 @@ import { stagger, rememberOrigin, reduced } from '../ui/transition.js';
 import { icon } from './icons.js';
 import * as sfx from '../ui/sfx.js';
 
-const CARDS = [
+// Yol haritası (2026-10-24): ana menüde YALNIZ dört giriş — Hangar · Parkur · Mürettebat · Uçuş. Görevler (Parkur içinden ve Pilot menüsünden),
+// Operasyon ("Önceki uçuşlarım"), TOP 10, Arkadaşlarım ve Davetler sağ üst Pilot menüsünde (ui/pilotmenu.js).
+export const CARDS = [
   { key: 'hangar', accent: '#38bdf8' },
-  { key: 'crew', accent: '#f472b6' },
   { key: 'tracks', accent: '#34d399' },
-  { key: 'missions', accent: '#a78bfa' },
+  { key: 'crew', accent: '#f472b6' },
   { key: 'fly', accent: '#fbbf24' },
-  { key: 'ops', accent: '#fb923c' },
 ];
 export const bgEnabled = () => localStorage.getItem('sm:bgfx') !== '0';
 
@@ -56,16 +56,16 @@ export async function mount(root, ctx) {
   grid.append(...cards); stagger(cards, 70, { rise: true });
   const live = h('div', { class: 'menu-live', hidden: true }, h('i', { class: 'dot' }), h('b', {}, t('menu.live')), h('small', {}, t('menu.live_loading')));
   const hint = h('p', { class: 'menu-hint' }, t('menu.hint'));
-  // §25 TOP 10 PİLOT (oturumsuz uç; maskeli liste) — pencere menu/top10.js
-  const top10 = h('button', { class: 'menu-top10-btn', type: 'button', onclick: async () => { sfx.select(); (await import('./top10.js')).openTop10(); } }, '🏆 ', t('top10.title'));
+  // §25 TOP 10 PİLOT artık sağ üst Pilot menüsünde (ui/pilotmenu.js); menü sade: dört kart
   import('../crew/avatar3d.js').then(m => m.ensureAvatarCss()).catch(() => {});
-  sc.append(grid, top10, live, hint);
+  grid.classList.add('rm-four');
+  sc.append(grid, live, hint);
   clear(root, sc);
 
   // Klavye: ok tuşları + Enter; Gamepad: d-pad / sol çubuk + A
   let focus = -1;
-  // masaüstü: tek sıra 6 kart (fx.css); mobil 2 sütun
-  const moveFocus = d => { const cols = window.innerWidth < 900 ? 2 : 6; const map = { r: 1, l: -1, d: cols, u: -cols }; focus = focus < 0 ? 0 : (focus + map[d] + cards.length) % cards.length; cards[focus].focus(); cards[focus].classList.add('hot'); cards.forEach((c, i) => i !== focus && c.classList.remove('hot')); };
+  // masaüstü: tek sıra 4 kart (rm.css); mobil 2 sütun
+  const moveFocus = d => { const cols = window.innerWidth < 900 ? 2 : 4; const map = { r: 1, l: -1, d: cols, u: -cols }; focus = focus < 0 ? 0 : (focus + map[d] + cards.length) % cards.length; cards[focus].focus(); cards[focus].classList.add('hot'); cards.forEach((c, i) => i !== focus && c.classList.remove('hot')); };
   const onKey = e => {
     const map = { ArrowRight: 'r', ArrowLeft: 'l', ArrowDown: 'd', ArrowUp: 'u' };
     if (e.key in map) { moveFocus(map[e.key]); e.preventDefault(); }

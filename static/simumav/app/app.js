@@ -11,7 +11,8 @@ import { toast, toastErr } from './ui/components.js';
 import * as sfx from './ui/sfx.js';
 import * as backdrop from './ui/backdrop.js';   // bölüm başına hareketli Canvas2D arka plan (#backdrop; içerik kodu değişmez)
 import * as music from './ui/music.js';         // prosedürel arka plan müziği (ilk etkileşimde; uçuş oturumunda susar)
-import { mountHolidayFx } from '/sim/holiday_fx.js';   // bayram temaları (HEPGO ile ortak; arka planın ÜSTÜNDE hafif katman, uçuş oturumunda kapalı)
+import { mountHolidayFx } from '/sim/holiday_fx.js';
+import { refreshPilot, startInvitePoll, togglePilotMenu, closePilotMenu } from './ui/pilotmenu.js';   // sağ üst Pilot menüsü (yol haritası)   // bayram temaları (HEPGO ile ortak; arka planın ÜSTÜNDE hafif katman, uçuş oturumunda kapalı)
 
 // Rota tablosu: modül `mount(root, ctx)` (oyun arayüzü modülleri) YA DA `render(view, params, ctx)` (fly/index.js) dışa aktarır; router ikisini de destekler.
 export const ROUTES = {
@@ -24,8 +25,10 @@ export const ROUTES = {
   ops: () => import('./ops/index.js'),
   settings: () => import('./settings/index.js'),
   support: () => import('./support/index.js'),
+  pilot: () => import('./pilot/index.js'),     // yol haritası Pilot menüsü: Önceki uçuşlarım · Arkadaşlarım · Davetler (#/pilot/<sekme>)
+  match: () => import('./pilot/invite.js'),    // e-posta davet bağlantısı #/match/invite/<belirteç>
 };
-const ORDER = ['menu', 'hangar', 'crew', 'tracks', 'missions', 'fly', 'ops', 'settings', 'support'];
+const ORDER = ['menu', 'hangar', 'tracks', 'crew', 'fly', 'missions', 'ops', 'pilot', 'match', 'settings', 'support'];
 
 const state = { user: null, pilotsCount: 0, settings: { lang: null, theme: 'auto', sound: true, analog_fpv: true }, meta: null, current: null, unmount: null };
 let analytics = null;
@@ -125,7 +128,8 @@ const ctx = {
       if (location.hash === hash || (target === 'menu' && !location.hash)) route(true); else ctx.go(target);
     };
   },
-  refreshSession: async () => { await loadSession(); renderChip(); },
+  refreshSession: async () => { await loadSession(); renderChip(); refreshPilot(chip); },
+  refreshPilot: () => refreshPilot(chip),
   applyTheme,
   setLang: async code => { await setLang(code); renderChip(); await route(true); },
   track,   // GA4 özel olayları (flight_start/flight_end …); rıza yoksa sessizce yok sayılır
@@ -190,7 +194,9 @@ async function boot() {
   gear.addEventListener('click', () => { sfx.select(); ctx.go('settings'); });
   help.addEventListener('click', async () => { try { (await ROUTES.support()).openReportModal(ctx); } catch (e) { toastErr(e); } });   // yaşam simidi: Sorun bildir (§9)
   help.addEventListener('pointerenter', () => sfx.hover());
-  chip.addEventListener('click', () => { sfx.select(); ctx.go('crew'); });
+  chip.addEventListener('click', () => togglePilotMenu(chip, ctx));   // yol haritası: sağ üst Pilot menüsü
+  refreshPilot(chip); startInvitePoll(chip);
+  window.addEventListener('hashchange', closePilotMenu);
   back.addEventListener('pointerenter', () => sfx.hover()); gear.addEventListener('pointerenter', () => sfx.hover()); chip.addEventListener('pointerenter', () => sfx.hover());
   music.initMusic();
   syncHoliday();

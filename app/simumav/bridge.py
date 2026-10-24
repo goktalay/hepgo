@@ -56,6 +56,8 @@ KINDS = ('corridor', 'free', 'spray', 'fpv_flags', 'fpv_gates', 'survey', 'defen
 WORLD_MODES = ('real', 'google3d', 'procedural')
 # tracks.world: HEPGO WORLD_DEFAULTS alt kümesi (flightsim3d.js ile aynı anahtarlar); rüzgâr/saat/hava ayrı sütunlardan gelir
 WORLD_KEYS = ('seed', 'size_m', 'tree_density', 'mountain_height', 'mountain_count', 'building_count', 'runway', 'runway_heading', 'water', 'fog', 'landing_circle_m')
+WORLD_BIOMES = ('forest', 'city', 'mountain')
+WORLD_EXTRA = {'vehicle_count': (0, 500), 'people_count': (0, 1000), 'elevation_m': (-100, 5000)}   # istemci sahnesi (araç/insan sayısı, deniz seviyesi yüksekliği)
 GATE_MAX, GATE_R, GATE_AGL = 50, (1.0, 20.0), (1.0, 120.0)
 
 
@@ -70,6 +72,18 @@ def world_dogrula(w):
         flightsim.world_dogrula({**out, 'mode': 'procedural'})
     except flightsim.SimHata as e:
         raise BridgeHata(422, 'invalid', str(e))
+    # yol haritası "Özel Parkurlar": biyom + yalnız istemci sahnesinin kullandığı yoğunluklar (çekirdeğe gitmez; _world yalnız WORLD_KEYS geçirir)
+    if w.get('biome') is not None:
+        if w['biome'] not in WORLD_BIOMES:
+            raise BridgeHata(422, 'invalid', f"world.biome {' | '.join(WORLD_BIOMES)} olmalı")
+        out['biome'] = w['biome']
+    for k, (lo, hi) in WORLD_EXTRA.items():
+        v = w.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or not (lo <= v <= hi):
+            raise BridgeHata(422, 'invalid', f'world.{k} {lo}…{hi} arasında olmalı')
+        out[k] = int(v) if k != 'elevation_m' else float(v)
     return out
 
 

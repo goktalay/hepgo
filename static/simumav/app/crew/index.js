@@ -10,6 +10,23 @@ import { ACCESSORIES, BEARDS, BODIES, BROWS, BROW_W, BUILDS, EYES, EYE_COLORS, F
   avatarBody, legacy, normAvatar, randomAvatar, switchBody } from './avatar_core.js';
 import { drawPatch } from './avatar_mesh.js';
 import { avatarImg, ensureAvatarCss, mountAvatarStage } from './avatar3d.js';
+import { levelBadge } from '../ui/pilotmenu.js';   // yol haritası: seviye rozeti (Pilot menüsüyle aynı)
+
+/** Seviye / XP / madalya paneli (yol haritası: seviye 1–100; doğrulanmamış XP ayrı tarama deseniyle). */
+export function xpPanel(p, levels = null) {
+  const span = Math.max(1, (p.next_level_xp ?? p.xp) - (p.level_xp ?? 0));
+  const pv = p.next_level_xp ? Math.max(0, Math.min(1, ((p.xp_verified ?? p.xp) - (p.level_xp ?? 0)) / span)) : 1;
+  const pt = p.next_level_xp ? Math.max(0, Math.min(1, (p.xp - (p.level_xp ?? 0)) / span)) : 1;
+  const medals = (levels?.medals || [5, 10, 25, 50, 75, 100].map((l, i) => ({ id: ['wings_bronze', 'wings_silver', 'wings_gold', 'wings_platinum', 'wings_diamond', 'wings_legend'][i], level: l })));
+  return h('div', { class: 'rm-xp-card', dataset: { pid: String(p.id) } },
+    h('div', { class: 'rm-switch' }, h('b', { class: 'title md' }, p.name), levelBadge(p),
+      h('span', { class: 'rm-note' }, p.next_level_xp ? t('rm.xp_to_next', { x: p.xp, n: p.next_level_xp }) : t('rm.max_level'))),
+    h('div', { class: 'rm-xp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(pt * 100)) },
+      h('u', { style: `width:${(pt * 100).toFixed(1)}%` }), h('i', { style: `width:${(pv * 100).toFixed(1)}%` })),
+    p.xp_unverified ? h('span', { class: 'rm-note' }, t('rm.xp_unverified', { x: p.xp_unverified })) : null,
+    h('div', { class: 'rm-medal-row' }, medals.map(m => h('div', { class: 'rm-medal-cell', title: t(`rm.medal_${m.id}`) },
+      h('i', { class: `rm-medal big m-${m.id} ${(p.medals || []).includes(m.id) ? '' : 'off'}` }), h('b', null, t(`rm.medal_${m.id}`)), h('small', null, t('rm.lv', { l: m.level }))))));
+}
 
 const CHARS = Object.keys(LEGACY);
 
@@ -17,7 +34,10 @@ export async function mount(root, ctx) {
   ensureAvatarCss();
   const sc = screen({ title: t('crew.title'), sub: t('crew.sub') });
   const grid = h('div', { class: 'grid crew-grid' });
-  sc.classList.add('scroll'); sc.append(grid);
+  const top = h('div', { class: 'rm-crew-top', style: 'width:min(1180px,100%);margin:0 auto 16px;display:grid;gap:12px' });   // pilot değiştir + seviye paneli
+  sc.classList.add('scroll'); sc.append(top, grid);
+  let levels = null;
+  api.get('/api/crew/levels').then(r => { levels = r; renderTop(); }).catch(() => {});
   clear(root, sc);
   ctx.setBack(t('common.menu'));
   let pilots = [];
@@ -30,7 +50,7 @@ export async function mount(root, ctx) {
         miniBtn(svg('0 0 24 24', EDIT_SVG), () => openEditor(p), '', t('avatar.edit')),
         miniBtn(svg('0 0 24 24', TRASH_SVG), () => remove(p), 'danger', t('common.delete'))),
       h('div', { class: 'face av3d' }, avatarImg(p.avatar, { size: 256, alt: '' })),
-      h('b', {}, p.name),
+      h('b', {}, p.name), levelBadge(p),
       p.is_default ? h('span', { class: 'badge accent' }, t('crew.default_pilot')) : h('span', { class: 'badge' }, t('crew.pilot')),
       h('div', { class: 'meta' }, h('span', {}, h('b', {}, p.flights ?? 0), ` ${t('crew.flights')}`), h('span', {}, h('b', {}, fmtH(p.hours)))));
     c.addEventListener('dblclick', () => openEditor(p));
@@ -38,7 +58,15 @@ export async function mount(root, ctx) {
     return c;
   };
 
+  function renderTop() {
+    const cur = pilots.find(p => p.is_default) || pilots[0];
+    if (!cur) { clear(top); return; }
+    const sel = h('select', { class: 'input', 'aria-label': t('rm.switch_pilot'), onchange: async e => { const p = pilots.find(x => x.id === Number(e.target.value)); if (p) await setDefault(p); } },
+      pilots.map(p => h('option', { value: p.id, selected: p.id === cur.id }, `${p.name} · ${t('rm.lv', { l: p.level || 1 })}`)));
+    clear(top, h('div', { class: 'rm-switch' }, h('b', null, t('rm.switch_pilot')), sel), xpPanel(cur, levels));
+  }
   const render = () => {
+    renderTop();
     const cards = pilots.map(card);
     clear(grid, cards, h('div', { class: 'pilot-card plus-holder' }, plusButton(t('crew.new'), () => openEditor(null), { small: true })));
     stagger([...grid.children], 50);
@@ -91,7 +119,7 @@ export async function mount(root, ctx) {
     const drawHair = () => { const first = HAIR_BY_BODY[A.body] || []; clear(hairBox, [...first, ...HAIRS.filter(x => !first.includes(x))].map(v => h('button', { type: 'button', class: `av-opt ${first.includes(v) ? '' : 'alt'}`, dataset: { k: 'hair', v }, onclick: () => setA({ hair: v }) }, t(`avatar.hair_${v}`)))); };
     // §28 sekmeler: Beden · Yüz · Saç · Kıyafet · Aksesuar
     const TABS = [
-      ['body', [field('name', t('avatar.name'), name), field('presets', t('avatar.presets'), presets), field('body', t('avatar.body'), opts('body', BODIES)),
+      ['body', [isNew ? null : field('name', t('avatar.name'), name), field('presets', t('avatar.presets'), presets), field('body', t('avatar.body'), opts('body', BODIES)),
         field('build', t('avatar.build'), opts('build', BUILDS)), field('skin', t('avatar.skin'), skins)]],
       ['face', [field('face', t('avatar.face'), opts('face', FACES)), field('eyes', t('avatar.eyes'), opts('eyes', EYES)), field('eye_color', t('avatar.eye_color'), sw('eye_color', EYE_COLORS)),
         field('brows', t('avatar.brows'), opts('brows', BROWS)), field('brow_w', t('avatar.brow_w'), opts('brow_w', BROW_W)), field('nose', t('avatar.nose'), opts('nose', NOSES)),
@@ -103,11 +131,16 @@ export async function mount(root, ctx) {
       ['acc', [field('headgear', t('avatar.headgear'), opts('headgear', HEADGEAR)), field('helmet', t('avatar.helmet'), sw('helmet', HELMET_COLORS)),
         field('visor', t('avatar.visor'), sw('visor', VISOR_COLORS), h('div', { class: 'av-sw' }, mirror, toggle('visor_open', t('avatar.visor_open')))), field('accessory', t('avatar.accessory'), accs)]],
     ];
+    if (isNew) TABS.push(['name', [field('name', t('avatar.name'), name), h('p', { class: 'rm-note' }, t('rm.pilot_starts'))]]);   // yol haritası sihirbazı: cinsiyet/vücut → yüz → saç → kıyafet → aksesuar → ad soyad
     let tab = 'body';
     const panes = TABS.map(([k, kids]) => h('div', { class: 'av-pane', dataset: { pane: k }, role: 'tabpanel' }, ...kids));
     const tabBtns = TABS.map(([k]) => h('button', { type: 'button', class: 'av-tab', role: 'tab', dataset: { tab: k }, onclick: () => { tab = k; paintTabs(); } }, t(`avatar.tab_${k}`)));
     const paintTabs = () => { for (const b of tabBtns) { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); } for (const pn of panes) pn.hidden = pn.dataset.pane !== tab; };
-    const form = h('div', { class: 'av-form' }, h('div', { class: 'av-tabs', role: 'tablist' }, tabBtns), ...panes);
+    const order = TABS.map(([k]) => k);
+    const stepNav = isNew ? h('div', { class: 'btn-row rm-wiz-nav' },
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => { const i = order.indexOf(tab); if (i > 0) { tab = order[i - 1]; paintTabs(); } } }, '‹ ', t('common.back')),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { const i = order.indexOf(tab); if (i < order.length - 1) { tab = order[i + 1]; paintTabs(); if (tab === 'name') name.focus(); } } }, t('common.next'), ' ›')) : null;
+    const form = h('div', { class: 'av-form' }, h('div', { class: 'av-tabs', role: 'tablist' }, tabBtns), ...panes, stepNav);
     const keepIn = h('input', { type: 'checkbox', class: 'av-keep' });
     const dice = h('button', { type: 'button', class: 'btn ghost av-dice', onclick: () => { A = randomAvatar(Math.random, { body: keepIn.checked ? A.body : null }); syncInputs(); upd(); } }, '🎲 ', t('avatar.random'));
     let zoom = 'body';
@@ -137,7 +170,7 @@ export async function mount(root, ctx) {
     name.addEventListener('input', () => live?.set(A, name.value.trim()));
     const m = modal({ title: isNew ? t('crew.new') : t('avatar.edit_title', { name: p.name }), wide: true, body: box, onClose: () => { live?.dispose(); live = null; },
       actions: [{ label: t('common.cancel'), cls: 'ghost' }, { label: t('common.save'), cls: 'primary', onClick: async () => {
-        const n = name.value.trim(); if (!n) { tab = 'body'; paintTabs(); name.focus(); return false; }
+        const n = name.value.trim(); if (!n) { tab = isNew ? 'name' : 'body'; paintTabs(); name.focus(); return false; }
         try {
           if (isNew) { await api.post('/api/crew', { name: n, character, avatar: avatarBody(A) }); toast(t('crew.welcome', { name: n }), 'ok'); }
           else { await api.put(`/api/crew/${p.id}`, { name: n, character, avatar: avatarBody(A) }); toast(t('common.saved'), 'ok'); }
@@ -151,4 +184,5 @@ export async function mount(root, ctx) {
   }
   await load();
   if (ctx.param === 'new') openEditor(null);
+  if (ctx.param === 'edit') { const p = pilots.find(x => x.is_default) || pilots[0]; if (p) openEditor(p); }   // Pilot menüsü › Özelleştir
 }

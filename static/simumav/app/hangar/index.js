@@ -27,6 +27,7 @@ import { stagger } from '../ui/transition.js';
 import { loadThree, makeStage, lights } from '../core/three.js';
 import { buildDrone, animateDrone, loadGlb, TYPE_TEMPLATE } from './procmodels.js';
 import * as sfx from '../ui/sfx.js';
+import { openDroneWizard } from './wizard.js';   // yol haritası: tip → model → performans → kamera → eklentiler → görünüm
 
 export const TYPES = ['multirotor', 'plane', 'heli', 'vtol', 'fpv', 'interceptor', 'rover'];
 // hız / menzil / dayanıklılık / çeviklik (0–100)
@@ -111,13 +112,18 @@ export async function mount(root, ctx) {
     selected = d;
     clear(caption, h('h2', { class: 'title xl' }, d ? d.name : t('hangar.empty_title')), h('p', { class: 'sub' }, d ? `${t(`types.${d.type}`)} · ${modelLabel(d)}${d.airframe ? ` · ${t(`airframe.${d.airframe}`)}` : ''}${d.type === 'rover' ? ` · ${roverStat(d.drive)}` : ''}` : t('hangar.empty_sub')));   // §13.1 düzen · §15 kara aracı sürüş biçimi
     for (const c of strip.children) c.classList.toggle('sel', c.dataset.id === String(d?.id));
-    clear(powerBox, d ? [powerSummary({ h, t, drone: d }), btn([svg('0 0 24 24', BOLT_SVG), ` ${t('power.edit')}`], () => editPower(d), 'pw-edit-btn')] : null);
+    clear(powerBox, d ? [powerSummary({ h, t, drone: d }), btn([svg('0 0 24 24', BOLT_SVG), ` ${t('power.edit')}`], () => editPower(d), 'pw-edit-btn'),
+      h('div', { class: 'btn-row rm-drone-acts' }, btn([svg('0 0 24 24', EDIT_SVG), ` ${t('common.edit')}`], () => editDrone(d), 'sm'), btn(`⌨ ${t('rm.scripts')}`, () => openScripts(d), 'sm'),
+        btn([svg('0 0 24 24', TRASH_SVG), ` ${t('common.delete')}`], () => remove(d), 'sm danger')),
+      equipLine(d)] : null);
     viewer?.setModel(d);
   };
   const editPower = d => openPowerEditor(d, { limits: powerInfo?.limits, onSaved: async () => { await load(); } });
 
   const card = (d, idx) => {
-    const c = h('div', { class: 'card lift strip-card', tabindex: '0', role: 'button', dataset: { id: String(d.id) }, onclick: () => select(d), onkeydown: e => { if (e.key === 'Enter') select(d); } },
+    // yol haritası: kayıtlı drona tıklayınca (seçiliyse) "Düzenle / Sil" sorulur
+    const pick = () => { if (selected?.id === d.id) askEditDelete(d); else select(d); };
+    const c = h('div', { class: 'card lift strip-card', tabindex: '0', role: 'button', dataset: { id: String(d.id) }, onclick: pick, onkeydown: e => { if (e.key === 'Enter') pick(); } },
       h('div', { class: 'row-actions' },
         miniBtn(svg('0 0 24 24', STAR_SVG), () => setDefault(d), d.is_default ? 'on' : '', t('common.default')),
         miniBtn(svg('0 0 24 24', EDIT_SVG), () => rename(d), '', t('common.rename')),
@@ -151,8 +157,49 @@ export async function mount(root, ctx) {
   const remove = async d => { if (!await confirmDlg(t('hangar.delete_q', { name: d.name }), { danger: true })) return; try { await api.del(`/api/hangar/${d.id}`); toast(t('common.deleted'), 'ok'); await load(); } catch (e) { toastErr(e); } };
   const setDefault = async d => { try { await api.put(`/api/hangar/${d.id}`, { is_default: 1 }); await load(); } catch (e) { toastErr(e); } };
 
-  // ---------- "+" sihirbazı ----------
+  const equipLine = d => { const e = d.equipment || {}; const ad = Object.keys(e.addons || {}); return h('p', { class: 'rm-note' }, [t(`rm.cam_${e.camera || 'day'}`), ...ad.map(a => t(`rm.addon_${a}`)), e.livery?.callsign].filter(Boolean).join(' · ')); };
+  const askEditDelete = d => modal({ title: d.name, body: h('p', null, t('rm.hw_ask')), actions: [
+    { label: t('common.delete'), cls: 'danger', onClick: () => { remove(d); } },
+    { label: t('rm.scripts'), cls: 'ghost', onClick: () => { openScripts(d); } },
+    { label: t('common.edit'), cls: 'primary', onClick: () => { editDrone(d); } }] });
+  let eqCat = null;
+  const wizardDeps = async () => {
+    if (!catalog) { try { catalog = await api.get('/api/hangar/catalog'); } catch (e) { toastErr(e); catalog = { types: [] }; } }
+    if (!eqCat) { try { eqCat = await api.get('/api/hangar/equipment'); } catch { eqCat = null; } }
+    viewer?.dispose(); viewer = null; viewerWanted = false; dropCardViews();
+  };
+  const done = d => { wizDispose?.(); wizDispose = null; mount(root, ctx); };
   async function openWizard() {
+    await wizardDeps();
+    wizDispose = await openDroneWizard(root, ctx, { catalog, eqCat, count: drones.length, miniView: miniDroneView, bigView: host => modelViewer(host, { speed: 0.7 }), onDone: done });
+  }
+  async function editDrone(d) {
+    await wizardDeps();
+    try { d._decals = (await api.get(`/api/hangar/${d.id}/decals`)).decals || []; } catch { d._decals = []; }
+    wizDispose = await openDroneWizard(root, ctx, { catalog, eqCat, existing: d, count: drones.length, miniView: miniDroneView, bigView: host => modelViewer(host, { speed: 0.7 }), onDone: done });
+  }
+  // Lua script'leri (kalıcı; sunucu SITL'inde çalıştırılmaz — indirip Mission Planner / gerçek araç / yerel SITL'de kullanılır)
+  async function openScripts(d) {
+    const list = h('div', { class: 'rm-list' });
+    const file = h('input', { type: 'file', accept: '.lua,text/plain', hidden: true, onchange: async e => {
+      const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+      const name = f.name.toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+      try { await api.post(`/api/hangar/${d.id}/scripts`, { name: name.endsWith('.lua') ? name : `${name}.lua`, content: await f.text() }); toast(t('common.saved'), 'ok'); load(); } catch (err) { toastErr(err); }
+    } });
+    const load = async () => {
+      let r; try { r = await api.get(`/api/hangar/${d.id}/scripts`); } catch (e) { toastErr(e); return; }
+      clear(list, r.scripts.length ? r.scripts.map(s => h('div', { class: 'rm-li', style: 'grid-template-columns:1fr auto' },
+        h('div', { class: 'tx' }, h('b', { class: 'mono' }, s.name), h('small', null, `${(s.size / 1024).toFixed(1)} KB · ${s.enabled ? t('rm.on') : t('rm.off')}`)),
+        h('div', { class: 'ac' }, h('a', { class: 'btn sm', href: `/api/hangar/${d.id}/scripts/${s.id}/download` }, '⬇'),
+          btn(s.enabled ? t('rm.off') : t('rm.on'), async () => { try { await api.put(`/api/hangar/${d.id}/scripts/${s.id}`, { enabled: !s.enabled }); load(); } catch (e) { toastErr(e); } }, 'sm'),
+          btn('✕', async () => { try { await api.del(`/api/hangar/${d.id}/scripts/${s.id}`); load(); } catch (e) { toastErr(e); } }, 'sm danger')))) : h('p', { class: 'rm-empty' }, t('rm.no_scripts')));
+    };
+    modal({ title: `${t('rm.scripts')} · ${d.name}`, wide: true, body: h('div', { class: 'rm-actions-dlg' }, h('p', { class: 'rm-note' }, t('rm.scripts_note')), list, file,
+      btn(`+ ${t('rm.script_add')}`, () => file.click(), 'primary')), actions: [{ label: t('common.ok'), cls: 'primary' }] });
+    load();
+  }
+  // ---------- eski "+" sihirbazı (tip → model → renk/ad; yol haritası sihirbazı yüklenemezse yedek) ----------
+  async function openWizardLegacy() {
     if (!catalog) { try { catalog = await api.get('/api/hangar/catalog'); } catch (e) { toastErr(e); catalog = { types: [] }; } }
     const wiz = h('div', { class: 'screen' });
     const head = h('header', { class: 'screen-head' }, h('h1', { class: 'title lg' }, t('hangar.new')), h('div', { class: 'steps' }, [0, 1, 2, 3].map(() => h('i'))));

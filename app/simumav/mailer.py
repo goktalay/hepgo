@@ -1,5 +1,5 @@
-"""SIMUMAV e-posta gönderici (karşılaşma davetleri). SIMUMAV yalıtımı gereği YALNIZ SIMUMAV_* ayarlarını okur (HEPGO sysmail / Mastertool
-mailer ayarları burada kullanılmaz; aynı Zoho hesabı istenirse değerler SIMUMAV_* adlarıyla .env'e yazılır).
+"""SIMUMAV e-posta gönderici (karşılaşma davetleri). Önce SIMUMAV_* ayarlarını okur; yoksa Mastertool hesap servisinin (mastertool.download
+üyelik e-postaları) MT_SMTP_HOST / MT_SMTP_PORT / MT_SMTP_USER / MT_SMTP_PASS / MT_MAIL_FROM ayarlarına düşer (aynı gönderici hesabı).
 
 .env (hepsi isteğe bağlı; USER + PASS yoksa enabled() False → davet e-postası atlanır, bağlantı API yanıtında kurucuya döner):
   SIMUMAV_SMTP_HOST (vars. smtp.zoho.com) · SIMUMAV_SMTP_PORT (vars. 465 SSL; 587 STARTTLS) · SIMUMAV_SMTP_USER · SIMUMAV_SMTP_PASS
@@ -20,10 +20,11 @@ OUTBOX = []
 
 
 def _ayar():
-    g = os.environ.get
-    return {'host': (g('SIMUMAV_SMTP_HOST', '') or 'smtp.zoho.com').strip(), 'port': int(g('SIMUMAV_SMTP_PORT', '465') or 465),
-            'user': g('SIMUMAV_SMTP_USER', '').strip(), 'pass': g('SIMUMAV_SMTP_PASS', ''),
-            'from': g('SIMUMAV_MAIL_FROM', '').strip(), 'name': g('SIMUMAV_MAIL_FROM_NAME', '').strip() or 'SIMUMAV'}
+    e = os.environ
+    g = lambda k, mt, d='': (e.get(k) or e.get(mt) or d) if mt else (e.get(k) or d)   # SIMUMAV_* yoksa Mastertool MT_* (aynı hesap)
+    return {'host': (g('SIMUMAV_SMTP_HOST', 'MT_SMTP_HOST') or 'smtp.zoho.com').strip(), 'port': int(g('SIMUMAV_SMTP_PORT', 'MT_SMTP_PORT', '465') or 465),
+            'user': g('SIMUMAV_SMTP_USER', 'MT_SMTP_USER').strip(), 'pass': g('SIMUMAV_SMTP_PASS', 'MT_SMTP_PASS'),
+            'from': g('SIMUMAV_MAIL_FROM', 'MT_MAIL_FROM').strip(), 'name': g('SIMUMAV_MAIL_FROM_NAME', None).strip() or 'SIMUMAV'}
 
 
 def test_kipi():

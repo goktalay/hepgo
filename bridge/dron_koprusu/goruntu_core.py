@@ -196,6 +196,7 @@ class Tools:
         self.encoder = (encoder or 'otomatik').strip().lower()
         self.h265 = (h265 or 'uyar').strip().lower()
         self._elems = {}
+        self._demux = None
 
     def gst_has(self, elem):
         if elem not in self._elems:
@@ -209,6 +210,32 @@ class Tools:
             self._elems[elem] = ok
         return self._elems[elem]
 
+    def ff_demux(self, name):
+        """ffmpeg bu girişi (demuxer) okuyabiliyor mu? Bazı Jetson/statik ffmpeg derlemelerinde ağ girişleri (rtsp, sdp/rtp) yoktur
+        ("Unrecognized option 'rtsp_transport'") — o zaman kaynak GStreamer (rtspsrc/udpsrc) ile alınır, ffmpeg yalnız fMP4'e sarar."""
+        if self._demux is None:
+            names = set()
+            try:
+                out = subprocess.run([self.ffmpeg, '-hide_banner', '-demuxers'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     timeout=10).stdout.decode('utf-8', 'replace')
+                for line in out.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2 and 'D' in parts[0]:
+                        names.update(parts[1].split(','))
+            except Exception:   # noqa: BLE001
+                names = set()
+            self._demux = names
+        return name in self._demux if self._demux else True   # liste alınamazsa engelleme (eski davranış)
+
+    def ff_reads(self, cfg):
+        """ffmpeg bu kamerayı doğrudan açabilir mi (rtsp → 'rtsp' demuxer, rtp → 'sdp' demuxer)?"""
+        kind = cfg.get('kind')
+        if kind == 'rtsp':
+            return self.ff_demux('rtsp')
+        if kind == 'rtp':
+            return self.ff_demux('sdp')
+        return True
+
     def pick_encoder(self):
         """'nvv4l2h264enc' (Jetson donanım) | 'x264enc' (GStreamer yazılım) | 'libx264' (ffmpeg yazılım)."""
         if self.encoder in ('nvv4l2h264enc', 'x264enc', 'libx264'):
@@ -219,7 +246,7 @@ class Tools:
 
     def info(self):
         return {'ffmpeg': bool(shutil.which(self.ffmpeg) or os.path.isfile(self.ffmpeg)), 'ffprobe': bool(self.ffprobe and shutil.which(self.ffprobe)),
-                'gstreamer': bool(self.gst), 'encoder': self.pick_encoder()}
+                'gstreamer': bool(self.gst), 'encoder': self.pick_encoder(), 'ffmpeg_rtsp': self.ff_demux('rtsp')}
 
 
 def source_url(cfg):
@@ -289,28 +316,50 @@ def plan(cfg, tools, probe=None):
             'reason': ', '.join(reason)}
 
 
+def gst_source(cfg, src_codec):
+    """GStreamer kaynak + RTP çözme (rtspsrc / udpsrc → depay → parse): ['rtspsrc', …, '!', 'rtph264depay', '!', 'h264parse']."""
+    depay, parse = ('rtph265depay', 'h265parse') if src_codec == 'h265' else ('rtph264depay', 'h264parse')
+    if cfg['kind'] == 'rtsp':
+        src = ['rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150', 'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
+        if cfg.get('username'):
+            src += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
+    else:
+        caps = 'application/x-rtp,media=video,clock-rate=90000,encoding-name={},payload={}'.format(
+            'H265' if src_codec == 'h265' else 'H264', int(cfg.get('payload_type') or 96))
+        src = ['udpsrc', 'port={}'.format(int(cfg.get('rtp_port') or 5600)), 'caps=' + caps, '!', 'rtpjitterbuffer', 'latency=100']
+    return src + ['!', depay, '!', parse]
+
+
+def gst_copy_commands(cfg, tools, codec, tail):
+    """Yeniden kodlamadan: GStreamer kaynaktan H.264/H.265 bayt akışı → ffmpeg (-f h264|hevc, duvar saati zaman damgası) + tail."""
+    caps = 'video/x-h265' if codec == 'h265' else 'video/x-h264'
+    gst = [tools.gst, '-q', '-e'] + gst_source(cfg, codec) + ['config-interval=-1', '!', caps + ',stream-format=byte-stream,alignment=au', '!', 'fdsink', 'fd=1']
+    mux = [tools.ffmpeg, '-hide_banner', '-loglevel', 'warning', '-fflags', '+genpts+nobuffer', '-use_wallclock_as_timestamps', '1',
+           '-f', 'hevc' if codec == 'h265' else 'h264', '-i', 'pipe:0'] + tail
+    return [gst, mux]
+
+
 def build_commands(cfg, tools, pl, sdp_path=None):
     """Çalıştırılacak süreçler: [ffmpeg] ya da [gst-launch, ffmpeg] (gst H.264 bayt akışı → ffmpeg fMP4 sarmalayıcı)."""
     ff = tools.ffmpeg
+    via_gst = cfg.get('kind') in ('rtsp', 'rtp') and not tools.ff_reads(cfg)   # ffmpeg ağ girişi yok → kaynak GStreamer'dan
+    if via_gst and not tools.gst:
+        raise RuntimeError("Bu ffmpeg {} girişini desteklemiyor ve GStreamer yok: sudo apt install --reinstall ffmpeg gstreamer1.0-tools "
+                           "gstreamer1.0-plugins-good gstreamer1.0-plugins-bad".format(cfg.get('kind', '').upper()))
     if pl['copy']:
         tag = ['-tag:v', 'hvc1'] if pl['codec'] == 'h265' else []
+        if via_gst:
+            return gst_copy_commands(cfg, tools, pl['codec'], ['-c:v', 'copy'] + tag + fmp4_out())
         return [[ff] + ffmpeg_input(cfg, sdp_path) + ['-map', '0:v:0', '-c:v', 'copy'] + tag + fmp4_out()]
     fps = int(pl['fps'] or 25)
     kbps = int(cfg.get('bitrate_kbps') or 2000)
     w, h = cfg.get('width'), cfg.get('height')
     enc = tools.pick_encoder()
+    if via_gst and enc == 'libx264':
+        enc = 'x264enc'   # kaynak GStreamer'dan geliyorsa kodlama da GStreamer'da
     if enc in ('nvv4l2h264enc', 'x264enc') and tools.gst and cfg.get('kind') in ('rtsp', 'rtp'):
         gst = [tools.gst, '-q', '-e']
         src_codec = 'h265' if (pl.get('src_codec') or cfg.get('codec')) == 'h265' else 'h264'
-        depay, parse = ('rtph265depay', 'h265parse') if src_codec == 'h265' else ('rtph264depay', 'h264parse')
-        if cfg['kind'] == 'rtsp':
-            src = ['rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150', 'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
-            if cfg.get('username'):
-                src += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
-        else:
-            caps = 'application/x-rtp,media=video,clock-rate=90000,encoding-name={},payload={}'.format(
-                'H265' if src_codec == 'h265' else 'H264', int(cfg.get('payload_type') or 96))
-            src = ['udpsrc', 'port={}'.format(int(cfg.get('rtp_port') or 5600)), 'caps=' + caps, '!', 'rtpjitterbuffer', 'latency=100']
         size = ',width={},height={}'.format(w, h) if w and h else ''
         if enc == 'nvv4l2h264enc':
             chain = ['nvv4l2decoder', '!', 'nvvidconv', '!', 'video/x-raw,format=I420', '!', 'videorate', 'drop-only=true', '!',
@@ -321,7 +370,7 @@ def build_commands(cfg, tools, pl, sdp_path=None):
             chain = ['avdec_' + ('h265' if src_codec == 'h265' else 'h264'), '!', 'videoconvert', '!', 'videoscale', '!', 'videorate', 'drop-only=true', '!',
                      'video/x-raw,format=I420,framerate={}/1'.format(fps) + size, '!',
                      'x264enc', 'tune=zerolatency', 'speed-preset=ultrafast', 'bitrate={}'.format(kbps), 'key-int-max={}'.format(fps * 2)]
-        gst += src + ['!', depay, '!', parse, '!'] + chain + ['!', 'h264parse', 'config-interval=-1', '!',
+        gst += gst_source(cfg, src_codec) + ['!'] + chain + ['!', 'h264parse', 'config-interval=-1', '!',
                                                               'video/x-h264,stream-format=byte-stream,alignment=au', '!', 'fdsink', 'fd=1']
         mux = [ff, '-hide_banner', '-loglevel', 'warning', '-fflags', '+genpts+nobuffer', '-f', 'h264', '-framerate', str(fps), '-i', 'pipe:0',
                '-c:v', 'copy'] + fmp4_out()
@@ -336,8 +385,8 @@ def build_commands(cfg, tools, pl, sdp_path=None):
 
 async def probe(cfg, tools, sdp_path=None):
     """ffprobe ile kaynak kodeki/FPS/çözünürlük (yoksa {}). Zaman aşımı PROBE_S."""
-    if not tools.ffprobe or cfg.get('kind') == 'test':
-        return {}
+    if not tools.ffprobe or cfg.get('kind') == 'test' or not tools.ff_reads(cfg):
+        return {}   # ffmpeg/ffprobe bu girişi okuyamıyor (GStreamer yolu): kodek kamera kaydından
     args = [tools.ffprobe, '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,r_frame_rate',
             '-of', 'json']
     if cfg.get('kind') == 'rtp':
@@ -556,6 +605,29 @@ class CameraWorker:
             except Exception:   # noqa: BLE001
                 pass
 
+    async def _snapshot_gst(self, out):
+        """ffmpeg ağ girişi yoksa: GStreamer kaynaktan H.264/H.265 bayt akışı → ffmpeg tek JPEG kare."""
+        codec = 'h265' if (self.plan or {}).get('src_codec') == 'h265' or self.cfg.get('codec') == 'h265' else 'h264'
+        gst, ff = gst_copy_commands(self.cfg, self.tools, codec, out)
+        r, w = os.pipe()
+        p1 = p2 = None
+        try:
+            p1 = await asyncio.create_subprocess_exec(*gst, stdin=asyncio.subprocess.DEVNULL, stdout=w, stderr=asyncio.subprocess.DEVNULL)
+            p2 = await asyncio.create_subprocess_exec(*ff, stdin=r, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        finally:
+            os.close(r)
+            os.close(w)
+        try:
+            jpg, err = await asyncio.wait_for(p2.communicate(), SNAP_S)
+        except asyncio.TimeoutError:
+            _kill(p2)
+            raise RuntimeError('Kaynaktan kare alınamadı (zaman aşımı, GStreamer)')
+        finally:
+            _kill(p1)
+        if not jpg.startswith(b'\xff\xd8'):
+            raise RuntimeError(redact(err.decode('utf-8', 'replace').strip().splitlines()[-1] if err.strip() else 'JPEG üretilemedi')[:200])
+        return jpg
+
     async def snapshot(self):
         """JPEG: yayın açıksa önbellekteki init + son anahtar parçadan (kaynağa ikinci bağlantı yok — RTP portu meşgul olsa da çalışır),
         değilse kaynaktan tek kare."""
@@ -571,6 +643,8 @@ class CameraWorker:
                     fd, sdp_path = tempfile.mkstemp(prefix='hepgo-rtp-', suffix='.sdp')
                     with os.fdopen(fd, 'w') as f:
                         f.write(sdp_text(self.cfg))
+                if self.cfg.get('kind') in ('rtsp', 'rtp') and not self.tools.ff_reads(self.cfg) and self.tools.gst:
+                    return await self._snapshot_gst(out)
                 args = [ff] + ffmpeg_input(self.cfg, sdp_path) + out
                 data_in = None
             p = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE if data_in else asyncio.subprocess.DEVNULL,

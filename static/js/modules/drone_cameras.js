@@ -155,7 +155,7 @@ export function previewModal(c) {
     title: tr('{name} · canlı önizleme', { name: c.name }), wide: true,
     onClose: () => p.stop(),
     body: h('div', null, h('div', { style: { aspectRatio: '16 / 9', borderRadius: '10px', overflow: 'hidden' } }, p.el),
-      h('p', { class: 'small muted', style: { marginTop: '8px' } }, 'Görüntü köprüden canlı gelir; izleyen kalmayınca köprü yayını durdurur (bant tasarrufu). Gecikme sol altta gösterilir; "JPEG" düşük bant kipine geçer.')),
+      h('p', { class: 'small muted', style: { marginTop: '8px' } }, 'Görüntü köprüden canlı gelir; ■ Durdur ya da pencereyi kapatınca köprü yayını hemen durdurur. Gecikme sol altta gösterilir; "JPEG" düşük bant kipine geçer.')),
     actions: [{ label: 'Kapat' }],
   });
 }

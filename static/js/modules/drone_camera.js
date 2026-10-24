@@ -16,7 +16,7 @@ import {
 const GREEN = '#3dff7a';
 const STATE_TEXT = {
   baglaniyor: 'Bağlanıyor…', basliyor: 'Kaynak açılıyor…', canli: 'Canlı', kare_yok: 'Görüntü yok', hata: 'Kaynak hatası', h265: 'H.265 kaynak',
-  kopru_cevrimdisi: 'Köprü çevrim dışı', bekliyor: 'Bekliyor', durdu: 'Yayın durdu', yetki: 'Yetki yok',
+  kopru_cevrimdisi: 'Köprü çevrim dışı', bekliyor: 'Bekliyor', durdu: 'Yayın durdu', yetki: 'Yetki yok', durduruldu: 'Durduruldu',
 };
 
 function el(tag, attrs, ...kids) {
@@ -42,6 +42,9 @@ const CSS = `
 .drc-tools{position:absolute;right:6px;top:6px;display:flex;gap:4px;z-index:3;opacity:0;transition:opacity .15s}
 .drc-player:hover .drc-tools,.drc-tools:focus-within,.drc-player.nohud .drc-tools{opacity:1}
 @media (hover:none){.drc-tools{opacity:1;top:auto;bottom:26px}}
+.drc-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;padding:10px 22px;border-radius:999px;border:1px solid rgba(74,222,128,.7);background:rgba(6,20,12,.75);color:#bbf7d0;font:600 15px system-ui,sans-serif;cursor:pointer}
+.drc-play:hover{background:rgba(22,101,52,.85);color:#fff}
+.drc-play[hidden]{display:none}
 .drc-ico{width:13px;height:13px;vertical-align:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .drc-tools button,.drc-tools select{font:600 11px/1 ui-monospace,monospace;background:rgba(0,0,0,.55);color:${GREEN};border:1px solid rgba(61,255,122,.45);border-radius:5px;padding:4px 6px;cursor:pointer}
 .drc-tools select{max-width:140px}
@@ -85,8 +88,10 @@ const wsUrl = path => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${loca
 // ======================================================================
 // Oynatıcı
 // ======================================================================
-/** createPlayer({cameraId, hud?, tools?}) → {el, video, stop(), onState(fn), state, lag, setHudSource(fn)} */
-export function createPlayer({ cameraId, hud = false, getTelemetry = null, droneSelect = null, popout = null, lowBandwidth = false } = {}) {
+/** createPlayer({cameraId, hud?, tools?, autostart?}) → {el, video, start(), pause(), stop(), onState(fn), state, lag}
+ *  autostart=false: kullanıcı "▶ Başlat" demeden köprüden yayın istenmez; "■ Durdur" izleme bağlantısını kapatır → sunucu köprüye
+ *  want:false gönderir, köprü kaynağı kapatır (yayın yalnız kullanıcı isteğiyle açık kalır). */
+export function createPlayer({ cameraId, hud = false, getTelemetry = null, droneSelect = null, popout = null, lowBandwidth = false, autostart = true } = {}) {
   ensureCamCss();
   const video = el('video', { muted: true, playsinline: true, autoplay: true });
   video.muted = true;
@@ -98,11 +103,13 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   const hudBtn = hud ? el('button', { type: 'button', class: hudOn ? '' : 'off', title: 'HUD aç/kapat', onclick: e => { e.stopPropagation(); hudOn = !hudOn; hudBtn.className = hudOn ? '' : 'off'; localStorage.setItem(HUD_KEY, hudOn ? '1' : '0'); } }, 'HUD') : null;
   const lowBtn = el('button', { type: 'button', class: lowBandwidth ? '' : 'off', title: 'Düşük bant: yalnız 2 sn\'de bir anlık görüntü (JPEG)', onclick: e => { e.stopPropagation(); setLow(!low); } }, 'JPEG');
   const popBtn = popout ? el('button', { type: 'button', title: 'Ayrı pencerede aç (çift tık)', onclick: e => { e.stopPropagation(); popout(); } }, icon('pop')) : null;
-  const tools = el('div', { class: 'drc-tools' }, droneSelect, hudBtn, lowBtn, popBtn);
-  const root = el('div', { class: `drc-player${hud ? '' : ' nohud'}` }, video, snapImg, canvas, msg, st, tools);
+  const stopBtn = el('button', { type: 'button', title: 'Yayını durdur (köprü kaynağı kapatır)', onclick: e => { e.stopPropagation(); pause(); } }, '■');
+  const playBtn = el('button', { type: 'button', class: 'drc-play', title: 'Yayını başlat', onclick: e => { e.stopPropagation(); start(); } }, '▶ ', t('Başlat'));
+  const tools = el('div', { class: 'drc-tools' }, droneSelect, hudBtn, lowBtn, stopBtn, popBtn);
+  const root = el('div', { class: `drc-player${hud ? '' : ' nohud'}` }, video, snapImg, canvas, msg, st, tools, playBtn);
   const S = { state: 'baglaniyor', detail: '', lag: null, age: null, stat: {}, mime: null, ws: null, ms: null, sb: null, q: [], closed: false, live: false };
   const listeners = new Set();
-  let low = false, snapTimer = null, edgeTimer = null, retry = null, url = null;
+  let low = false, snapTimer = null, edgeTimer = null, retry = null, url = null, running = false;
 
   const MS = window.ManagedMediaSource || window.MediaSource;
   const setState = (state, detail = '') => {
@@ -170,6 +177,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   }
   function setLow(on, forced = false) {
     low = !!on;
+    if (!running) { lowBtn.className = low ? '' : 'off'; return; }   // durdurulmuşken yalnız tercih değişir
     lowBtn.className = low ? '' : 'off';
     clearInterval(snapTimer); snapTimer = null;
     video.hidden = low; snapImg.hidden = !low;
@@ -181,7 +189,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   }
   function closeWs() { const ws = S.ws; S.ws = null; if (ws) { ws.onclose = null; try { ws.close(); } catch { /* */ } } resetMse(); }
   function connect() {
-    if (S.closed || low) return;
+    if (S.closed || low || !running) return;
     closeWs();
     setState('baglaniyor');
     const ws = new WebSocket(wsUrl(`/ws/drone/video/watch?camera_id=${encodeURIComponent(cameraId)}`));
@@ -210,6 +218,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
       if (S.ws !== ws) return;
       S.ws = null;
       if (S.closed || ev.code === 4403 || ev.code === 4404) { if (ev.code === 4404) setState('hata', 'Kamera bulunamadı ya da pasif'); return; }
+      if (!running) return;
       setState('baglaniyor', 'Yeniden bağlanılıyor');
       retry = setTimeout(connect, 3000);
     };
@@ -230,11 +239,23 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   if (hud) raf = requestAnimationFrame(drawHud);
   edgeTimer = setInterval(edge, 500);
   root.addEventListener('dblclick', e => { if (popout && !e.target.closest('.drc-tools')) { e.preventDefault(); popout(); } });
-  if (lowBandwidth) setLow(true); else connect();
+  function start() {
+    if (S.closed || running) return;
+    running = true; playBtn.hidden = true; stopBtn.hidden = false; showMsg('');
+    if (low || lowBandwidth) { low = false; setLow(true); } else connect();
+  }
+  function pause() {
+    running = false; clearTimeout(retry); clearInterval(snapTimer); snapTimer = null; closeWs();
+    video.removeAttribute('src'); snapImg.hidden = true; video.hidden = false;
+    playBtn.hidden = false; stopBtn.hidden = true; S.live = false;
+    setState('durduruldu', '');
+  }
+  if (lowBandwidth) { low = true; lowBtn.className = ''; }
+  if (autostart) start(); else pause();
   return {
-    el: root, video, get state() { return S; },
+    el: root, video, get state() { return S; }, start, pause, get running() { return running; },
     onState: fn => { listeners.add(fn); return () => listeners.delete(fn); },
-    stop() { S.closed = true; clearTimeout(retry); clearInterval(edgeTimer); clearInterval(snapTimer); cancelAnimationFrame(raf); closeWs(); video.removeAttribute('src'); },
+    stop() { running = false; S.closed = true; clearTimeout(retry); clearInterval(edgeTimer); clearInterval(snapTimer); cancelAnimationFrame(raf); closeWs(); video.removeAttribute('src'); },
   };
 }
 
@@ -364,7 +385,7 @@ export function createCameraWindows(stage, { taskId = null, getHud = () => null,
   const place = (w, r) => { w.rect = r; Object.assign(w.box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` }); };
   const others = id => [...wins.entries()].filter(([k]) => k !== id).map(([, w]) => w.rect).filter(Boolean);
 
-  function open(cam) {
+  function open(cam, opts = {}) {
     if (wins.has(cam.id)) { wins.get(cam.id).box.style.zIndex = String(Date.now() % 1e6); return wins.get(cam.id); }
     const title = el('span', { class: 'drc-t' }, cam.name);
     const dot = el('i', { class: 'drc-dot' });
@@ -378,7 +399,7 @@ export function createCameraWindows(stage, { taskId = null, getHud = () => null,
         dsel.addEventListener('pointerdown', e => e.stopPropagation());
       }
     }
-    const player = createPlayer({ cameraId: cam.id, hud: true, getTelemetry: () => getHud(cam.id), droneSelect: dsel, popout });
+    const player = createPlayer({ cameraId: cam.id, hud: true, getTelemetry: () => getHud(cam.id), droneSelect: dsel, popout, autostart: !!opts.autostart });   // geri yüklenen pencere "▶ Başlat" bekler
     player.onState(s => { dot.className = `drc-dot${s.state === 'canli' ? ' on' : ''}`; });
     const close = el('button', { type: 'button', title: 'Kapat', onclick: e => { e.stopPropagation(); closeWin(cam.id); onClose(cam.id); } }, icon('x'));
     const pop = el('button', { type: 'button', title: 'Ayrı pencerede aç (çift tık)', onclick: e => { e.stopPropagation(); popout(); } }, icon('pop'));

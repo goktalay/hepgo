@@ -16,6 +16,7 @@ Tek uvicorn süreci varsayılır (drone_hub ile aynı).
 """
 import asyncio
 import json
+import logging
 import secrets
 import struct
 import time
@@ -23,6 +24,8 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import auth, cameras, db, drone_hub
+
+log = logging.getLogger('hepgo.drone_video')
 
 ws_router = APIRouter()
 
@@ -294,8 +297,10 @@ def _on_text(vb, msg):
         return None
     if t == 'vstate':
         st = stream(cid)
-        st.state = str(msg.get('state') or '')[:20]
-        st.detail = str(msg.get('detail') or '')[:300]
+        yeni = (str(msg.get('state') or '')[:20], str(msg.get('detail') or '')[:300])
+        if yeni != (st.state, st.detail):   # tanı: köprünün bildirdiği durum/hata (ffmpeg iletisi) sunucu günlüğüne
+            log.warning('Görüntü köprüsü %s (#%s) kamera %s: %s — %s', vb.name, vb.id, cid, yeni[0], yeni[1])
+        st.state, st.detail = yeni
         if msg.get('mime'):
             st.mime = str(msg['mime'])[:120]
         _to_viewers(st, {'t': 'state', 'state': st.state, 'detail': st.detail, 'mime': st.mime})
@@ -306,6 +311,7 @@ def _on_text(vb, msg):
             st.mime = str(msg['mime'])[:120]
         _to_viewers(st, {'t': 'stat', **st.stat, 'age': round(time.time() - st.last_frag, 2) if st.last_frag else None})
     elif t == 'snap_err':
+        log.warning('Görüntü köprüsü %s (#%s) kamera %s anlık görüntü hatası: %s', vb.name, vb.id, cid, str(msg.get('error') or '')[:300])
         st = stream(cid)
         if st.snap is not None and not st.snap.done():
             st.snap.set_exception(RuntimeError(str(msg.get('error') or 'Anlık görüntü alınamadı')[:300]))

@@ -323,11 +323,43 @@ def gst_source(cfg, src_codec):
         src = ['rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150', 'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
         if cfg.get('username'):
             src += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
+        src += ['!', 'application/x-rtp,media=video,encoding-name={}'.format('H265' if src_codec == 'h265' else 'H264')]   # yalnız bu kodekli video pedi
     else:
         caps = 'application/x-rtp,media=video,clock-rate=90000,encoding-name={},payload={}'.format(
             'H265' if src_codec == 'h265' else 'H264', int(cfg.get('payload_type') or 96))
         src = ['udpsrc', 'port={}'.format(int(cfg.get('rtp_port') or 5600)), 'caps=' + caps, '!', 'rtpjitterbuffer', 'latency=100']
     return src + ['!', depay, '!', parse]
+
+
+async def gst_probe(cfg, tools, timeout=8):
+    """ffprobe yoksa/okuyamıyorsa RTSP kodeğini GStreamer ile öğren: rtspsrc pedinin RTP başlığı (encoding-name=H264|H265)."""
+    if not tools.gst or cfg.get('kind') != 'rtsp':
+        return {}
+    args = [tools.gst, '-v', 'rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150',
+            'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
+    if cfg.get('username'):
+        args += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
+    args += ['!', 'fakesink']
+    p = None
+    try:
+        p = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                line = await asyncio.wait_for(p.stdout.readline(), max(0.1, end - time.time()))
+            except asyncio.TimeoutError:
+                break
+            if not line:
+                break
+            t = line.decode('utf-8', 'replace')
+            if 'media=(string)video' in t and 'encoding-name=(string)' in t:
+                enc = t.split('encoding-name=(string)', 1)[1].split(',', 1)[0].strip().upper()
+                return {'codec': {'H264': 'h264', 'H265': 'h265', 'HEVC': 'h265'}.get(enc, enc.lower())}
+    except Exception:   # noqa: BLE001
+        return {}
+    finally:
+        _kill(p)
+    return {}
 
 
 def gst_copy_commands(cfg, tools, codec, tail):
@@ -392,8 +424,10 @@ def build_commands(cfg, tools, pl, sdp_path=None):
 
 async def probe(cfg, tools, sdp_path=None):
     """ffprobe ile kaynak kodeki/FPS/çözünürlük (yoksa {}). Zaman aşımı PROBE_S."""
-    if not tools.ffprobe or cfg.get('kind') == 'test' or not tools.ff_reads(cfg):
-        return {}   # ffmpeg/ffprobe bu girişi okuyamıyor (GStreamer yolu): kodek kamera kaydından
+    if cfg.get('kind') in ('rtsp', 'rtp') and not tools.ff_reads(cfg):
+        return await gst_probe(cfg, tools)   # ffmpeg/ffprobe bu girişi okuyamıyor: kodek GStreamer'dan (RTP: kamera kaydından)
+    if not tools.ffprobe or cfg.get('kind') == 'test':
+        return {}
     args = [tools.ffprobe, '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,r_frame_rate',
             '-of', 'json']
     if cfg.get('kind') == 'rtp':

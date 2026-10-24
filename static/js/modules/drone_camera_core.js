@@ -23,11 +23,11 @@ export function splitFrame(buf) {
 }
 
 /** Canlı uç politikası: lag = tampon sonu − oynatma konumu (sn). → {seek: hedef konum | null, rate}. */
-export function liveEdge(bufEnd, cur, { target = 0.5, max = 2.5 } = {}) {
+export function liveEdge(bufEnd, cur, { target = 0.15, max = 1.0 } = {}) {   // düşük gecikme: ~0,15 sn tampon; 1 sn'yi aşınca uca atla
   if (!Number.isFinite(bufEnd) || !Number.isFinite(cur)) return { seek: null, rate: 1, lag: null };
   const lag = Math.max(0, bufEnd - cur);
   if (lag > max) return { seek: Math.max(0, bufEnd - target), rate: 1, lag };
-  if (lag > target * 2) return { seek: null, rate: 1.1, lag };
+  if (lag > target * 2) return { seek: null, rate: 1.15, lag };
   return { seek: null, rate: 1, lag };
 }
 

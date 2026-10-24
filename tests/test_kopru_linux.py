@@ -128,7 +128,7 @@ def core_tests(tmp):
     assert pl['copy'] is False and 'FPS' in pl['reason'], pl
     cmd = gc.build_commands({**rtsp, 'fps': 10, 'bitrate_kbps': 1500}, tools, pl)
     c0 = cmd[0]
-    assert 'libx264' in c0 and 'fps=10' in c0[c0.index('-vf') + 1] and '1500k' in c0 and c0[c0.index('-g') + 1] == '20', c0
+    assert 'libx264' in c0 and 'fps=10' in c0[c0.index('-vf') + 1] and '1500k' in c0 and c0[c0.index('-g') + 1] == '10', c0
     pl = gc.plan({**rtsp, 'width': 640, 'height': 360}, tools, {'codec': 'h264', 'fps': 25})
     assert not pl['copy'] and 'scale=640:360' in gc.build_commands({**rtsp, 'width': 640, 'height': 360}, tools, pl)[0][gc.build_commands({**rtsp, 'width': 640, 'height': 360}, tools, pl)[0].index('-vf') + 1]
     # H.265: uyar → kopyala (hvc1 etiketi); yeniden_kodla → H.264

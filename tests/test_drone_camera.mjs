@@ -29,11 +29,12 @@ test('ikili çerçeve: [tür][yük]; geçersiz tür/boş → null', () => {
   assert.equal(splitFrame(new Uint8Array([4, 1, 2])), null);   // JPEG izleyiciye gitmez
   assert.equal(splitFrame(new Uint8Array([2])), null);
 });
-test('canlı uç: küçük gecikmede dokunma, orta gecikmede 1,1×, büyük gecikmede uca atla', () => {
-  assert.deepEqual(liveEdge(10.3, 10.0), { seek: null, rate: 1, lag: 10.3 - 10.0 });
-  assert.equal(liveEdge(11.5, 10.0).rate, 1.1);
+test('canlı uç: küçük gecikmede dokunma, orta gecikmede 1,15×, büyük gecikmede uca atla', () => {
+  assert.deepEqual(liveEdge(10.2, 10.0), { seek: null, rate: 1, lag: 10.2 - 10.0 });
+  assert.equal(liveEdge(10.6, 10.0).rate, 1.15);   // tampon > 2×hedef: hızlan
+  assert.notEqual(liveEdge(11.5, 10.0).seek, null);   // > 1 sn: uca atla
   const j = liveEdge(20, 10);
-  assert.equal(j.seek, 19.5); assert.equal(j.rate, 1);
+  assert.equal(j.seek, 19.85); assert.equal(j.rate, 1);
   assert.equal(liveEdge(NaN, 1).seek, null);
   assert.equal(liveEdge(5, 6).lag, 0);   // oynatma tamponun önünde (kenar durumu)
 });

@@ -35,7 +35,7 @@ for _p in (HERE, HERE.parent / 'dron_koprusu'):   # kurulu pakette aynı klasör
 import kopru_core  # noqa: E402
 import goruntu_core  # noqa: E402
 
-LINUX_VERSION = '1.1.4'   # Linux/Jetson paketi sürümü (paket adı ve bridge_ver)
+LINUX_VERSION = '1.1.5'   # Linux/Jetson paketi sürümü (paket adı ve bridge_ver)
 CONF = os.environ.get('HEPGO_KOPRU_CONF') or '/etc/hepgo-kopru/kopru.conf'
 DURUM = os.environ.get('HEPGO_KOPRU_DURUM') or '/run/hepgo-kopru/durum.json'
 SERVICE = 'hepgo-kopru'

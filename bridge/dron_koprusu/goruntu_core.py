@@ -34,7 +34,7 @@ SEND_MAX = 4 * 1024 * 1024   # kamera başına gönderim kuyruğu (bayt); aşıl
 PROBE_S = 10
 SNAP_S = 12
 PING_S = 20
-FRAG_MS = 500           # ffmpeg -frag_duration (ms): anahtar kare dışında da parça kes → düşük gecikme
+FRAG_MS = 100           # ffmpeg -frag_duration (ms): ~3 karede bir parça kes → parça bekleme gecikmesi ≈ 0,1 sn (önceden 0,5)
 FATAL_CODES = {4400: 'Köprü kodu geçersiz ya da süresi dolmuş', 4403: 'Köprü kodu geçersiz (Dron Köprüleri › Kodu yenile)',
                4409: 'Bu köprü kodu başka bir cihazda açıldı; görüntü bağlantısı kapatıldı'}
 
@@ -320,14 +320,14 @@ def gst_source(cfg, src_codec):
     """GStreamer kaynak + RTP çözme (rtspsrc / udpsrc → depay → parse): ['rtspsrc', …, '!', 'rtph264depay', '!', 'h264parse']."""
     depay, parse = ('rtph265depay', 'h265parse') if src_codec == 'h265' else ('rtph264depay', 'h264parse')
     if cfg['kind'] == 'rtsp':
-        src = ['rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150', 'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
+        src = ['rtspsrc', 'location=' + cfg.get('url', ''), 'latency=20', 'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
         if cfg.get('username'):
             src += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
         src += ['!', 'application/x-rtp,media=video,encoding-name={}'.format('H265' if src_codec == 'h265' else 'H264')]   # yalnız bu kodekli video pedi
     else:
         caps = 'application/x-rtp,media=video,clock-rate=90000,encoding-name={},payload={}'.format(
             'H265' if src_codec == 'h265' else 'H264', int(cfg.get('payload_type') or 96))
-        src = ['udpsrc', 'port={}'.format(int(cfg.get('rtp_port') or 5600)), 'caps=' + caps, '!', 'rtpjitterbuffer', 'latency=100']
+        src = ['udpsrc', 'port={}'.format(int(cfg.get('rtp_port') or 5600)), 'caps=' + caps, '!', 'rtpjitterbuffer', 'latency=30']
     return src + ['!', depay, '!', parse]
 
 
@@ -335,7 +335,7 @@ async def gst_probe(cfg, tools, timeout=8):
     """ffprobe yoksa/okuyamıyorsa RTSP kodeğini GStreamer ile öğren: rtspsrc pedinin RTP başlığı (encoding-name=H264|H265)."""
     if not tools.gst or cfg.get('kind') != 'rtsp':
         return {}
-    args = [tools.gst, '-v', 'rtspsrc', 'location=' + cfg.get('url', ''), 'latency=150',
+    args = [tools.gst, '-v', 'rtspsrc', 'location=' + cfg.get('url', ''), 'latency=20',
             'protocols=' + ('tcp' if (cfg.get('transport') or 'tcp') == 'tcp' else 'udp')]
     if cfg.get('username'):
         args += ['user-id=' + cfg['username'], 'user-pw=' + (cfg.get('password') or '')]
@@ -403,12 +403,12 @@ def build_commands(cfg, tools, pl, sdp_path=None):
         if enc == 'nvv4l2h264enc':
             chain = ['nvv4l2decoder', '!', 'nvvidconv', '!', 'video/x-raw,format=I420', '!', 'videorate', 'drop-only=true', '!',
                      'video/x-raw,framerate={}/1'.format(fps), '!', 'nvvidconv', '!', 'video/x-raw(memory:NVMM),format=NV12' + size, '!',
-                     'nvv4l2h264enc', 'bitrate={}'.format(kbps * 1000), 'insert-sps-pps=true', 'iframeinterval={}'.format(fps * 2),
-                     'idrinterval={}'.format(fps * 2), 'maxperf-enable=true']
+                     'nvv4l2h264enc', 'bitrate={}'.format(kbps * 1000), 'insert-sps-pps=true', 'iframeinterval={}'.format(fps),
+                     'idrinterval={}'.format(fps), 'maxperf-enable=true']
         else:
             chain = ['avdec_' + ('h265' if src_codec == 'h265' else 'h264'), '!', 'videoconvert', '!', 'videoscale', '!', 'videorate', 'drop-only=true', '!',
                      'video/x-raw,format=I420,framerate={}/1'.format(fps) + size, '!',
-                     'x264enc', 'tune=zerolatency', 'speed-preset=ultrafast', 'bitrate={}'.format(kbps), 'key-int-max={}'.format(fps * 2)]
+                     'x264enc', 'tune=zerolatency', 'speed-preset=ultrafast', 'bitrate={}'.format(kbps), 'key-int-max={}'.format(fps)]
         gst += gst_source(cfg, src_codec) + ['!'] + chain + ['!', 'h264parse', 'config-interval=-1', '!',
                                                               'video/x-h264,stream-format=byte-stream,alignment=au', '!', 'fdsink', 'fd=1']
         mux = [ff, '-hide_banner', '-loglevel', 'warning', '-fflags', '+genpts+nobuffer', '-f', 'h264', '-framerate', str(fps), '-i', 'pipe:0',
@@ -418,7 +418,7 @@ def build_commands(cfg, tools, pl, sdp_path=None):
     if w and h:
         vf.append('scale={}:{}'.format(w, h))
     return [[ff] + ffmpeg_input(cfg, sdp_path) + ['-map', '0:v:0', '-vf', ','.join(vf), '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-                                                  '-pix_fmt', 'yuv420p', '-bf', '0', '-g', str(fps * 2), '-b:v', '{}k'.format(kbps),
+                                                  '-pix_fmt', 'yuv420p', '-bf', '0', '-g', str(fps), '-b:v', '{}k'.format(kbps),
                                                   '-maxrate', '{}k'.format(kbps), '-bufsize', '{}k'.format(kbps)] + fmp4_out()]
 
 

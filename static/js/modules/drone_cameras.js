@@ -6,7 +6,7 @@
 // Canlı Uçuş'ta kamera seçimi, köprü/dron bağlama ve yüzen pencereler: drone.js renderLive + drone_camera.createCameraWindows.
 import { api } from '../api.js';
 import { clear, confirmDialog, every, field, h, matches, modal, moduleToolbar, onLeave, segmented, statStrip, toast, t as tr } from '../ui.js';
-import { createPlayer } from './drone_camera.js';
+import { createPlayer, openPopout } from './drone_camera.js';
 import { FPS_TEXT, STATUS_BADGE } from './drone_camera_core.js';
 
 const inp = (value, attrs = {}) => h('input', { class: 'input', value: value ?? '', ...attrs });
@@ -149,15 +149,103 @@ export async function cameraForm(c, m, done) {
 }
 
 // ---------- önizleme / anlık görüntü ----------
+const PV_CSS = `
+.dpv-back{position:fixed;inset:0;z-index:1000;background:rgba(3,7,12,.78);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px;animation:dpvIn .16s ease-out}
+@keyframes dpvIn{from{opacity:0}to{opacity:1}}
+.dpv{width:min(1180px,100%);max-height:100%;display:flex;flex-direction:column;background:linear-gradient(180deg,#0d1621,#091018);border:1px solid rgba(120,170,220,.18);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.6);color:#dbe7f2;overflow:hidden;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.dpv-hd{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(120,170,220,.12)}
+.dpv-hd .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:rgba(56,189,248,.12);color:#7dd3fc;flex:none}
+.dpv-hd b{font-size:15px;display:block}.dpv-hd small{color:#8aa0b6}
+.dpv-pill{margin-left:auto;display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;font:600 12px system-ui;background:rgba(148,163,184,.12);color:#cbd5e1;white-space:nowrap}
+.dpv-pill i{width:8px;height:8px;border-radius:50%;background:#64748b}
+.dpv-pill.live{background:rgba(34,197,94,.14);color:#86efac}.dpv-pill.live i{background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:dpvPulse 1.6s infinite}
+.dpv-pill.warn{background:rgba(245,158,11,.14);color:#fcd34d}.dpv-pill.warn i{background:#f59e0b}
+.dpv-pill.err{background:rgba(239,68,68,.14);color:#fca5a5}.dpv-pill.err i{background:#ef4444}
+@keyframes dpvPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.dpv-x{background:none;border:0;color:#8aa0b6;font-size:22px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:8px}.dpv-x:hover{color:#fff;background:rgba(255,255,255,.08)}
+.dpv-stage{position:relative;aspect-ratio:16/9;background:#000;max-height:calc(100vh - 240px);min-height:200px}
+.dpv-stage .drc-player{position:absolute;inset:0}
+.dpv-stage .drc-tools{display:none}
+.dpv-stage .drc-st{display:none}
+.dpv-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;padding:28px 12px 10px;background:linear-gradient(transparent,rgba(0,0,0,.75));opacity:0;transition:opacity .18s;z-index:6}
+.dpv-stage:hover .dpv-bar,.dpv-bar:focus-within,.dpv-stage.paused .dpv-bar{opacity:1}
+.dpv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(15,23,32,.72);color:#e2e8f0;font:600 12.5px system-ui;cursor:pointer}
+.dpv-btn:hover{background:rgba(30,41,59,.9);border-color:rgba(255,255,255,.3)}
+.dpv-btn.main{width:42px;padding:0;justify-content:center;font-size:15px;border-color:rgba(34,197,94,.55);color:#bbf7d0}
+.dpv-btn.on{border-color:rgba(56,189,248,.7);color:#7dd3fc}
+.dpv-sp{flex:1}
+.dpv-ov{position:absolute;left:12px;top:12px;z-index:5;display:flex;gap:6px;pointer-events:none}
+.dpv-ov span{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:#e2e8f0;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);padding:3px 8px;border-radius:7px}
+.dpv-ov span.g{color:#86efac}.dpv-ov span.y{color:#fcd34d}.dpv-ov span.r{color:#fca5a5}
+.dpv-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:rgba(120,170,220,.1);border-top:1px solid rgba(120,170,220,.12)}
+.dpv-stat{background:#0b131c;padding:10px 14px}
+.dpv-stat small{display:block;color:#7f93a8;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.dpv-stat b{display:block;font:600 16px ui-monospace,SFMono-Regular,Menlo,monospace;color:#f1f5f9;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dpv-stat em{font-style:normal;color:#7f93a8;font-size:11px}
+.dpv-ft{display:flex;gap:10px;align-items:center;padding:9px 16px;color:#7f93a8;font-size:12px}
+@media (max-width:760px){.dpv-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.dpv-back{padding:0}.dpv{border-radius:0;height:100%}}
+`;
+const fmtMs = v => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`);
+const SVG = d => { const e = h('span'); e.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`; return e.firstChild; };
+
 export function previewModal(c) {
-  const p = createPlayer({ cameraId: c.id });
-  modal({
-    title: tr('{name} · canlı önizleme', { name: c.name }), wide: true,
-    onClose: () => p.stop(),
-    body: h('div', null, h('div', { style: { aspectRatio: '16 / 9', borderRadius: '10px', overflow: 'hidden' } }, p.el),
-      h('p', { class: 'small muted', style: { marginTop: '8px' } }, 'Görüntü köprüden canlı gelir; ■ Durdur ya da pencereyi kapatınca köprü yayını hemen durdurur. Gecikme sol altta gösterilir; "JPEG" düşük bant kipine geçer.')),
-    actions: [{ label: 'Kapat' }],
-  });
+  if (!document.getElementById('dpv-css')) document.head.append(h('style', { id: 'dpv-css' }, PV_CSS));
+  const p = createPlayer({ cameraId: c.id, autostart: true });
+  const pill = h('span', { class: 'dpv-pill' }, h('i'), h('span', null, tr('Bağlanıyor…')));
+  const ovFps = h('span'), ovLat = h('span');
+  const ov = h('div', { class: 'dpv-ov' }, ovFps, ovLat);
+  const playBtn = h('button', { class: 'dpv-btn main', type: 'button', title: tr('Başlat / Durdur (Boşluk)'), onclick: e => { e.stopPropagation(); toggle(); } }, '■');
+  const jpegBtn = h('button', { class: 'dpv-btn', type: 'button', title: tr('Düşük bant: 2 sn\'de bir JPEG'), onclick: e => { e.stopPropagation(); p.setLow(!p.low); jpegBtn.classList.toggle('on', p.low); } }, 'JPEG');
+  const photoBtn = h('button', { class: 'dpv-btn', type: 'button', title: tr('Gösterilen kareyi PNG olarak indir'), onclick: async e => {
+    e.stopPropagation(); const b = await p.snapshotBlob(); if (!b) { toast(tr('Kare alınamadı'), 'error'); return; }
+    const a = h('a', { href: URL.createObjectURL(b), download: `${c.name}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png` }); a.click();
+  } }, SVG('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'), tr('Fotoğraf'));
+  const popBtn = h('button', { class: 'dpv-btn', type: 'button', title: tr('Ayrı pencerede aç'), onclick: e => { e.stopPropagation(); openPopout(c.id, { droneId: c.drone_id }); } },
+    SVG('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/>'));
+  const fsBtn = h('button', { class: 'dpv-btn', type: 'button', title: tr('Tam ekran'), onclick: e => { e.stopPropagation(); if (document.fullscreenElement) document.exitFullscreen(); else stage.requestFullscreen?.(); } },
+    SVG('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'));
+  const bar = h('div', { class: 'dpv-bar' }, playBtn, h('span', { class: 'dpv-sp' }), jpegBtn, photoBtn, popBtn, fsBtn);
+  const stage = h('div', { class: 'dpv-stage' }, p.el, ov, bar);
+  stage.addEventListener('click', e => { if (!e.target.closest('button,select')) toggle(); });
+  const tile = (label) => { const b = h('b', null, '—'), em = h('em'); return { el: h('div', { class: 'dpv-stat' }, h('small', null, tr(label)), b, em), b, em }; };
+  const T = { fps: tile('FPS'), lat: tile('Gecikme'), rate: tile('Bit hızı'), res: tile('Çözünürlük'), codec: tile('Kodek'), src: tile('Kaynak') };
+  const sub = [c.drone_code ? `${c.drone_code} · ${c.drone_name || ''}` : null, c.bridge_name ? tr('köprü {b}', { b: c.bridge_name }) : null,
+    c.kind === 'rtsp' ? 'RTSP' : `RTP · UDP ${c.rtp_port}`].filter(Boolean).join(' · ');
+  const back = h('div', { class: 'dpv-back' }, h('div', { class: 'dpv', role: 'dialog', 'aria-label': c.name },
+    h('div', { class: 'dpv-hd' }, h('span', { class: 'ic' }, SVG('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>')),
+      h('div', { style: { minWidth: 0 } }, h('b', null, c.name), h('small', null, sub)), pill,
+      h('button', { class: 'dpv-x', type: 'button', title: tr('Kapat (Esc)'), onclick: () => close() }, '×')),
+    stage,
+    h('div', { class: 'dpv-stats' }, Object.values(T).map(x => x.el)),
+    h('div', { class: 'dpv-ft' }, tr('Gecikme: karenin köprüye girişinden bu ekranda gösterilmesine kadar geçen süre (saatler eşitlenir). Kamera içi kodlama gecikmesi dahil değildir. Kapatınca ya da ■ ile köprü yayını hemen durdurur.'))));
+  const STATE_TONE = { canli: 'live', kare_yok: 'warn', h265: 'warn', kopru_cevrimdisi: 'warn', hata: 'err', yetki: 'err' };
+  const update = S => {
+    const running = p.running;
+    playBtn.textContent = running ? '■' : '▶'; stage.classList.toggle('paused', !running);
+    pill.className = `dpv-pill ${STATE_TONE[S.state] || ''}`;
+    pill.lastChild.textContent = !running ? tr('Durduruldu') : S.state === 'canli' ? tr('Canlı') : tr(({ baglaniyor: 'Bağlanıyor…', basliyor: 'Kaynak açılıyor…', kare_yok: 'Görüntü yok', hata: 'Kaynak hatası', h265: 'H.265 kaynak', kopru_cevrimdisi: 'Köprü çevrim dışı' })[S.state] || S.state);
+    pill.title = S.detail || '';
+    const st = S.stat || {};
+    const fps = S.fps, srcFps = st.src_fps || st.fps;
+    T.fps.b.textContent = fps != null ? fps.toFixed(1) : '—'; T.fps.em.textContent = srcFps ? tr('kaynak {f}', { f: Number(srcFps).toFixed(0) }) : '';
+    T.lat.b.textContent = fmtMs(S.latency); T.lat.em.textContent = S.latency == null ? (running && S.state === 'canli' ? tr('ölçülüyor…') : '') : S.latSrc === 'kopru' ? tr('köprü → ekran') : tr('sunucu → ekran (köprü ≥ 1.1.4 gerekir)');
+    T.rate.b.textContent = S.kbps ? (S.kbps >= 1000 ? `${(S.kbps / 1000).toFixed(1)} Mbit/s` : `${S.kbps} kbit/s`) : '—'; T.rate.em.textContent = '';
+    const v = p.video; T.res.b.textContent = v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : '—';
+    const codec = /hvc1|hev1/.test(S.mime || '') ? 'H.265' : /avc1/.test(S.mime || '') ? 'H.264' : (st.codec || '').toUpperCase() || '—';
+    T.codec.b.textContent = codec; T.codec.em.textContent = st.copy === true ? tr('yeniden kodlamasız') : st.copy === false ? tr('köprüde yeniden kodlanıyor') : '';
+    T.src.b.textContent = c.kind === 'rtsp' ? 'RTSP' : 'RTP'; T.src.em.textContent = FPS_TEXT(c.fps) === 'Kaynak FPS' ? tr('Kaynak FPS') : FPS_TEXT(c.fps);
+    ovFps.textContent = fps != null ? `${fps.toFixed(0)} FPS` : ''; ovFps.hidden = fps == null;
+    ovLat.textContent = S.latency != null ? fmtMs(S.latency) : ''; ovLat.hidden = S.latency == null;
+    ovLat.className = S.latency == null ? '' : S.latency < 400 ? 'g' : S.latency < 1000 ? 'y' : 'r';
+  };
+  const offState = p.onState(update);
+  function toggle() { if (p.running) p.pause(); else p.start(); update(p.state); }
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === ' ' && !e.target.closest('input,textarea,select')) { e.preventDefault(); toggle(); } };
+  function close() { offState(); p.stop(); document.removeEventListener('keydown', onKey, true); if (document.fullscreenElement) document.exitFullscreen?.(); back.remove(); }
+  back.addEventListener('click', e => { if (e.target === back) close(); });
+  document.addEventListener('keydown', onKey, true);
+  document.body.append(back);
+  update(p.state);
 }
 
 export function snapshotModal(c) {

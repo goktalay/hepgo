@@ -107,9 +107,10 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   const playBtn = el('button', { type: 'button', class: 'drc-play', title: 'Yayını başlat', onclick: e => { e.stopPropagation(); start(); } }, '▶ ', t('Başlat'));
   const tools = el('div', { class: 'drc-tools' }, droneSelect, hudBtn, lowBtn, stopBtn, popBtn);
   const root = el('div', { class: `drc-player${hud ? '' : ' nohud'}` }, video, snapImg, canvas, msg, st, tools, playBtn);
-  const S = { state: 'baglaniyor', detail: '', lag: null, age: null, stat: {}, mime: null, ws: null, ms: null, sb: null, q: [], closed: false, live: false };
+  const S = { state: 'baglaniyor', detail: '', lag: null, age: null, stat: {}, mime: null, ws: null, ms: null, sb: null, q: [], closed: false, live: false,
+    off: null, rtt: null, fts: null, fmap: [], fps: null, latency: null, latSrc: null, kbps: null, frames: 0 };   // ölçümler: tarayıcı FPS'i, köprü→ekran gecikmesi
   const listeners = new Set();
-  let low = false, snapTimer = null, edgeTimer = null, retry = null, url = null, running = false;
+  let low = false, snapTimer = null, edgeTimer = null, retry = null, url = null, running = false, pingT = null, metT = null;
 
   const MS = window.ManagedMediaSource || window.MediaSource;
   const setState = (state, detail = '') => {
@@ -146,7 +147,11 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
       try {
         S.sb = ms.addSourceBuffer(mime);
         S.sb.mode = 'sequence';
-        S.sb.addEventListener('updateend', pump);
+        S.sb.addEventListener('updateend', () => {
+          const f = S.fpend; S.fpend = null;
+          if (f && S.sb?.buffered.length) f.end = S.sb.buffered.end(S.sb.buffered.length - 1);
+          pump();
+        });
         pump();
       } catch (e) { showMsg(`Oynatıcı açılamadı: ${e.message}`); }
     }, { once: true });
@@ -154,7 +159,14 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   function pump() {
     const sb = S.sb;
     if (!sb || sb.updating || !S.q.length) return;
-    const chunk = S.q.shift();
+    const item = S.q.shift();
+    const chunk = item.d || item;
+    if (item.fts) {   // parçanın medya başlangıcı (sequence kipinde tampon sonuna eklenir) ↔ köprüden çıkış anı
+      const b = sb.buffered, start = b.length ? b.end(b.length - 1) : 0;
+      S.fmap.push({ start, end: null, fts: item.fts.ms, src: item.fts.src });
+      if (S.fmap.length > 40) S.fmap.splice(0, S.fmap.length - 40);
+      S.fpend = S.fmap[S.fmap.length - 1];
+    } else S.fpend = null;
     try { sb.appendBuffer(chunk); } catch (e) {
       if (e.name === 'QuotaExceededError') {   // tampon dolu: eskisini sil, parçayı yeniden dene
         S.q.unshift(chunk);
@@ -173,7 +185,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
     if (video.paused) video.play().catch(() => {});
     const tr = trimRange(video.buffered.start(0), video.currentTime);
     if (tr && !sb.updating) { try { sb.remove(tr[0], tr[1]); } catch { /* */ } }
-    if (S.state === 'canli') setState('canli', latencyText(S.lag, S.age, t));
+    if (S.state === 'canli') setState('canli', S.latency != null ? t('{ms} ms gecikme', { ms: Math.round(S.latency) }) : latencyText(S.lag, S.age, t));
   }
   function setLow(on, forced = false) {
     low = !!on;
@@ -202,6 +214,15 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
         else if (m.t === 'init') { S.mime = m.mime || S.mime; startMse(S.mime || 'video/mp4; codecs="avc1.42E01E"'); }
         else if (m.t === 'state') { if (m.mime) S.mime = m.mime; setState(m.state, m.detail); }
         else if (m.t === 'stat') { S.stat = m; S.age = m.age; }
+        else if (m.t === 'fts') S.fts = { ms: Number(m.ms), src: m.src || 'sunucu' };
+        else if (m.t === 'pong') {   // saat eşitleme: sunucu − tarayıcı (ms), düşük RTT örnekleri ağırlıklı
+          const now = Date.now(), rtt = now - Number(m.c);
+          if (Number.isFinite(rtt) && rtt >= 0 && rtt < 10000 && Number.isFinite(Number(m.ms))) {
+            const off = Number(m.ms) + rtt / 2 - now;
+            if (S.off == null || rtt <= (S.rtt ?? rtt) * 1.5) { S.off = S.off == null ? off : S.off * 0.7 + off * 0.3; S.rtt = S.rtt == null ? rtt : Math.min(rtt, S.rtt * 1.05); }
+          }
+          if (m.age != null) S.age = m.age;
+        }
         else if (m.t === 'error') { setState(m.error === 'auth' ? 'yetki' : 'hata', m.error === 'auth' ? '' : m.error); S.closed = m.error === 'auth'; }
         return;
       }
@@ -209,12 +230,18 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
       if (!fr) return;
       if (fr.type === T_INIT && !S.ms) startMse(S.mime || 'video/mp4; codecs="avc1.42E01E"');
       if (!S.ms) return;
-      S.q.push(fr.data.slice());
+      S.q.push({ d: fr.data.slice(), fts: fr.type === T_INIT ? null : S.fts });
+      S.fts = null;
+      S.bytes = (S.bytes || 0) + fr.data.length;
       if (S.q.length > 120) S.q.splice(0, S.q.length - 60);   // sekme arka planda: kuyruk taşmasın
       if (fr.type !== T_INIT && S.state !== 'canli' && S.state !== 'h265') setState('canli');
       pump();
     };
+    let pings = 0;
+    const ping = () => { if (S.ws === ws && ws.readyState === 1) { try { ws.send(JSON.stringify({ t: 'ping', c: Date.now() })); } catch { /* */ } } };
+    ws.onopen = () => { ping(); const tick = () => { if (S.ws !== ws) return; ping(); pingT = setTimeout(tick, ++pings < 5 ? 2000 : 10000); }; pingT = setTimeout(tick, 1500); };
     ws.onclose = ev => {
+      clearTimeout(pingT);
       if (S.ws !== ws) return;
       S.ws = null;
       if (S.closed || ev.code === 4403 || ev.code === 4404) { if (ev.code === 4404) setState('hata', 'Kamera bulunamadı ya da pasif'); return; }
@@ -239,15 +266,45 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   if (hud) raf = requestAnimationFrame(drawHud);
   edgeTimer = setInterval(edge, 500);
   root.addEventListener('dblclick', e => { if (popout && !e.target.closest('.drc-tools')) { e.preventDefault(); popout(); } });
+  // ---- ölçümler: FPS (sunulan kare sayısı) ve gerçek gecikme (köprüden çıkış → ekranda gösterim; saatler ping/pong ile eşitlenir) ----
+  let lastFrames = 0, lastT = performance.now(), lastBytes = 0;
+  const countFrame = () => { S.frames++; if (running && 'requestVideoFrameCallback' in video) video.requestVideoFrameCallback(countFrame); };
+  if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(countFrame);
+  function measure() {
+    const now = performance.now(), dt = (now - lastT) / 1000;
+    if (dt >= 0.9) {
+      let frames = S.frames;
+      if (!('requestVideoFrameCallback' in video) && video.getVideoPlaybackQuality) frames = video.getVideoPlaybackQuality().totalVideoFrames;
+      S.fps = running && !low && S.state === 'canli' ? Math.max(0, (frames - lastFrames) / dt) : null;
+      S.kbps = running ? Math.round(((S.bytes || 0) - lastBytes) * 8 / 1000 / dt) : null;
+      lastFrames = frames; lastBytes = S.bytes || 0; lastT = now;
+    }
+    S.latency = null; S.latSrc = null;
+    if (running && !low && S.off != null && S.fmap.length && !video.paused) {
+      const cur = video.currentTime;
+      let f = null;
+      for (let i = S.fmap.length - 1; i >= 0; i--) if (S.fmap[i].start <= cur && S.fmap[i].end != null) { f = S.fmap[i]; break; }
+      if (f) {
+        const dur = Math.max(0, f.end - f.start) * 1000;          // parça süresi: kareler parça kapanınca köprüden çıkar
+        const captured = f.fts - dur + (cur - f.start) * 1000;      // şu an gösterilen karenin köprüye giriş anı (yaklaşık)
+        const lat = Date.now() + S.off - captured;
+        if (lat > -500 && lat < 60000) { S.latency = Math.max(0, lat); S.latSrc = f.src; }
+      }
+    }
+    listeners.forEach(fn => { try { fn(S); } catch { /* */ } });
+  }
+  metT = setInterval(measure, 500);
   function start() {
     if (S.closed || running) return;
     running = true; playBtn.hidden = true; stopBtn.hidden = false; showMsg('');
     if (low || lowBandwidth) { low = false; setLow(true); } else connect();
+    if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(countFrame);
   }
   function pause() {
     running = false; clearTimeout(retry); clearInterval(snapTimer); snapTimer = null; closeWs();
     video.removeAttribute('src'); snapImg.hidden = true; video.hidden = false;
     playBtn.hidden = false; stopBtn.hidden = true; S.live = false;
+    S.fps = S.latency = S.kbps = null; S.fmap = [];
     setState('durduruldu', '');
   }
   if (lowBandwidth) { low = true; lowBtn.className = ''; }
@@ -255,7 +312,14 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
   return {
     el: root, video, get state() { return S; }, start, pause, get running() { return running; },
     onState: fn => { listeners.add(fn); return () => listeners.delete(fn); },
-    stop() { running = false; S.closed = true; clearTimeout(retry); clearInterval(edgeTimer); clearInterval(snapTimer); cancelAnimationFrame(raf); closeWs(); video.removeAttribute('src'); },
+    snapshotBlob: () => new Promise(res => {   // gösterilen kareden PNG (Fotoğraf)
+      const c = document.createElement('canvas'); c.width = video.videoWidth || 1280; c.height = video.videoHeight || 720;
+      try { c.getContext('2d').drawImage(low ? snapImg : video, 0, 0, c.width, c.height); c.toBlob(b => res(b), 'image/png'); } catch { res(null); }
+    }),
+    setHud(on) { hudOn = !!on; if (hudBtn) hudBtn.className = hudOn ? '' : 'off'; },
+    setLow,
+    get low() { return low; },
+    stop() { running = false; S.closed = true; clearTimeout(retry); clearTimeout(pingT); clearInterval(metT); clearInterval(edgeTimer); clearInterval(snapTimer); cancelAnimationFrame(raf); closeWs(); video.removeAttribute('src'); },
   };
 }
 

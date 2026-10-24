@@ -66,6 +66,7 @@ class CamStream:
         self.frags = 0
         self.bytes = 0
         self.off_task = None      # LINGER sonrası want:false
+        self.next_fts = None      # köprünün bildirdiği sonraki parçanın çıkış anı (sunucu saati, ms)
         self.snap = None          # bekleyen anlık görüntü Future'ı
 
     def summary(self):
@@ -263,6 +264,11 @@ def _on_frame(vb, data):
             return
         frame = bytes([typ]) + payload
         now = time.time()
+        fts, src = getattr(st, 'next_fts', None), 'kopru'   # gerçek gecikme: köprü damgası yoksa sunucuya varış anı
+        st.next_fts = None
+        if fts is None or abs(fts - now * 1000) > 120000:
+            fts, src = now * 1000, 'sunucu'
+        fmsg = json.dumps({'t': 'fts', 'ms': round(fts), 'src': src})
         st.last_frag, st.frags, st.bytes = now, st.frags + 1, st.bytes + len(payload)
         if typ == T_KEY:
             st.gop, st.gop_bytes = [frame], len(frame)
@@ -279,6 +285,7 @@ def _on_frame(vb, data):
                 v.dropped += 1
                 continue
             v.need_key = False
+            v.put(fmsg)
             v.put(frame, len(frame))
         return
     if typ == T_JPEG:
@@ -293,8 +300,14 @@ def _on_text(vb, msg):
         cid = int(msg.get('camera_id') or 0)
     except (TypeError, ValueError):
         cid = 0
-    if t in ('vstate', 'stat', 'snap_err') and cid not in vb.cams:
+    if t in ('vstate', 'stat', 'snap_err', 'fts') and cid not in vb.cams:
         return None
+    if t == 'fts':   # sonraki parçanın köprüden çıkış anı (sunucu saatiyle; köprü ≥ 1.1.4)
+        try:
+            stream(cid).next_fts = float(msg.get('ms'))
+        except (TypeError, ValueError):
+            pass
+        return t
     if t == 'vstate':
         st = stream(cid)
         yeni = (str(msg.get('state') or '')[:20], str(msg.get('detail') or '')[:300])
@@ -373,7 +386,7 @@ async def ws_video_bridge(ws: WebSocket):
                 except ValueError:
                     continue
                 if msg.get('t') == 'ping':
-                    await _send(ws, {'t': 'pong', 'server_time': db.now()})
+                    await _send(ws, {'t': 'pong', 'server_time': db.now(), 'ms': round(time.time() * 1000), 'c': msg.get('c')})
                 else:
                     _on_text(vb, msg)
     except (WebSocketDisconnect, Exception):   # noqa: BLE001
@@ -512,7 +525,8 @@ async def ws_video_watch(ws: WebSocket):
             except ValueError:
                 continue
             if msg.get('t') == 'ping':
-                v.put(json.dumps({'t': 'pong', 'age': round(time.time() - st.last_frag, 2) if st.last_frag else None}))
+                v.put(json.dumps({'t': 'pong', 'age': round(time.time() - st.last_frag, 2) if st.last_frag else None,
+                                  'ms': round(time.time() * 1000), 'c': msg.get('c')}))
     except (WebSocketDisconnect, Exception):   # noqa: BLE001
         pass
     finally:

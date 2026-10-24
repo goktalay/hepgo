@@ -734,6 +734,9 @@ class VideoBridge:
         self.cam_state = {}           # kamera_id → {state, detail, stat}
         self.server_state = ('bekliyor', '')
         self.sent = 0
+        self.clk_off = None           # sunucu saati − yerel saat (ms; ping/pong yarı-RTT ile) → parça zaman damgası (gerçek gecikme)
+        self.clk_rtt = None
+        self.clk_n = 0
 
     def status(self):
         return {'server': self.server_state[0], 'detail': self.server_state[1], 'sent': self.sent,
@@ -769,6 +772,8 @@ class VideoBridge:
             return
         if typ == T_KEY:
             self.skip.discard(cam_id)
+        if self.clk_off is not None:   # parçanın köprüden çıkış anı, SUNUCU saatiyle (aynı kuyruk → sıra korunur)
+            self.q.put_nowait((cam_id, 0, json.dumps({'t': 'fts', 'camera_id': cam_id, 'ms': round(time.time() * 1000 + self.clk_off)})))
         self.qbytes[cam_id] = self.qbytes.get(cam_id, 0) + n
         self.q.put_nowait((cam_id, n, bytes([typ]) + struct.pack('>I', cam_id) + payload))
 
@@ -902,8 +907,23 @@ class VideoBridge:
 
     async def _pinger(self):
         while True:
-            await asyncio.sleep(PING_S)
-            await self._send_json({'t': 'ping'})
+            await self._send_json({'t': 'ping', 'c': round(time.time() * 1000)})   # c: saat eşitleme (sunucu ms + c ile döner)
+            await asyncio.sleep(3 if self.clk_n < 6 else PING_S)
+
+    def _on_pong(self, m):
+        try:
+            c, ms = float(m['c']), float(m['ms'])
+        except (KeyError, TypeError, ValueError):
+            return
+        now = time.time() * 1000
+        rtt = now - c
+        if rtt < 0 or rtt > 10000:
+            return
+        off = ms + rtt / 2 - now
+        if self.clk_off is None or rtt <= (self.clk_rtt or rtt) * 1.5:   # düşük RTT örnekleri güvenilir
+            self.clk_off = off if self.clk_off is None else self.clk_off * 0.7 + off * 0.3
+            self.clk_rtt = rtt if self.clk_rtt is None else min(rtt, self.clk_rtt * 1.05)
+        self.clk_n += 1
 
     async def _receiver(self, ws):
         async for raw in ws:
@@ -918,7 +938,9 @@ class VideoBridge:
                 cid = int(m.get('camera_id') or 0)
             except (TypeError, ValueError):
                 cid = 0
-            if t == 'video_cfg':
+            if t == 'pong':
+                self._on_pong(m)
+            elif t == 'video_cfg':
                 await self.apply_cfg(m.get('cameras') or [])
             elif t == 'want':
                 await self.want(cid, bool(m.get('on')))

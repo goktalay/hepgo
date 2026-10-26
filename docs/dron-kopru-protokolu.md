@@ -231,3 +231,57 @@ Canlı Uçuş: `GET /api/drone/tasks/{görev}/cameras` → `{assigned[…, task_
 bridge_id,sysid}], can_edit}`; `PUT …/cameras/{kamera} {bridge_id?, drone_id?}` (gönderilmeyen alan korunur; dron görevin uçuşlarında olmalı; aynı
 köprüde aynı RTP portu reddedilir); `DELETE …/cameras/{kamera}` — görev üyesi ya da saha yöneticisi + `field.live` (yazma için yazma izni).
 `GET /api/drone/bridge-app`: işletim sistemi başına (windows / linux-arm64 / linux) o sistemin dosyası olan EN YÜKSEK sürüm klasörü; dosya satırında `version`.
+
+## v1.4 — Mission Planner aktarımı (cap `mp_relay`; Canlı Uçuş › dron kartı › İŞLEMLER › Mission Planner)
+
+Amaç: köprü üzerinden gelen GERÇEK dron bağlantısına HEPGO'nun yanında aynı anda **Mission Planner** ile de bağlanmak (kullanıcı isteği:
+"köprü üstünden gelen bağlantıda dışarıya UDP (MP 'UDPCl') bağlantı versin"). Simülatördeki UDP köprüsünün (docs/ucus-simulatoru.md §4) canlı
+karşılığı. Sunucu: `app/drone_mprelay.py`; REST `app/routers/field.py`; harekât arayüzü `static/ops/js/hepgo_mp.js`; Dron Yönetimi › dron detayı
+"Mission Planner aktarımı" kartı (`static/js/modules/drone.js mpRelayCard`).
+
+**Köprü → sunucu:** `auth.caps` içinde `mp_relay` (Linux/Jetson ≥ **1.1.6**, Windows ≥ **1.1.0** — `kopru_core.VERSION`). Bildirmeyen köprü için
+aktarım açılamaz (409 "Köprüyü güncelleyin (Linux ≥1.1.6 / Windows ≥1.1.0)"). Drondan gelen ham çerçeveler v1'deki gibi ikili gelir (değişiklik yok).
+
+**Sunucu → köprü (YENİ ikili çerçeve türü `raw_up`):** `[0x01][ham MAVLink v1/v2 baytları]` — Mission Planner'ın gönderdiği datagram aynen.
+Köprü yükü dron bağlantısına (seri/UDP/TCP; `MavLink.write_raw`) olduğu gibi yazar. Denetimler (köprü): yük ≤ 4096 bayt, ilk bayt 0xFE/0xFD,
+≤ 400 paket/sn ve ≤ 256 KB/sn (jeton kovası; aşan atılır, `raw_drop`), dron bağlantısı yoksa atılır (`raw_nolink`). Bilinmeyen ikili tür (ilk bayt
+≠ 0x01) yok sayılır (ileri uyum). v1.0–v1.3 köprüleri sunucudan ikili çerçeve almaz (sunucu yalnız `mp_relay` bildirene gönderir).
+
+**Sunucu davranışı (uçuş = görev + dron başına, isteğe bağlı):**
+- Aç: `LIVE_MP_UDP_BASE` … `+LIVE_MP_UDP_COUNT-1` (varsayılan **14700–14799**; simülatörün `SIM_UDP_BASE` 14550–14649 aralığıyla çakışmaz) arasında
+  boş UDP portu `0.0.0.0`'a bağlanır. Mission Planner adresi: `LIVE_MP_PUBLIC_HOST` → `SIM_PUBLIC_HOST` → istek Host'u. Kiracılar ayrı süreçtir:
+  port bağlama işletim sisteminde tekil olduğundan bir kiracının portu diğerine verilemez (dolu port atlanır).
+- MP → köprü: datagram ≤ 2048 bayt + MAVLink sihirli baytı; **IP kilidi** yalnız geçerli bir GCS HEARTBEAT'i (MAV_TYPE_GCS=6) içeren datagramla
+  kurulur (isteğe bağlı `pair_sysid`: yalnız o sistem kimliğinden — MP varsayılanı 255; tek kullanımlık, sıfırlamada yeniden gerekir). Kilitten sonra
+  yalnız kilitli IP (kaynak portu değişebilir) iletilir; diğer IP'ler sayılır, IP başına bir kez denetim kaydı + konsol uyarısı. ≤ 300 paket/sn, ≤ 256 KB/sn.
+- Köprü → MP: köprüden gelen ham çerçeve MP'nin son adresine. Uçuşun `sysid`'i belliyse ve köprüde başka dron da görülüyorsa yalnız o sysid'in
+  çerçeveleri (pymavlink `get_msgbuf`) gider; tek dronlu köprüde ham bayt aynen (tanınmayan mesajlar dahil).
+- Kapanma: Kapat; **30 dk** MP paketi gelmezse (`LIVE_MP_IDLE_MIN`); görev BASLANGIC/GOREVDE dışına çıkınca (30 sn'de bir denetim); köprü 120 sn'den
+  uzun çevrimdışı kalınca; uçuşun köprüsü/sysid'i değişince ya da uçuş görevden kaldırılınca. Kısa köprü kopmalarında aktarım açık kalır (MP paketleri
+  `dropped.offline` sayılır).
+- Denetim günlüğü (`audit_logs`, entity `field_flight`): "Mission Planner aktarımı açıldı" (açan, port, eşleştirme) · "…: MP bağlandı" (IP:port) ·
+  "…: kilit dışı IP reddedildi" · "…: IP kilidi sıfırlandı" · "Mission Planner aktarımı kapandı" (neden, paket sayaçları, kilit IP'si).
+- HEPGO ile birlikte çalışma: köprü ve MP aynı GCS kimliğini (255/190) kullanabilir; ArduPilot ikisine de yanıt verir, telemetri ikisine de akar.
+  MP'den gelen ARM/DISARM, mod (COMMAND_LONG 176 / SET_MODE), kalkış/iniş/RTL, görev başlat, reboot, motor testi → dron konsoluna (etiket `MP`) ve
+  genel konsola "D<sysid> Mission Planner: …" (uyarı); görev yükleme (MISSION_COUNT), temizleme, set_current, Fly To Here, PARAM_SET → dron konsolu.
+  MP yinelemeleri (ACK gelene dek) tek satırdır. HEPGO kalkış/görev akışı sürerken MP komutu gelirse satıra "DİKKAT: … komutlar çakışabilir" eklenir.
+- Parametreler: MP `PARAM_SET` niyeti not edilir; dronun `PARAM_VALUE` yankısı hedef değerle gelince dron kaydına (`drone_sitl_params`, kaynak `mp`)
+  yazılır (`drone_params.Izleyici(gercek=True)`: niyetsiz araç değişiklikleri ve sanal montaj işlemi yok). Aktarım açıkken HEPGO panelinden yapılan
+  `param_set` de aynı kayda (kaynak `hepgo`) girer. Kayıtlar Dron Yönetimi › dron detayı "Kayıtlı parametreler" kartında (MAVLink dronlarda da) görünür.
+
+**REST (oturum çerezi):**
+- `GET /api/field/flights/{uçuş}/mp-relay` → `{active, flight_id, task_id, bridge_id, sysid, protocol, available, bridge_online, bridge_ver,
+  bridge_supported, update_hint, min_versions{linux,windows}, host, port_range[a,b], idle_timeout_s, can_manage}` + açıkken `{port, address 'host:port',
+  opened_at, opened_by, pair_sysid, locked_ip, peer, connected (son MP paketi < 10 sn), last_rx, last_rx_ago, last_tx, rx_packets, rx_bytes,
+  tx_packets, tx_bytes, dropped{ip,rate,invalid,offline}, closes_in_s, params_saved}`. Yetki: `field.live` okuma + görev üyesi / saha yöneticisi.
+- `POST …/mp-relay {pair_sysid?}` (aç; açıksa aynısını döner) · `DELETE …/mp-relay` (kapat) · `POST …/mp-relay/reset-ip` — ayrıca
+  `drone_mprelay.can_manage`: Canlı Uçuş komut yetkisi (field.live yazma + Pilot/Yönetici) ya da `drone.drones` yazma + Pilot/Sistem Yöneticisi.
+  Hatalar: 400 sanal dron / köprüsüz uçuş / görev açık değil / pair_sysid aralığı; 403 yetki; 409 köprü çevrimdışı / eski köprü / boş port yok.
+- `GET /api/field/tasks/{görev}/mp-relays` → `{items:[info…], can_manage}` (harekât ekranı kart rozeti).
+- `hello.bridges[].mp_relays`: köprünün açık aktarımlarının uçuş kimlikleri.
+
+**Köprüde YEREL Mission Planner (internet gerekmez; varsayılan kapalı):** Linux conf `[baglanti] mp_udp = 0.0.0.0:14550` (dinle: ağdaki MP › UDPCl ›
+<köprü IP'si>:14550; ilk paket gönderen adres kilitlenir, 30 sn sessizlikte kalkar) ya da `mp_udp = 192.168.1.50:14550` (gönder: o bilgisayardaki MP
+› UDP 14550 dinler; yalnız o IP'den gelen kabul edilir); önek de verilebilir (`dinle:` / `gonder:`). Komutlar: `sudo hepgo-kopru mp-ac <ip:port>`,
+`sudo hepgo-kopru mp-kapat`, `hepgo-kopru durum` (yerel MP satırı + sayaçlar). Windows uygulaması: "Yerel Mission Planner" alanı ya da
+`--mp-udp`. Yerel MP trafiği de aynı denetimlerden (boyut, sihirli bayt, hız) geçer; HEPGO aktarımıyla aynı anda çalışabilir.

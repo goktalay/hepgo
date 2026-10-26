@@ -99,7 +99,31 @@ görevinin **Canlı Uçuş** ekranında sağ üstteki "Kameralar" paneli: görev
 bağlayın; kamera yüzen pencerede açılır (başlıktan sürükle, köşe/kenardan oran korunarak boyutlandır, yerleşim kalıcı), **çift tık** ayrı tarayıcı
 penceresi. Yeşil HUD yalnız göstergedir (yön, irtifa, hızlar, batarya, GPS, mod/ARM, konum, uçuş süresi, ufuk, gecikme).
 
-## 5. Sorun giderme
+## 5. Mission Planner ile bağlanmak (HEPGO ile aynı anda)
+
+İki yol vardır; ikisi birlikte de kullanılabilir. HEPGO ve Mission Planner aynı anda komut verebilir; Mission Planner'ın ARM, mod, kalkış/iniş,
+görev ve parametre komutları Canlı Uçuş konsolunda **"Mission Planner: …"** satırıyla görünür (HEPGO kalkış/görev akışı sürerken çakışma uyarısı).
+
+**A) HEPGO üzerinden (internet; köprüde ayar gerekmez — Linux ≥ 1.1.6, Windows ≥ 1.1.0):**
+1. HEPGO › saha görevi › **Canlı Uçuş** → dron kartında **İŞLEMLER** › *MISSION PLANNER* grubunda **Mission Planner** → **Mission Planner bağlantısı aç**
+   (yetki: Canlı Uçuş komut yetkisi / Pilot). İsterseniz "Eşleştirme sysid" girin (MP'nin kendi sysid'i, varsayılan 255).
+2. Pencerede görünen adresi (**UDPCl › `sunucu:port`**, ör. `178.157.10.114:14700`) **Kopyala** ile alın.
+3. Mission Planner'da sağ üstte bağlantı türünü **UDPCl** seçin, **Connect**'e basın; sorulan adrese sunucu adresini, porta portu girin.
+4. Bağlanınca kartta yeşil **MP ●** düğmesi görünür (sarı **MP ○**: açık, MP bekleniyor). İlk bağlanan bilgisayarın IP'si kilitlenir; başka
+   bilgisayardan bağlanmak için pencerede **IP kilidini sıfırla**. İş bitince **Kapat** (30 dk paket gelmezse ve görev bitince kendiliğinden kapanır).
+   Aynı bilgiler Dron Yönetimi › dron detayında "Mission Planner aktarımı" kartında da vardır.
+
+**B) Köprüden yerel ağa (internet gerekmez; varsayılan kapalı):**
+```bash
+sudo hepgo-kopru mp-ac 0.0.0.0:14550      # MP › UDPCl › <Jetson IP>:14550  (ilk bağlanan adres kilitlenir)
+sudo hepgo-kopru mp-ac 192.168.1.50:14550 # ya da: o bilgisayardaki MP › UDP › 14550 dinler
+hepgo-kopru durum                          # "yerel MP" satırı ve sayaçlar
+sudo hepgo-kopru mp-kapat
+```
+Dron bağlantısı da UDP ise (`[baglanti] tur = udp`) aynı portu kullanmayın (komut reddeder). Windows uygulamasında "Yerel Mission Planner" alanı
+(ör. `0.0.0.0:14551`) ya da `--mp-udp 0.0.0.0:14551`.
+
+## 6. Sorun giderme
 
 | Belirti | Neden / çözüm |
 |---|---|
@@ -114,6 +138,9 @@ penceresi. Yeşil HUD yalnız göstergedir (yön, irtifa, hızlar, batarya, GPS,
 | H.265 uyarısı | kamerada H.264 seçin ya da `h265 = yeniden_kodla` |
 | Orin/JetPack 6'da `nvv4l2h264enc` yok (Orin Nano'da donanım kodlayıcı yoktur) | otomatik `libx264`'e düşer; ya da kaynağı kopyalanacak biçimde (Kaynak FPS, H.264) ayarlayın |
 | journald'da parola | görünmez: RTSP adresleri `rtsp://kullanıcı:***@` olarak gizlenir |
+| Mission Planner "Köprüyü güncelleyin" | köprü `mp_relay` bildirmiyor: Linux paketini ≥ 1.1.6'ya (Windows ≥ 1.1.0) güncelleyin |
+| MP UDPCl bağlanmıyor (HEPGO yolu) | sunucuda UDP aralığı (varsayılan 14700–14799) güvenlik duvarında açık mı; adres Cloudflare arkasındaki alan adı olmamalı (UDP tünelden geçmez) — pencerede görünen adresi kullanın |
+| MP bağlı ama "kilit dışı adres reddedildi" | başka bilgisayar/IP'den bağlandınız: pencerede "IP kilidini sıfırla" |
 
 Güvenlik: conf yalnız root ve servis kullanıcısınca okunur (köprü anahtarı); servis `NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome` ile çalışır.
 Köprü kodu sızarsa HEPGO › Dron Köprüleri › "Kodu yenile" (eski kod ve açık bağlantılar — telemetri ve görüntü — anında düşer).

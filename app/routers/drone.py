@@ -221,7 +221,7 @@ def get_drone(did: int, user=Depends(drones_user), conn=db.DB):
         raise HTTPException(404, 'Dron bulunamadı')
     d = rows[0]
     d['flights'] = db.rows(conn.execute(
-        '''SELECT f.id, f.task_id, t.code AS task_code, t.status AS task_status, t.started_at, t.finished_at, loc.name AS location_name,
+        '''SELECT f.id, f.task_id, f.bridge_id, f.sysid, t.code AS task_code, t.status AS task_status, t.started_at, t.finished_at, loc.name AS location_name,
                   l.id AS log_id, l.status AS log_status, l.source AS log_source, json_extract(l.analysis, '$.summary.flight_s') AS flight_s
            FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
            LEFT JOIN field_locations loc ON loc.id = t.location_id
@@ -290,13 +290,15 @@ def delete_drone(did: int, user=Depends(drones_user), conn=db.DB):
     return {'ok': True}
 
 
-# ---------------- Sanal dron kalıcı parametreleri (drone_params; tablo drone_sitl_params) ----------------
+# ---------------- Kalıcı parametreler (drone_params; tablo drone_sitl_params) ----------------
+# Sanal dron: HEPGO paneli + Mission Planner (simülatör) değişiklikleri; MAVLink (gerçek) dron: Canlı Uçuş › Mission Planner aktarımı açıkken
+# MP'den (ve HEPGO panelinden) yazılan parametreler (app/drone_mprelay.py). DJI için tutulmaz.
 def _sanal_dron(conn, did):
     d = db.row(conn.execute('SELECT id, code, name, protocol, model FROM drone_drones WHERE id = ?', (did,)))
     if not d:
         raise HTTPException(404, 'Dron bulunamadı')
-    if d['protocol'] != 'sanal':
-        raise HTTPException(400, 'Kalıcı parametreler yalnız sanal dronlarda tutulur')
+    if d['protocol'] not in ('sanal', 'mavlink'):
+        raise HTTPException(400, 'Kalıcı parametreler yalnız sanal ve MAVLink dronlarda tutulur')
     return d
 
 

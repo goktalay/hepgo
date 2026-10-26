@@ -4,6 +4,8 @@
    işlem planı (copy / yeniden kodlama), ffmpeg / GStreamer (nvv4l2h264enc) komutları, RTP SDP, RTSP kimlik ekleme ve günlükte gizleme.
 3) hepgo_kopru: conf okuma/yazma (eslestir yorumları korur), bağlantı ve yedek kamera ayrıştırma, `durum --json`.
 4) Paket: tools/kopru_linux_paket.py tar.gz içeriği, install.sh / uninstall.sh `bash -n`, açılan paketten `--surum`.
+3b) Mission Planner (v1.4): kopru_core raw_up (0x01 + ham MAVLink → drona; boyut / sihirli bayt / hız sınırı / bağlantısız), _receiver ikili
+   çerçeve ayrımı, yerel MP UDP (dinle + gönder kipleri, IP kilidi, iki yön), mp_udp ayrıştırma, `hepgo-kopru mp-ac / mp-kapat`, caps 'mp_relay'.
 5) Uçtan uca: geçici HEPGO sunucusu + `hepgo_kopru.py calistir` (sahte ffmpeg/ffprobe) → telemetri köprüsü 'video' yeteneğiyle bağlanır,
    site kamera ayarı video_cfg ile gelir, izleyici init + parçaları alır, JPEG anlık görüntü, durum dosyası.
 Çalıştırma: .venv/bin/python -m tests.test_kopru_linux
@@ -187,6 +189,150 @@ def cli_tests(tmp):
     print('  hepgo_kopru conf / durum / kodsuz çıkış (3) geçti')
 
 
+# ---------------- 3b) Mission Planner (raw_up + yerel UDP) ----------------
+class _SahteMav:
+    def __init__(self):
+        self.yazilan = []
+        self.rx = 0
+        self.target = 7
+        self.last_rx = 0
+
+    def write_raw(self, data):
+        self.yazilan.append(bytes(data))
+        return True
+
+    def close(self):
+        pass
+
+
+def _mav_hb(sysid=255, comp=190, tip=6):
+    from pymavlink.dialects.v20 import ardupilotmega as d
+    e = d.MAVLink(None, srcSystem=sysid, srcComponent=comp)
+    return e.heartbeat_encode(tip, 8, 0, 0, 0, 3).pack(e)
+
+
+def mp_tests(tmp):
+    import kopru_core as kc
+    assert kc.VERSION == '1.1.0' and 'mp_relay' in kc.CAPS and hk.LINUX_VERSION == '1.1.6'
+    # ayrıştırma
+    assert kc.parse_mp_udp('0.0.0.0:14550') == ('dinle', '0.0.0.0', 14550)
+    assert kc.parse_mp_udp('192.168.1.50:14550') == ('gonder', '192.168.1.50', 14550)
+    assert kc.parse_mp_udp('dinle:127.0.0.1:14551') == ('dinle', '127.0.0.1', 14551)
+    assert kc.parse_mp_udp('') is None and kc.parse_mp_udp('kapali') is None
+    for bad in ('14550', '0.0.0.0:0', '0.0.0.0:abc'):
+        try:
+            kc.parse_mp_udp(bad)
+        except ValueError:
+            continue
+        raise AssertionError('geçersiz mp_udp kabul edildi: ' + bad)
+
+    # raw_up: boyut / sihirli bayt / bağlantısız / hız sınırı
+    br = kc.Bridge('ornek.app/ANAHTAR', ui=lambda *a: None)
+    hb = _mav_hb()
+    assert br.raw_up(hb) is False and br.mp_stats['raw_nolink'] == 1   # dron bağlantısı yok
+    br.mav = _SahteMav()
+    assert br.raw_up(hb) is True and br.mav.yazilan == [hb]
+    assert br.raw_up(b'\x00' + hb[1:]) is False and br.raw_up(b'\xfd' + b'x' * 5000) is False and br.raw_up(b'') is False
+    assert br.mp_stats['raw_drop'] == 3 and br.mp_stats['raw_up'] == 1, br.mp_stats
+    yazildi = sum(1 for _ in range(3000) if br.raw_up(hb))
+    assert kc.RAW_PPS <= yazildi < 3000 and br.mp_stats['raw_drop'] > 3, (yazildi, br.mp_stats)   # kova ~2×RAW_PPS sonra keser
+
+    # _receiver: ikili 0x01 → raw_up; başka ikili tür ve metin komutu raw_up yapmaz
+    import asyncio
+
+    class _Ws:
+        def __init__(self, items):
+            self.items = items
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self.items:
+                raise StopAsyncIteration
+            return self.items.pop(0)
+    br2 = kc.Bridge('ornek.app/ANAHTAR', ui=lambda *a: None)
+    br2.mav = _SahteMav()
+    asyncio.run(br2._receiver(_Ws([bytes([kc.RAW_UP]) + hb, b'\x02' + hb, json.dumps({'t': 'pong'})])))
+    assert br2.mav.yazilan == [hb], br2.mav.yazilan
+
+    # yerel MP — dinle: ilk paket gönderen kilitlenir, drondan gelen ona gider, başka IP atılır
+    p = free_udp_port()
+    br3 = kc.Bridge('ornek.app/ANAHTAR', ui=lambda *a: None, mp_udp='dinle:127.0.0.1:{}'.format(p))
+    br3.mav = _SahteMav()
+    br3.start_local_mp()
+    assert br3.local_mp is not None and br3.local_mp.mode == 'dinle'
+    mp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    mp.bind(('127.0.0.1', 0))
+    mp.settimeout(3)
+    mp.sendto(hb, ('127.0.0.1', p))
+    assert _bekle(lambda: br3.mav.yazilan == [hb]), br3.mav.yazilan
+    dron = _mav_hb(7, 1, 2)
+    br3._on_bytes(dron)   # okuyucu iş parçacığı çağrısı (loop yok: yalnız yerel MP)
+    assert mp.recvfrom(4096)[0] == dron
+    ev = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    ev.bind(('127.0.0.2', 0))
+    ev.sendto(hb, ('127.0.0.1', p))
+    assert _bekle(lambda: br3.local_mp.dropped == 1) and len(br3.mav.yazilan) == 1
+    info = br3.mp_info()['local']
+    assert info['peer'] == '127.0.0.1:{}'.format(mp.getsockname()[1]) and info['up'] == 1 and info['down'] == 1, info
+    br3.stop()
+    # yerel MP — gönder: sabit hedefe gönderir, yalnız o IP'den geleni kabul eder
+    hedef = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    hedef.bind(('127.0.0.1', 0))
+    hedef.settimeout(3)
+    br4 = kc.Bridge('ornek.app/ANAHTAR', ui=lambda *a: None, mp_udp='127.0.0.1:{}'.format(hedef.getsockname()[1]))
+    br4.mav = _SahteMav()
+    br4.start_local_mp()
+    assert br4.local_mp.mode == 'gonder'
+    br4._on_bytes(dron)
+    veri, kaynak = hedef.recvfrom(4096)
+    assert veri == dron
+    hedef.sendto(hb, kaynak)
+    assert _bekle(lambda: br4.mav.yazilan == [hb])
+    br4.stop()
+
+    # CLI: mp-ac / mp-kapat (conf yorumları korunur), durum --json mp_udp; udp dron portuyla çakışma reddi
+    conf = tmp / 'mp.conf'
+    shutil.copy(LINUX / 'kopru.conf.ornek', conf)
+    env = dict(os.environ, HEPGO_KOPRU_DURUM=str(tmp / 'yok.json'))
+    run = lambda *a: subprocess.run([PY, str(LINUX / 'hepgo_kopru.py'), '--conf', str(conf)] + list(a), env=env, stdout=subprocess.PIPE,   # noqa: E731
+                                    stderr=subprocess.PIPE, universal_newlines=True)
+    r = run('mp-ac', '0.0.0.0:14551', '--yeniden-baslatma-yok')
+    assert r.returncode == 0 and 'UDPCl' in r.stdout, (r.stdout, r.stderr)
+    txt = conf.read_text(encoding='utf-8')
+    assert 'mp_udp = 0.0.0.0:14551' in txt and txt.count('mp_udp =') == 1 and '# YEREL Mission Planner' in txt, txt
+    assert hk.conf_get(hk.read_conf(str(conf)), 'baglanti', 'mp_udp') == '0.0.0.0:14551'
+    assert json.loads(run('durum', '--json').stdout)['mp_udp'] == 'dinle:0.0.0.0:14551'
+    r = run('mp-ac', '10.0.0.9:14550', '--yeniden-baslatma-yok')
+    assert r.returncode == 0 and hk.conf_get(hk.read_conf(str(conf)), 'baglanti', 'mp_udp') == '10.0.0.9:14550'
+    assert json.loads(run('durum', '--json').stdout)['mp_udp'] == 'gonder:10.0.0.9:14550'
+    r = run('mp-kapat', '--yeniden-baslatma-yok')
+    assert r.returncode == 0 and json.loads(run('durum', '--json').stdout)['mp_udp'] == 'kapalı'
+    hk.set_conf_value(str(conf), 'baglanti', 'tur', 'udp')
+    r = run('mp-ac', '0.0.0.0:14550', '--yeniden-baslatma-yok')
+    assert r.returncode != 0 and 'kullanılıyor' in r.stderr, (r.returncode, r.stderr)
+    assert run('mp-ac', 'bozuk', '--yeniden-baslatma-yok').returncode != 0
+    print('  Mission Planner: raw_up (boyut/sihirli bayt/hız), ikili çerçeve ayrımı, yerel UDP (dinle/gönder, IP kilidi), mp-ac/mp-kapat (3b) geçti')
+
+
+def free_udp_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('127.0.0.1', 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+def _bekle(pred, timeout=5.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
+
+
 # ---------------- 4) paket ----------------
 def package_tests(tmp):
     out = tmp / 'paket'
@@ -298,6 +444,7 @@ def e2e_tests(tmp, releases):
                 break
             time.sleep(0.3)
         assert row['online'] and row['video_online'] and 'video' in row['caps'] and row['live']['bridge_ver'] == hk.LINUX_VERSION, row
+        assert 'mp_relay' in row['caps'], row['caps']   # v1.4: Mission Planner aktarımı (sunucu raw_up)
         cookie = c.cookies.get('caymaz_session')
         with connect(f'ws://127.0.0.1:{port}/ws/drone/video/watch?camera_id={cam["id"]}', additional_headers={'Cookie': f'caymaz_session={cookie}'},
                      max_size=None) as w:
@@ -345,6 +492,7 @@ def main():
     py38_tests()
     core_tests(tmp)
     cli_tests(tmp)
+    mp_tests(tmp)
     releases = package_tests(tmp)
     e2e_tests(tmp, releases)
     print('Linux / Jetson köprüsü testleri geçti.')

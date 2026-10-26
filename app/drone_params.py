@@ -437,9 +437,12 @@ class Izleyici:
     """Bir dronun (drone_id) çalışan SITL'i için PARAM_VALUE izleyicisi. Olay döngüsünde çağrılır (kısa sqlite yazımı).
     `bildir(metin, severity)`: olay şeridi/konsol (isteğe bağlı)."""
 
-    def __init__(self, drone_id, bildir=None, sanal_montaj=True, srv_rev_yaz=None, tip=None):
+    def __init__(self, drone_id, bildir=None, sanal_montaj=True, srv_rev_yaz=None, tip=None, gercek=False):
         self.drone_id = int(drone_id)
         self.bildir = bildir
+        # GERÇEK dron (Canlı Uçuş › Mission Planner aktarımı; app/drone_mprelay.py): yalnız niyetli (MP PARAM_SET / HEPGO param_set) yankılar
+        # kaydedilir — araç kendi değiştirdi ('sitl' kaynağı) kaydı ve sanal montaj (SIM_SRV_REV) işlemi yok
+        self.gercek = bool(gercek)
         self.tip = tip                           # araç tipi (drone_sitl.TIP_ESLEME anahtarı): motor kanalı dışlaması (srv_rev_mask)
         self.sanal_montaj = bool(sanal_montaj)   # SITL ikilisi SIM_SRV_REV tanır: montaj kaydında maske anında güncellenir (srv_rev_yaz(mask))
         self.srv_rev_yaz = srv_rev_yaz           # callable(mask:int) → SITL'e SIM_SRV_REV PARAM_SET (oturum sağlar); None → yalnız bildirim
@@ -545,7 +548,7 @@ class Izleyici:
         eski = self.taban.get(n)
         self.taban[n] = v
         if bek is None:
-            if eski is None or self._esit(v, eski) or not self.taban_tam:
+            if self.gercek or eski is None or self._esit(v, eski) or not self.taban_tam:
                 return None   # ilk öğrenme (taban), değişmedi ya da tam liste henüz alınmadı
             if sensor_mu(n):
                 return None   # SITL'in sanal sensörüne ait değer (simülatörde kalibrasyon, AUTODEC): gerçek uçağın kaydına yazılmaz
@@ -561,7 +564,7 @@ class Izleyici:
         self.kayit_sayisi += 1
         self.son_kayit = {'name': n, 'value': v, 'source': source}
         self._bildir(f'Parametre kalıcı kaydedildi: {n} = {v:g} ({KAYNAKLAR.get(source, source)})', 6)
-        if montaj_mi(n):   # montaj parametresi değişti: sanal montaj maskesini SITL'de anında güncelle (ikili destekliyorsa), yoksa sarı uyarı
+        if montaj_mi(n) and not self.gercek:   # montaj parametresi değişti: sanal montaj maskesini SITL'de anında güncelle (ikili destekliyorsa), yoksa sarı uyarı
             self._montaj_degisti(n, v)
         return self.son_kayit
 

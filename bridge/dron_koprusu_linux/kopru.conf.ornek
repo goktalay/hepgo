@@ -20,6 +20,12 @@ adres = 0.0.0.0
 port = 14550
 # boş: ilk kalp atışı gönderen dron
 sysid =
+# YEREL Mission Planner (internet gerekmez; varsayılan kapalı). Drondan gelen her çerçeve MP'ye de gider, MP'nin komutları drona yazılır.
+#   0.0.0.0:14550      → dinle: ağdaki bilgisayarda MP › UDPCl › <bu cihazın IP'si> : 14550 (ilk paket gönderen adres kilitlenir)
+#   192.168.1.50:14550 → gönder: o bilgisayardaki MP › UDP › 14550 dinler
+# Dron bağlantısı da udp ise aynı portu kullanmayın. Komutla: sudo hepgo-kopru mp-ac 0.0.0.0:14550 · sudo hepgo-kopru mp-kapat
+# HEPGO üzerinden (internet) MP aktarımı ayrıca Canlı Uçuş › dron kartı › İşlemler › Mission Planner'dan açılır (bu ayar gerekmez).
+mp_udp =
 
 [goruntu]
 # Görüntü köprüsü (RTSP/RTP → fMP4 → HEPGO). Kamera ayarları SİTEDEN gelir: Dron Yönetimi › Kameralar.

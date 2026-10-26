@@ -1718,7 +1718,9 @@ def param_testleri(a, c1, sitl, mon):
     assert not any(drone_params.haric_mi(a) for a, _ in flightsim.FLAP_PARAMLARI) and drone_params.haric_mi('TKOFF_ALT')
     r = ok(a.get(P))
     assert r['items'] == [] and r['count'] == 0 and 'STAT_' in r['excluded']['prefixes'] and 'MAV_SYSID' in r['excluded']['names'] and r['can_write'] is True, r
-    assert a.get(f"/api/drone/drones/{md['id']}/sitl-params").status_code == 400   # yalnız sanal dron
+    assert ok(a.get(f"/api/drone/drones/{md['id']}/sitl-params"))['items'] == []   # MAVLink dron: Canlı Uçuş MP aktarımı kayıtları (drone_mprelay)
+    dj = ok(a.post('/api/drone/drones', json={'name': 'DJI', 'protocol': 'dji'}))
+    assert a.get(f"/api/drone/drones/{dj['id']}/sitl-params").status_code == 400   # DJI: tutulmaz
     assert a.get('/api/drone/drones/999999/sitl-params').status_code == 404
     assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0   # önceki oturumların TCP'leri kapanmış olmalı
     s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': pd_['id']}), 201)

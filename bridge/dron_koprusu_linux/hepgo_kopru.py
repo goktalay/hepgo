@@ -12,6 +12,9 @@ Komutlar:
   hepgo-kopru durum [--json]                   servis + sunucu + dron bağlantısı + kameralar + araçlar (ffmpeg / GStreamer / kodlayıcı)
   hepgo-kopru log [-f] [-n 200]                journalctl -u hepgo-kopru
   hepgo-kopru kamera-dene [--kamera N] [--sure 10] [--cikti dosya.mp4]   yerel conf kamerasını dener (sunucuya göndermez)
+  hepgo-kopru mp-ac <ip:port>                  YEREL Mission Planner UDP'yi açar ([baglanti] mp_udp; 0.0.0.0:14550 = dinle, MP 'UDPCl'
+                                               ile bu cihaza bağlanır · 192.168.1.50:14550 = o bilgisayardaki MP'ye gönder) + servis yeniden başlar
+  hepgo-kopru mp-kapat                         yerel Mission Planner UDP'yi kapatır (HEPGO üzerinden aktarım ayrıca siteden açılır)
   hepgo-kopru calistir                         servis (ön planda; systemd çağırır)
 Python 3.8+ (Jetson Nano JetPack 4.6 / Ubuntu 18.04: install.sh python3.8 kurar).
 """
@@ -35,7 +38,7 @@ for _p in (HERE, HERE.parent / 'dron_koprusu'):   # kurulu pakette aynı klasör
 import kopru_core  # noqa: E402
 import goruntu_core  # noqa: E402
 
-LINUX_VERSION = '1.1.5'   # Linux/Jetson paketi sürümü (paket adı ve bridge_ver)
+LINUX_VERSION = '1.1.6'   # Linux/Jetson paketi sürümü (paket adı ve bridge_ver)
 CONF = os.environ.get('HEPGO_KOPRU_CONF') or '/etc/hepgo-kopru/kopru.conf'
 DURUM = os.environ.get('HEPGO_KOPRU_DURUM') or '/run/hepgo-kopru/durum.json'
 SERVICE = 'hepgo-kopru'
@@ -107,29 +110,37 @@ def tools_from(c):
 
 def set_conf_code(path, code):
     """conf'taki [kopru] kod satırını değiştirir (diğer satırlar/yorumlar korunur); dosya yoksa örnekten oluşturulur. İzin 0640."""
+    set_conf_value(path, 'kopru', 'kod', code)
+
+
+def set_conf_value(path, section, key, value):
+    """conf'ta [section] key satırını değiştirir/ekler (diğer satırlar/yorumlar korunur); dosya yoksa örnekten oluşturulur. İzin 0640."""
     p = Path(path)
     if p.is_file():
         lines = p.read_text(encoding='utf-8').splitlines()
     else:
         ornek = HERE / 'kopru.conf.ornek'
         lines = ornek.read_text(encoding='utf-8').splitlines() if ornek.is_file() else ['[kopru]', 'kod =']
+    satir = '{} = {}'.format(key, value)
     out, sec, done = [], None, False
     for ln in lines:
         s = ln.strip()
         if s.startswith('[') and s.endswith(']'):
-            if sec == 'kopru' and not done:
-                out.append('kod = ' + code)
+            if sec == section and not done:
+                while out and not out[-1].strip():   # bölüm sonundaki boş satırların önüne ekle
+                    out.pop()
+                out += [satir, '']
                 done = True
             sec = s[1:-1].strip().lower()
-        elif sec == 'kopru' and not done and s.split('=', 1)[0].strip().lower() == 'kod' and '=' in s:
-            out.append('kod = ' + code)
+        elif sec == section and not done and '=' in s and not s.startswith(('#', ';')) and s.split('=', 1)[0].strip().lower() == key:
+            out.append(satir)
             done = True
             continue
         out.append(ln)
     if not done:
-        if sec != 'kopru':
-            out += ['', '[kopru]']
-        out.append('kod = ' + code)
+        if sec != section:
+            out += ['', '[{}]'.format(section)]
+        out.append(satir)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix('.tmp')
     tmp.write_text('\n'.join(out) + '\n', encoding='utf-8')
@@ -216,7 +227,12 @@ class Daemon:
             return EXIT_FATAL
         video_on = conf_get(self.c, 'goruntu', 'etkin', 'evet').lower() in EVET
         caps = list(kopru_core.CAPS) + (['video'] if video_on else [])
-        self.bridge = kopru_core.Bridge(self.code, ui=self.ui, link_spec=self.link_conf, caps=caps, version=LINUX_VERSION)
+        try:
+            mp_udp = kopru_core.parse_mp_udp(conf_get(self.c, 'baglanti', 'mp_udp'))
+        except ValueError as e:
+            log('mp', 'uyarı', '[baglanti] mp_udp yok sayıldı: {}'.format(e))
+            mp_udp = None
+        self.bridge = kopru_core.Bridge(self.code, ui=self.ui, link_spec=self.link_conf, caps=caps, version=LINUX_VERSION, mp_udp=mp_udp)
         loop = asyncio.get_event_loop()
         tasks = [asyncio.ensure_future(self.bridge.run()), asyncio.ensure_future(self._status_writer())]
         if video_on:
@@ -323,6 +339,11 @@ def cmd_durum(args):
         out['baglanti_ayari'] = kopru_core.link_text(spec) if spec else 'yok (sunucudan link_open)'
     except ValueError as e:
         out['baglanti_ayari'] = 'HATALI: {}'.format(e)
+    try:
+        mp = kopru_core.parse_mp_udp(conf_get(c, 'baglanti', 'mp_udp'))
+        out['mp_udp'] = '{}:{}:{}'.format(*mp) if mp else 'kapalı'
+    except ValueError as e:
+        out['mp_udp'] = 'HATALI: {}'.format(e)
     out['araclar'] = tools_from(c).info()
     if args.json:
         print(json.dumps(out, ensure_ascii=False, indent=1))
@@ -331,12 +352,20 @@ def cmd_durum(args):
     print('  servis      : {}'.format(out['servis']))
     print('  köprü kodu  : {}'.format(out['kod'] or 'YOK — sudo hepgo-kopru eslestir <kod>'))
     print('  dron ayarı  : {}'.format(out['baglanti_ayari']))
+    print('  yerel MP    : {}'.format(out['mp_udp']))
     if st:
         print('  sunucu      : {} {}'.format(st.get('server', {}).get('state'), st.get('server', {}).get('detail') or ''))
         print('  dron bağl.  : {} {}'.format(st.get('link', {}).get('state'), st.get('link', {}).get('detail') or ''))
         s = st.get('stats') or {}
         if s:
             print('  telemetri   : gönderilen {} · alınan {} · sysid {}'.format(s.get('tx'), s.get('rx'), s.get('drone')))
+        mp = s.get('mp') or {}
+        if mp:
+            loc = mp.get('local') or {}
+            print('  MP (HEPGO)  : drona yazılan {} paket · atılan {} · bağlantısız {}'.format(mp.get('raw_up'), mp.get('raw_drop'), mp.get('raw_nolink')))
+            if loc:
+                print('  MP (yerel)  : {} · eş {} · MP→dron {} · dron→MP {}'.format(loc.get('listen') or loc.get('target'), loc.get('peer') or 'bekleniyor',
+                                                                                 loc.get('up'), loc.get('down')))
         v = st.get('video')
         if v:
             print('  görüntü     : {} {}'.format(v.get('server'), v.get('detail') or ''))
@@ -356,6 +385,48 @@ def cmd_log(args):
         os.execvp(cmd[0], cmd)
     except OSError as e:
         sys.exit('journalctl çalıştırılamadı: {}'.format(e))
+
+
+# ---------------- yerel Mission Planner ----------------
+def _yeniden_baslat(args):
+    if not getattr(args, 'yeniden_baslatma_yok', False) and _systemctl('is-enabled') is not None:
+        r = subprocess.run(['systemctl', 'restart', SERVICE])
+        print('Servis yeniden başlatıldı.' if r.returncode == 0 else 'Servis yeniden başlatılamadı: sudo systemctl restart ' + SERVICE)
+
+
+def cmd_mp_ac(args):
+    try:
+        mp = kopru_core.parse_mp_udp(args.adres)
+    except ValueError as e:
+        sys.exit(str(e))
+    if not mp:
+        sys.exit('Adres gerekli (ör. 0.0.0.0:14550 ya da 192.168.1.50:14550)')
+    c = read_conf(args.conf)
+    try:
+        spec = link_spec(c)
+    except ValueError:
+        spec = None
+    if mp[0] == 'dinle' and spec and spec.get('type') == 'udp' and int(spec.get('port') or 0) == mp[2]:
+        sys.exit('Port {} dron bağlantısında ([baglanti] port) kullanılıyor; başka port seçin (ör. 0.0.0.0:14551)'.format(mp[2]))
+    try:
+        set_conf_value(args.conf, 'baglanti', 'mp_udp', '{}:{}'.format(mp[1], mp[2]) if (mp[0] == 'dinle') == (mp[1] in ('0.0.0.0', '::'))
+                       else '{}:{}:{}'.format(*mp))
+    except OSError:
+        sys.exit('Yapılandırma yazılamadı ({}): sudo ile çalıştırın'.format(args.conf))
+    if mp[0] == 'dinle':
+        print('Yerel Mission Planner: {}:{} dinleniyor → MP › UDPCl › <bu cihazın IP adresi>:{}'.format(mp[1], mp[2], mp[2]))
+    else:
+        print('Yerel Mission Planner: telemetri {}:{} adresine gönderilecek → o bilgisayarda MP › UDP › port {}'.format(mp[1], mp[2], mp[2]))
+    _yeniden_baslat(args)
+
+
+def cmd_mp_kapat(args):
+    try:
+        set_conf_value(args.conf, 'baglanti', 'mp_udp', '')
+    except OSError:
+        sys.exit('Yapılandırma yazılamadı ({}): sudo ile çalıştırın'.format(args.conf))
+    print('Yerel Mission Planner UDP kapatıldı.')
+    _yeniden_baslat(args)
 
 
 # ---------------- kamera-dene ----------------
@@ -433,6 +504,13 @@ def main(argv=None):
     p.add_argument('--sure', type=float, default=10)
     p.add_argument('--cikti', help='alınan fMP4 akışını dosyaya yaz')
     p.set_defaults(fn=cmd_kamera_dene)
+    p = sub.add_parser('mp-ac', help='yerel Mission Planner UDP (0.0.0.0:14550 dinle · <ip>:<port> gönder)')
+    p.add_argument('adres', help='0.0.0.0:14550 (MP UDPCl ile bağlanır) ya da 192.168.1.50:14550 (o bilgisayardaki MP UDP dinler)')
+    p.add_argument('--yeniden-baslatma-yok', action='store_true')
+    p.set_defaults(fn=cmd_mp_ac)
+    p = sub.add_parser('mp-kapat', help='yerel Mission Planner UDP\'yi kapat')
+    p.add_argument('--yeniden-baslatma-yok', action='store_true')
+    p.set_defaults(fn=cmd_mp_kapat)
     args = ap.parse_args(argv)
     if not getattr(args, 'fn', None):
         ap.print_help()

@@ -6,6 +6,10 @@ HEPGO Dron Yönetimi köprü protokolü v1 + v1.1 (docs/dron-kopru-protokolu.md)
 - Sunucudan gelen {t:'cmd'} komutları drona MAVLink komutu olarak uygulanır, sonuç {t:'res'} ile döner.
 - Bağlantı (link) sunucudan link_open/link_close ile ya da arayüzden elle açılır; durum {t:'link'} çerçevesiyle bildirilir.
 - Uçuş sonrası .bin logu log_begin / ikili parçalar / log_end ile gönderilir.
+- v1.4 (cap 'mp_relay'): sunucudan gelen İKİLİ çerçeve = 0x01 (raw_up) + ham MAVLink → drona olduğu gibi yazılır (HEPGO Canlı Uçuş ›
+  Mission Planner aktarımı; boyut ≤ 4 KB, sihirli bayt 0xFE/0xFD, hız sınırı). Ayrıca YEREL Mission Planner: mp_udp='0.0.0.0:14550'
+  (dinle — MP 'UDPCl' ile köprü bilgisayarına bağlanır) ya da '192.168.1.50:14550' (gönder — MP 'UDP' ile dinler); drondan gelen her
+  çerçeve yerel MP'ye de gider, MP'den geleni drona yazılır (internet gerekmez). Varsayılan kapalı.
 
 Köprü kodu: '<alan-adı>/<anahtar>' (HEPGO › Dron Yönetimi › Dron Köprüleri'nde köprü eklenince bir kez gösterilir).
 """
@@ -21,8 +25,13 @@ import time
 from pathlib import Path
 
 APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
-VERSION = '1.0.0'
-CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear']
+VERSION = '1.1.0'
+CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear', 'mp_relay']
+RAW_UP = 0x01                     # v1.4 sunucu → köprü ikili çerçeve türü: 0x01 + ham MAVLink (Mission Planner aktarımı)
+RAW_MAX = 4096                    # raw_up / yerel MP datagramı üst sınırı (MAVLink çerçevesi ≤ 280 bayt)
+RAW_PPS, RAW_BPS = 400, 256 * 1024   # drona yazılan MP trafiği hız sınırı (paket/sn, bayt/sn; aşan atılır)
+MAV_MAGIC = (0xFE, 0xFD)
+LOCAL_MP_IDLE_S = 30              # yerel MP (dinle kipi): bu kadar sessizlikte adres kilidi kalkar
 PING_S = 20
 CHUNK = 256 * 1024
 FATAL_CODES = {4400: 'Köprü kodu geçersiz ya da süresi dolmuş (yeni kod alın)',
@@ -89,6 +98,7 @@ class MavLink:
         self.last_rx = 0.0
         self.errors = 0
         self.streams = set()   # veri akışı istenmiş sysid'ler
+        self._wlock = threading.Lock()   # write_raw (MP baytları) seri yazımı bölünmesin
 
     # ---- bağlantı ----
     def open(self):
@@ -120,6 +130,14 @@ class MavLink:
                 self.m.close()
         except Exception:   # noqa: BLE001
             pass
+
+    def write_raw(self, data):
+        """v1.4: Mission Planner'dan (sunucu raw_up ya da yerel UDP) gelen ham MAVLink baytlarını drona olduğu gibi yazar."""
+        if not self.running or self.m is None:
+            return False
+        with self._wlock:
+            self.m.write(data)
+        return True
 
     def _gcs_heartbeat(self):
         from pymavlink import mavutil
@@ -440,13 +458,141 @@ class MavLink:
 
 
 # ======================================================================
+# Yerel Mission Planner (UDP; internet gerekmez)
+# ======================================================================
+def parse_mp_udp(text):
+    """'0.0.0.0:14550' → ('dinle', '0.0.0.0', 14550) · '192.168.1.50:14550' → ('gonder', '192.168.1.50', 14550) · ''/kapali → None.
+    Önek de verilebilir: 'dinle:0.0.0.0:14550' / 'gonder:10.0.0.5:14550'."""
+    t = (text or '').strip()
+    if not t or t.lower() in ('kapali', 'kapalı', 'yok', 'off', 'no', 'hayir', 'hayır', '0'):
+        return None
+    mode = None
+    for pre in ('dinle:', 'gonder:', 'gönder:', 'listen:', 'send:'):
+        if t.lower().startswith(pre):
+            mode = 'dinle' if pre in ('dinle:', 'listen:') else 'gonder'
+            t = t[len(pre):]
+            break
+    if ':' not in t:
+        raise ValueError('mp_udp "<adres>:<port>" biçiminde olmalı (ör. 0.0.0.0:14550)')
+    host, port = t.rsplit(':', 1)
+    host = host.strip() or '0.0.0.0'
+    port = int(port)
+    if not 1 <= port <= 65535:
+        raise ValueError('mp_udp portu 1…65535 olmalı')
+    if mode is None:
+        mode = 'dinle' if host in ('0.0.0.0', '::', '*') else 'gonder'
+    return mode, ('0.0.0.0' if host == '*' else host), port
+
+
+class LocalMp:
+    """Köprü bilgisayarında yerel UDP: 'dinle' kipinde ilk paket gönderen adres kilitlenir (LOCAL_MP_IDLE_S sessizlikte kalkar);
+    'gonder' kipinde sabit adrese gönderilir ve yalnız o IP'den gelen kabul edilir. Okuma ayrı iş parçacığında; on_up(data) çağrılır."""
+
+    def __init__(self, spec, on_up, log=print):
+        self.mode, self.host, self.port = spec
+        self.on_up, self.log = on_up, log
+        self.sock = None
+        self.peer = (self.host, self.port) if self.mode == 'gonder' else None
+        self.last_rx = 0.0
+        self.up = self.down = self.dropped = 0
+        self.running = False
+
+    def text(self):
+        return f'{self.mode}:{self.host}:{self.port}'
+
+    def start(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((self.host, self.port) if self.mode == 'dinle' else ('0.0.0.0', 0))
+        s.settimeout(0.5)
+        self.sock, self.running = s, True
+        threading.Thread(target=self._read, daemon=True, name='yerel-mp').start()
+
+    def stop(self):
+        self.running = False
+        try:
+            if self.sock:
+                self.sock.close()
+        except OSError:
+            pass
+
+    def _read(self):
+        while self.running:
+            try:
+                data, addr = self.sock.recvfrom(65535)
+            except socket.timeout:
+                continue
+            except OSError:
+                if not self.running:
+                    return
+                time.sleep(0.2)
+                continue
+            now = time.time()
+            if self.mode == 'dinle':
+                if self.peer is None or (addr != self.peer and now - self.last_rx > LOCAL_MP_IDLE_S):
+                    if addr != self.peer:
+                        self.log(f'Yerel Mission Planner bağlandı: {addr[0]}:{addr[1]}')
+                    self.peer = addr
+                elif addr[0] != self.peer[0]:
+                    self.dropped += 1   # kilit: başka adres
+                    continue
+                else:
+                    self.peer = addr
+            elif addr[0] != self.host:
+                self.dropped += 1
+                continue
+            self.last_rx = now
+            self.up += 1
+            try:
+                self.on_up(data)
+            except Exception:   # noqa: BLE001
+                pass
+
+    def send(self, data):
+        p = self.peer
+        if p is None or self.sock is None:
+            return
+        try:
+            self.sock.sendto(data, p)
+            self.down += 1
+        except OSError:
+            pass
+
+    def info(self):
+        return {'mode': self.mode, 'listen' if self.mode == 'dinle' else 'target': f'{self.host}:{self.port}',
+                'peer': f'{self.peer[0]}:{self.peer[1]}' if self.peer else None, 'up': self.up, 'down': self.down, 'dropped': self.dropped,
+                'last_rx': self.last_rx or None}
+
+
+class _Kova:
+    """Jeton kovası (paket/sn + bayt/sn); iş parçacığı güvenli."""
+
+    def __init__(self, pps, bps):
+        self.pps, self.bps = pps, bps
+        self.t, self.p, self.b = time.time(), float(pps), float(bps)
+        self.lock = threading.Lock()
+
+    def al(self, n):
+        with self.lock:
+            now = time.time()
+            dt, self.t = now - self.t, now
+            self.p = min(self.pps * 2, self.p + dt * self.pps)
+            self.b = min(self.bps * 2, self.b + dt * self.bps)
+            if self.p < 1 or self.b < n:
+                return False
+            self.p -= 1
+            self.b -= n
+            return True
+
+
+# ======================================================================
 # Sunucu tarafı (asyncio)
 # ======================================================================
 class Bridge:
     """Köprü yaşam döngüsü. ui(event, data) geri çağrısı arayüze olay verir:
     'server' (state, detail), 'link' (state, detail), 'log' (metin), 'stats' (dict)."""
 
-    def __init__(self, code, ui=None, link_spec=None, caps=None, version=None):
+    def __init__(self, code, ui=None, link_spec=None, caps=None, version=None, mp_udp=None):
         self.domain, self.key = parse_code(code)
         self.caps = list(caps) if caps is not None else list(CAPS)   # Linux/Jetson köprüsü görüntü açıksa 'video' ekler (v1.3)
         self.version = version or VERSION
@@ -461,10 +607,17 @@ class Bridge:
         self.log_futs = {}
         self.tx = 0
         self.bridge_name = None
+        # v1.4 Mission Planner: sunucu raw_up + yerel UDP (mp_udp: parse_mp_udp metni ya da (kip, adres, port))
+        self.mp_spec = parse_mp_udp(mp_udp) if isinstance(mp_udp, str) else mp_udp
+        self.local_mp = None
+        self.kova = _Kova(RAW_PPS, RAW_BPS)
+        self.mp_stats = {'raw_up': 0, 'raw_up_bytes': 0, 'raw_drop': 0, 'raw_nolink': 0, 'last_raw_up': 0.0}
 
     # ---- iş parçacığından çağrılabilir ----
     def stop(self):
         self.stopped = True
+        if self.local_mp:
+            self.local_mp.stop()
         if self.loop:
             self.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._close_ws()))
         if self.mav:
@@ -489,8 +642,48 @@ class Bridge:
         if self.loop:
             return asyncio.run_coroutine_threadsafe(self.send_log(path), self.loop)
 
+    # ---- Mission Planner (v1.4) ----
+    def raw_up(self, data, src='sunucu'):
+        """Mission Planner baytları → drona. Boyut / sihirli bayt / hız denetimi; bağlantı yoksa atılır. İş parçacığı güvenli."""
+        st = self.mp_stats
+        if not data or len(data) > RAW_MAX or data[0] not in MAV_MAGIC or not self.kova.al(len(data)):
+            st['raw_drop'] += 1
+            return False
+        mav = self.mav
+        if mav is None:
+            st['raw_nolink'] += 1
+            return False
+        try:
+            ok = mav.write_raw(data)
+        except Exception:   # noqa: BLE001
+            ok = False
+        if not ok:
+            st['raw_nolink'] += 1
+            return False
+        st['raw_up'] += 1
+        st['raw_up_bytes'] += len(data)
+        st['last_raw_up'] = time.time()
+        return True
+
+    def start_local_mp(self):
+        if not self.mp_spec or self.local_mp is not None:
+            return
+        try:
+            lm = LocalMp(self.mp_spec, lambda d: self.raw_up(d, 'yerel'), log=lambda s: self.ui('log', s))
+            lm.start()
+            self.local_mp = lm
+            self.ui('log', f'Yerel Mission Planner UDP açık: {lm.text()}')
+        except Exception as e:   # noqa: BLE001
+            self.ui('log', f'Yerel Mission Planner UDP açılamadı ({self.mp_spec}): {e}')
+
+    def mp_info(self):
+        return {**self.mp_stats, 'local': self.local_mp.info() if self.local_mp else None}
+
     # ---- bağlantı (drona) ----
     def _on_bytes(self, data):
+        lm = self.local_mp
+        if lm is not None:   # yerel MP her durumda (log aktarımında da) telemetri alır
+            lm.send(data)
         if self.log_mode or self.loop is None or self.out is None:
             return
         self.loop.call_soon_threadsafe(self._enqueue, data)
@@ -548,6 +741,7 @@ class Bridge:
         import websockets
         self.loop = asyncio.get_running_loop()
         self.out = asyncio.Queue()
+        self.start_local_mp()
         if self.link_spec:
             try:
                 await self.open_link(self.link_spec)
@@ -599,7 +793,7 @@ class Bridge:
             await self._send({'t': 'ping'})
             self.ui('stats', {'tx': self.tx, 'rx': self.mav.rx if self.mav else 0,
                               'drone': self.mav.target if self.mav else None,
-                              'last_rx': self.mav.last_rx if self.mav else 0})
+                              'last_rx': self.mav.last_rx if self.mav else 0, 'mp': self.mp_info()})
 
     async def _forwarder(self):
         while True:
@@ -618,7 +812,9 @@ class Bridge:
     async def _receiver(self, ws):
         async for raw in ws:
             if isinstance(raw, bytes):
-                continue
+                if raw[:1] == bytes([RAW_UP]):   # v1.4 raw_up: HEPGO Mission Planner aktarımı → drona
+                    self.raw_up(raw[1:])
+                continue   # diğer ikili türler: yok sayılır (ileri uyum)
             try:
                 m = json.loads(raw)
             except ValueError:

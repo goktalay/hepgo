@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, config, db, drone_hub, exitpass, transfers
+from .. import auth, config, db, drone_hub, drone_mprelay, exitpass, transfers
 from ..files import KINDS, local_only, save_upload
 
 router = APIRouter(prefix='/api/field')
@@ -424,6 +424,7 @@ def delete_flight(fid: int, user=Depends(field_manager), conn=db.DB):
     conn.execute('DELETE FROM field_flights WHERE id = ?', (fid,))
     db.audit(conn, user['id'], 'Saha görevinden uçağı kaldırdı', 'field_flight', fid, f'{task["code"]} / {label}')
     conn.commit()
+    drone_mprelay.close_threadsafe(fid, 'uçuş görevden kaldırıldı', user)
     drone_hub.task_changed(f['task_id'])
     return {'ok': True}
 
@@ -574,8 +575,100 @@ def update_flight(fid: int, body: FlightIn, user=Depends(field_user), conn=db.DB
     db.audit(conn, user['id'], 'Uçuş bilgisini düzenledi', 'field_flight', fid,
              f'{task["code"]} / {_flight_label(task, fid)}: {LAUNCH_TEXT.get(body.launch, "fırlatma seçilmedi")}{conn_txt}')
     conn.commit()
+    if (body.bridge_id, body.sysid) != (f['bridge_id'], f['sysid']):   # Mission Planner aktarımı eski köprü/sysid'e bağlıydı
+        drone_mprelay.close_threadsafe(fid, 'uçuşun bağlantısı değişti', user)
     drone_hub.task_changed(f['task_id'])
     return {'ok': True}
+
+
+# ---------- Canlı Uçuş › Mission Planner aktarımı (app/drone_mprelay.py; protokol v1.4 raw_up / cap 'mp_relay') ----------
+class MpRelayIn(BaseModel):
+    pair_sysid: Optional[int] = None       # isteğe bağlı eşleştirme: IP kilidi yalnız bu sysid'li GCS kalp atışıyla kurulur (MP varsayılanı 255)
+
+
+def _mp_flight(fid, user, write):
+    """Uçuş + görev bağlamı ve yetki: Canlı Uçuş okuma + görev üyesi / saha yöneticisi; açma/kapama/sıfırlama için ayrıca
+    drone_mprelay.can_manage (komut yetkisi). Sanal dron ve köprüsüz uçuş için aktarım yok."""
+    with db.connect() as conn:
+        f = flight_row(conn, fid)
+        t = get_task(conn, f['task_id'])
+        if not drone_hub.can_read(user):
+            raise HTTPException(403, 'Canlı Uçuş izniniz yok')
+        if not (is_manager(user) or _member(t, user)):
+            raise HTTPException(403, 'Bu görevin canlı uçuşunu yalnız görev üyeleri ve saha yöneticileri izleyebilir')
+        if write and not drone_mprelay.can_manage(user):
+            raise HTTPException(403, 'Mission Planner aktarımı için Canlı Uçuş komut yetkisi (Pilot) ya da Dron Yönetimi yazma izni gerekir')
+        d = db.row(conn.execute('SELECT code, protocol FROM drone_drones WHERE id = ?', (f['drone_id'],))) if f['drone_id'] else None
+    f['drone_code'] = (d or {}).get('code')
+    f['protocol'] = (d or {}).get('protocol') or 'mavlink'
+    f['task_status'] = t['status']
+    f['task_code'] = t['code']
+    return f
+
+
+def _mp_status(f, request):
+    from .drone import _req_host
+    r = drone_mprelay.get(f['id'])
+    b = drone_hub.BRIDGES.get(f['bridge_id']) if f['bridge_id'] else None
+    base = {'flight_id': f['id'], 'task_id': f['task_id'], 'bridge_id': f['bridge_id'], 'sysid': f['sysid'], 'protocol': f['protocol'],
+            'bridge_online': b is not None, 'bridge_ver': b.ver if b else None, 'bridge_platform': b.platform if b else None,
+            'bridge_supported': drone_mprelay.bridge_supported(b) if b else None, 'update_hint': drone_mprelay.update_hint(),
+            'min_versions': drone_mprelay.MIN_VERSIONS, 'host': drone_mprelay.PUBLIC_HOST or _req_host(request) or None,
+            'port_range': [drone_mprelay.UDP_BASE, drone_mprelay.UDP_BASE + drone_mprelay.UDP_COUNT - 1], 'idle_timeout_s': drone_mprelay.IDLE_S,
+            'available': f['protocol'] != 'sanal' and bool(f['bridge_id']) and f['task_status'] in drone_mprelay.OPEN_TASK}
+    return {**base, **(r.info() if r else {'active': False})}
+
+
+@router.get('/tasks/{tid}/mp-relays')
+def mp_relays_of_task(tid: int, user=Depends(field_user), conn=db.DB):
+    """Görevin açık Mission Planner aktarımları (harekât ekranı dron kartı rozeti; 3 sn'de bir sorgulanır)."""
+    t = get_task(conn, tid)
+    if not drone_hub.can_read(user):
+        raise HTTPException(403, 'Canlı Uçuş izniniz yok')
+    if not (is_manager(user) or _member(t, user)):
+        raise HTTPException(403, 'Bu görevin canlı uçuşunu yalnız görev üyeleri ve saha yöneticileri izleyebilir')
+    items = [r.info() for r in list(drone_mprelay.RELAYS.values()) if r.task_id == tid and not r.closed]
+    return {'items': items, 'can_manage': drone_mprelay.can_manage(user)}
+
+
+@router.get('/flights/{fid}/mp-relay')
+async def mp_relay_status(fid: int, request: Request, user=Depends(auth.current_user)):
+    f = await run_in_threadpool(_mp_flight, fid, user, False)
+    return {**_mp_status(f, request), 'can_manage': drone_mprelay.can_manage(user)}
+
+
+@router.post('/flights/{fid}/mp-relay')
+async def mp_relay_open(fid: int, request: Request, body: Optional[MpRelayIn] = None, user=Depends(auth.current_user)):
+    f = await run_in_threadpool(_mp_flight, fid, user, True)
+    if f['protocol'] == 'sanal':
+        raise HTTPException(400, 'Sanal dron için Mission Planner aktarımı yok (Uçuş Simülatörü kendi UDP bağlantısını verir)')
+    if not f['bridge_id']:
+        raise HTTPException(400, 'Uçuşa köprü atanmadı (Uçuş Yönetimi › Düzenle › Bağlantı)')
+    if f['task_status'] not in drone_mprelay.OPEN_TASK:
+        raise HTTPException(400, 'Görev açık değil (yalnız Başlangıç / Görevde)')
+    st = _mp_status(f, request)
+    try:
+        await drone_mprelay.open_relay(f, user, body.pair_sysid if body else None, st['host'])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return {**_mp_status(f, request), 'can_manage': True}
+
+
+@router.delete('/flights/{fid}/mp-relay')
+async def mp_relay_close(fid: int, request: Request, user=Depends(auth.current_user)):
+    f = await run_in_threadpool(_mp_flight, fid, user, True)
+    drone_mprelay.close_relay(fid, f"kapatıldı: {user.get('full_name') or user.get('username')}", user)
+    return {**_mp_status(f, request), 'can_manage': True}
+
+
+@router.post('/flights/{fid}/mp-relay/reset-ip')
+async def mp_relay_reset_ip(fid: int, request: Request, user=Depends(auth.current_user)):
+    f = await run_in_threadpool(_mp_flight, fid, user, True)
+    if drone_mprelay.reset_ip(fid, user) is None:
+        raise HTTPException(404, 'Açık Mission Planner aktarımı yok')
+    return {**_mp_status(f, request), 'can_manage': True}
 
 
 # ---------- Masraf Yönetimi ----------

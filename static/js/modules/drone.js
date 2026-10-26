@@ -221,7 +221,8 @@ async function renderDroneDetail(view, id, ctx, m) {
               m.can.live && ['BASLANGIC', 'GOREVDE'].includes(f.task_status) && f.task_id ? h('a', { class: 'btn sm', href: liveHref(f.task_id), onclick: e => e.stopPropagation() }, 'Canlı Uçuş') : null,
               f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}`, onclick: e => e.stopPropagation() }, 'Uçuş Raporu') : null)))))))
           : h('div', { class: 'small muted' }, 'Bu dron henüz bir saha görevine eklenmedi. Görev detayı › Uçuş Yönetimi › "Dron Ekle" ile ya da Yeni Saha Görevi penceresinden eklenir.')),
-      d.protocol === 'sanal' ? sitlParamsCard(d, m) : null,
+      d.protocol !== 'sanal' && openFlight?.bridge_id ? mpRelayCard(openFlight) : null,
+      ['sanal', 'mavlink'].includes(d.protocol) ? sitlParamsCard(d, m) : null,
       droneCamerasCard(d),
       sessions.length ? h('div', { class: 'card card-pad', style: { marginTop: '14px' } }, h('h3', null, 'Köprü oturumları'), sessionsTable(sessions)) : null);
   };
@@ -306,9 +307,71 @@ function sitlParamsCard(d, m) {
     pick);
   const card = h('div', { class: 'card card-pad dr-params', style: { marginTop: '14px' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } }, title, tools),
-    h('p', { class: 'small muted' }, 'Sanal dronla uçuşta HEPGO panelinden ya da Mission Planner\'dan değiştirilen parametreler kalıcıdır: aynı dronla SITL yeniden başlatılınca varsayilan.parm ile ve ilk kalp atışında PARAM_SET ile geri yüklenir.'),
+    h('p', { class: 'small muted' }, d.protocol === 'sanal'
+      ? 'Sanal dronla uçuşta HEPGO panelinden ya da Mission Planner\'dan değiştirilen parametreler kalıcıdır: aynı dronla SITL yeniden başlatılınca varsayilan.parm ile ve ilk kalp atışında PARAM_SET ile geri yüklenir.'
+      : 'Canlı Uçuş\'ta Mission Planner aktarımı açıkken Mission Planner\'dan (ve HEPGO panelinden) değiştirilen parametreler, dron değişikliği onaylayınca (PARAM_VALUE yankısı) burada kayıt altına alınır.'),
     body, excl, mountNote);
   load().catch(e => clear(body, h('div', { class: 'small muted' }, e.message || 'Yüklenemedi')));
+  return card;
+}
+
+// ======================================================================
+// Canlı Uçuş › Mission Planner aktarımı (app/drone_mprelay.py): açık görevdeki uçuşun durumu; aç / kapat / IP kilidini sıfırla.
+// Harekât ekranında da (dron kartı › İŞLEMLER › Mission Planner) aynı uçlar kullanılır.
+// ======================================================================
+function mpRelayCard(f) {
+  const body = h('div', { class: 'small muted' }, '…');
+  const badge = h('span', { class: 'badge gray' }, tr('Kapalı'));
+  const url = `/api/field/flights/${f.id}/mp-relay`;
+  let busy = false;
+  const act = async (fn, okMsg) => {
+    if (busy) return;
+    busy = true;
+    try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message || String(e), 'err'); } finally { busy = false; load(); }
+  };
+  const ago = s => (s == null ? '—' : tr('{n} sn önce', { n: s < 1 ? '<1' : Math.round(s) }));
+  const draw = r => {
+    badge.className = `badge ${!r.active ? 'gray' : r.connected ? 'green' : 'yellow'}`;
+    badge.textContent = !r.active ? tr('Kapalı') : r.connected ? tr('Açık · MP bağlı') : tr('Açık · MP bekleniyor');
+    const kv = (k, v) => [h('dt', null, k), h('dd', null, v == null || v === '' ? h('span', { class: 'muted' }, '—') : v)];
+    const btns = h('div', { class: 'pill-group', style: { marginTop: '8px' } });
+    if (r.can_manage && r.active) {
+      btns.append(
+        h('button', { class: 'btn sm', disabled: !r.locked_ip, onclick: () => act(() => api.post(`${url}/reset-ip`, {}), tr('IP kilidi sıfırlandı')) }, 'IP kilidini sıfırla'),
+        h('button', { class: 'btn sm danger', onclick: async () => {
+          if (!await confirmDialog('Mission Planner aktarımı', 'Mission Planner aktarımı kapatılsın mı?', { okLabel: 'Kapat', danger: true })) return;
+          act(() => api.del(url), tr('Mission Planner aktarımı kapatıldı'));
+        } }, 'Kapat'));
+    } else if (r.can_manage) {
+      btns.append(h('button', { class: 'btn sm primary', disabled: !r.available || !r.bridge_online || r.bridge_supported === false,
+        onclick: () => act(() => api.post(url, {}), tr('Mission Planner aktarımı açıldı')) }, 'Mission Planner bağlantısı aç'));
+    }
+    const hint = !r.active && !r.bridge_online ? 'Köprü bağlı değil: aktarım köprü çevrimiçiyken açılır.'
+      : !r.active && r.bridge_supported === false ? tr('Köprüyü güncelleyin (Linux ≥{l} / Windows ≥{w}) · köprü sürümü {v}', { l: r.min_versions.linux, w: r.min_versions.windows, v: r.bridge_ver || '?' })
+        : !r.can_manage ? 'Aç / kapat için Canlı Uçuş komut yetkisi (Pilot) ya da Dron Yönetimi yazma izni gerekir.' : null;
+    clear(body,
+      r.active ? h('dl', { class: 'kv' },
+        ...kv('Adres (UDPCl)', h('span', { class: 'pill-group' }, h('code', { class: 'mono' }, r.address || `?:${r.port}`),
+          h('button', { class: 'btn sm', onclick: () => copy(r.address || '', tr('Kopyalandı')) }, 'Kopyala'))),
+        ...kv('Bağlı MP', r.locked_ip ? (r.peer || r.locked_ip) : tr('bekleniyor')),
+        ...kv('Son paket', ago(r.last_rx_ago)),
+        ...kv('Paketler', `MP→ ${r.rx_packets} · →MP ${r.tx_packets}`),
+        ...kv('Reddedilen', tr('IP {ip} · geçersiz {inv} · hız {rate} · köprüsüz {off}', { ip: r.dropped?.ip || 0, inv: r.dropped?.invalid || 0, rate: r.dropped?.rate || 0, off: r.dropped?.offline || 0 })),
+        ...kv('Açan', r.opened_by),
+        ...kv('Kapanma', tr('{n} dk hareketsizlikte, görev bitince ya da köprü 2 dk çevrimdışı kalınca', { n: Math.round((r.idle_timeout_s || 1800) / 60) }))) : null,
+      hint ? h('div', { class: 'small muted' }, hint) : null,
+      btns,
+      h('p', { class: 'small muted', style: { marginTop: '8px' } },
+        'Mission Planner: sağ üstte bağlantı türü UDPCl → Connect → adres ve port. İlk bağlanan bilgisayarın IP\'si kilitlenir. HEPGO ve Mission Planner aynı anda komut verebilir; MP komutları Canlı Uçuş konsolunda "Mission Planner:" satırıyla görünür.'));
+  };
+  const load = () => api.get(url).then(draw).catch(e => clear(body, h('div', { class: 'small muted' }, e.message || 'Yüklenemedi')));
+  const card = h('div', { class: 'card card-pad', style: { marginTop: '14px' } },
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
+      h('h3', null, 'Mission Planner aktarımı'), badge),
+    h('div', { class: 'small muted', style: { marginBottom: '6px' } }, tr('Görev {code} · köprü üzerinden canlı bağlantı', { code: f.task_code })),
+    body);
+  load();
+  every(3000, () => { if (document.body.contains(card)) load(); });
   return card;
 }
 

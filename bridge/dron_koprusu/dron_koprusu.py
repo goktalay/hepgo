@@ -5,6 +5,8 @@ Kullanım: HEPGO › Saha Yönetimi › Dron Yönetimi › Dron Köprüleri'nde 
 (seri / UDP / TCP) ya buradan elle ya da HEPGO Canlı Uçuş'taki "Bağlan" düğmesiyle (uçuşta seçilen ayarlarla) açılır.
 
 Komut satırı (arayüzsüz):  dron_koprusu --code caymaz.app/KEY [--link udp:0.0.0.0:14550 | --link serial:COM3:57600 | --link tcp:127.0.0.1:5760]
+                           [--mp-udp 0.0.0.0:14551]   (yerel Mission Planner: MP › UDPCl › bu bilgisayar:14551; internet gerekmez)
+HEPGO üzerinden (internet) Mission Planner aktarımı köprüde ayar gerektirmez: Canlı Uçuş › dron kartı › İşlemler › Mission Planner.
 """
 import argparse
 import asyncio
@@ -17,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from kopru_core import APP_NAME, VERSION, Bridge, parse_code
+from kopru_core import APP_NAME, VERSION, Bridge, parse_code, parse_mp_udp
 
 
 # ---------------- ayar dosyası (kod Windows'ta DPAPI ile şifreli) ----------------
@@ -75,8 +77,8 @@ def parse_link(s):
 
 
 # ---------------- arayüzsüz ----------------
-def run_cli(code, link):
-    bridge = Bridge(code, ui=lambda ev, *a: print(time.strftime('%H:%M:%S'), ev, *a, flush=True), link_spec=parse_link(link))
+def run_cli(code, link, mp_udp=None):
+    bridge = Bridge(code, ui=lambda ev, *a: print(time.strftime('%H:%M:%S'), ev, *a, flush=True), link_spec=parse_link(link), mp_udp=mp_udp)
     try:
         asyncio.run(bridge.run())
     except KeyboardInterrupt:
@@ -94,7 +96,7 @@ def run_gui():
 
     root = tk.Tk()
     root.title(f'{APP_NAME} {VERSION}')
-    root.geometry('620x560')
+    root.geometry('620x620')
     root.minsize(520, 460)
     try:
         ico = Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'kopru.ico'
@@ -180,6 +182,16 @@ def run_gui():
     log_btn = ttk.Button(row2, text='Uçuş logu gönder (.bin)…')
     log_btn.pack(side='right')
 
+    # Yerel Mission Planner (v1.4; isteğe bağlı — HEPGO üzerinden aktarım siteden açılır, burada ayar gerekmez)
+    f5 = ttk.LabelFrame(root, text=' Yerel Mission Planner (UDP, isteğe bağlı; Başlat\'ta uygulanır) ')
+    f5.pack(fill='x', **pad)
+    mp_var = tk.StringVar(value=cfg.get('mp_udp') or '')
+    row3 = ttk.Frame(f5)
+    row3.pack(fill='x', padx=8, pady=6)
+    ttk.Entry(row3, textvariable=mp_var, width=24).pack(side='left')
+    ttk.Label(row3, text=' boş = kapalı · 0.0.0.0:14551 → MP UDPCl ile bu bilgisayara · 127.0.0.1:14550 → MP UDP dinler',
+              foreground='#667').pack(side='left')
+
     # Günlük
     f4 = ttk.LabelFrame(root, text=' Günlük ')
     f4.pack(fill='both', expand=True, **pad)
@@ -222,8 +234,14 @@ def run_gui():
             messagebox.showerror(APP_NAME, str(e))
             return
         cfg['code'] = code_var.get().strip()
+        try:
+            mp = parse_mp_udp(mp_var.get())
+        except ValueError as e:
+            messagebox.showerror(APP_NAME, f'Yerel Mission Planner: {e}')
+            return
+        cfg['mp_udp'] = mp_var.get().strip()
         save_cfg(cfg)
-        bridge = Bridge(cfg['code'], ui=ui)
+        bridge = Bridge(cfg['code'], ui=ui, mp_udp=mp)
         state['bridge'] = bridge
         start_btn.config(text='Durdur')
 
@@ -293,8 +311,12 @@ def run_gui():
             elif ev == 'stats':
                 s = a[0]
                 age = time.time() - (s.get('last_rx') or 0)
+                mp = s.get('mp') or {}
+                loc = mp.get('local') or {}
                 stat_var.set(f"Dron sysid: {s.get('drone') or '—'} · alınan çerçeve: {s.get('rx')} · gönderilen paket: {s.get('tx')}"
-                             + (f' · son veri {int(age)} sn önce' if s.get('last_rx') else ''))
+                             + (f' · son veri {int(age)} sn önce' if s.get('last_rx') else '')
+                             + (f" · MP→dron {mp.get('raw_up')}" if mp.get('raw_up') else '')
+                             + (f" · yerel MP {loc.get('peer') or 'bekleniyor'}" if loc else ''))
             elif ev == 'log':
                 log(a[0])
             elif ev == 'ended':
@@ -318,10 +340,11 @@ def main():
     ap = argparse.ArgumentParser(prog='dron_koprusu', description=f'{APP_NAME} — HEPGO dron köprüsü')
     ap.add_argument('--code', help='Köprü kodu (alan-adı/anahtar); verilirse arayüzsüz çalışır')
     ap.add_argument('--link', help='Dron bağlantısı: udp:0.0.0.0:14550 | serial:COM3:57600 | tcp:127.0.0.1:5760')
+    ap.add_argument('--mp-udp', help='Yerel Mission Planner UDP: 0.0.0.0:14551 (dinle) | 192.168.1.50:14550 (gönder)')
     ap.add_argument('--version', action='version', version=VERSION)
     a = ap.parse_args()
     if a.code:
-        run_cli(a.code, a.link)
+        run_cli(a.code, a.link, a.mp_udp)
     else:
         run_gui()
 

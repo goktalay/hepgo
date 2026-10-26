@@ -20,6 +20,8 @@ Komut adları v1: arm, disarm, set_mode{mode}, takeoff{alt_rel_m}, land, rtl, go
 Faz 1 — GÖREV BAĞLAMI: harekât ekranı {t:'watch',task_id} gönderir; izleyici yalnız o saha görevinin uçuşlarına bağlı köprüleri
   (field_flights.bridge_id) ve görevin SANAL dronlarını görür. Sanal dron (protocol='sanal'): sunucu içi simülatör SimDrone,
   köprü gibi davranır, bridge_id = -drone_id (negatif). Bağlantı bilgisi (köprü/sysid/link) dron kaydında değil uçuştadır.
+v1.4 — MISSION PLANNER AKTARIMI (app/drone_mprelay.py, cap 'mp_relay'): uçuş başına isteğe bağlı UDP portu (LIVE_MP_UDP_BASE…); köprüden
+  gelen ham çerçeveler MP'ye de gider, MP'nin datagramları köprüye ikili `0x01 + ham MAVLink` (raw_up) olarak iletilir.
 Tek uvicorn süreci varsayılır (tenant başına bir süreç; --workers>1 ile hub paylaşılamaz).
 """
 import asyncio
@@ -35,6 +37,7 @@ from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import auth, cameras, config, db, drone_params, drone_sitl
+from . import drone_mprelay as _mpr   # v1.4 Mission Planner aktarımı (drone_hub'ı yalnız çağrı anında kullanır)
 
 ws_router = APIRouter()
 
@@ -84,7 +87,8 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              # sunucu-içi bileşik komut (bkz. SEQ_CMDS); köprü 'mission_start' yeteneği bildirirse MAV_CMD_MISSION_START olarak da gider
              'mission_start', 'mission_clear', 'mission_pause', 'mission_resume', 'mission_cancel', 'mission_resume_at'}
 BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear',
-               'video'}   # v1.3: görüntü köprüsü (ayrı WebSocket /ws/drone/video; app/drone_video.py)   # köprünün bildirebileceği yetenekler
+               'video',   # v1.3: görüntü köprüsü (ayrı WebSocket /ws/drone/video; app/drone_video.py)   # köprünün bildirebileceği yetenekler
+               'mp_relay'}   # v1.4: Mission Planner aktarımı — sunucu → köprü ikili raw_up çerçevesi (0x01 + ham MAVLink; app/drone_mprelay.py)
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 # Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
@@ -295,7 +299,8 @@ class Bridge:
     def info(self):
         return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
                 'connected_at': self.connected_at, 'packets': self.packets, 'session_id': self.session_id,
-                'drones': {str(s): st.d for s, st in self.drones.items()}}
+                'drones': {str(s): st.d for s, st in self.drones.items()},
+                'mp_relays': _mpr.bridge_info_extra(self)}   # v1.4: açık Mission Planner aktarımlarının uçuş kimlikleri
 
 
 # ---------------- Yardımcılar ----------------
@@ -518,7 +523,9 @@ async def ws_bridge(ws: WebSocket):
                 else:
                     bridge.packets += 1
                     _tlog_write(bridge, data)
-                    _feed_mavlink(bridge, data)
+                    msgs = _feed_mavlink(bridge, data)
+                    if _mpr.RELAYS:   # v1.4: açık Mission Planner aktarımı varsa ham çerçeve MP'ye de
+                        _mpr.from_drone(bridge, data, msgs)
             elif m.get('text'):
                 try:
                     msg = json.loads(m['text'])
@@ -574,8 +581,9 @@ def _feed_mavlink(bridge, data):
     try:
         msgs = bridge.parser.parse_buffer(data) or []
     except Exception:   # noqa: BLE001 — bozuk çerçeve: atla
-        return
+        return []
     _feed_msgs(bridge, msgs)
+    return msgs
 
 
 def _feed_msgs(bridge, msgs):
@@ -609,6 +617,8 @@ def _feed_msgs(bridge, msgs):
             _command_ack(bridge, sysid, m)
         elif m.get_type() == 'PARAM_VALUE':   # sanal dron (SitlDrone): kalıcı parametre izleyicisi (drone_params); simülatör oturumu kendi _isle'sinde
             iz = getattr(bridge, 'param_izleyici', None)
+            if iz is None and _mpr.RELAYS and isinstance(bridge, Bridge):   # gerçek dron + Mission Planner aktarımı (drone_params, kaynak 'mp')
+                iz = _mpr.izleyici(bridge.id, sysid)
             if iz is not None:
                 try:
                     iz.param_value(str(m.param_id).rstrip('\x00'), m.param_value, m.param_type, m.param_index, m.param_count)
@@ -1579,8 +1589,9 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
                 db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
             conn.commit()
     params = dict(params or {})
-    if sim and name == 'param_set':   # kalıcı parametre izleme (drone_params): yankı PARAM_VALUE gelince kullanıcı adına kaydedilir
-        iz = getattr(b, 'param_izleyici', None) or getattr(getattr(b, 's', None), 'param_izleyici', None)
+    if name == 'param_set':   # kalıcı parametre izleme (drone_params): yankı PARAM_VALUE gelince kullanıcı adına kaydedilir
+        iz = (getattr(b, 'param_izleyici', None) or getattr(getattr(b, 's', None), 'param_izleyici', None)) if sim \
+            else _mpr.izleyici(b.id, int(sysid))   # gerçek dron: yalnız Mission Planner aktarımı açıkken (aynı kayıt, kaynak 'hepgo')
         if iz is not None:
             iz.hepgo_set(params.get('name'), params.get('value'), user.get('id'))
     if name in SEQ_CMDS:

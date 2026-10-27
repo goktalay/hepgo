@@ -44,7 +44,10 @@ TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup
          'fs': {'name': 'File Search', 'slug': 'file-search', 'setup': 'File-Search-Setup-{v}.exe', 'portable': 'File-Search-Portable-{v}.exe'},
          'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'},
          'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'},
-         'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'}}
+         'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'},
+         # group:'apps' — katalogda uygulamalarla; path: tanıtım sayfası araclar/ altında değil kökte (dosya yine static/mt/araclar/<slug>.html)
+         'md': {'name': 'Master Download', 'slug': 'master-download', 'group': 'apps', 'path': '/master-download',
+                'setup': 'Master-Download-Setup-{v}.exe', 'portable': 'Master-Download-Portable-{v}.exe'}}
 TOOLS['ip']['desc'] = {'tr': 'Ağdaki cihazları, açık portları ve servisleri tarar', 'en': 'Scans your network for devices, open ports and services',
                        'fr': 'Analyse le réseau : appareils, ports ouverts et services', 'de': 'Durchsucht das Netzwerk nach Geräten, offenen Ports und Diensten',
                        'es': 'Escanea la red en busca de dispositivos, puertos abiertos y servicios', 'ar': 'يفحص الشبكة بحثًا عن الأجهزة والمنافذ المفتوحة والخدمات',
@@ -73,6 +76,14 @@ TOOLS['sd']['desc'] = {'tr': 'Herkese açık sosyal medya bağlantılarından vi
                        'ar': 'ينزّل الفيديو والصوت من روابط وسائل التواصل الاجتماعي العامة (اختيار الدقة، قوائم التشغيل، قائمة الانتظار)',
                        'zh': '从公开的社交媒体链接下载视频和音频（选择分辨率、播放列表、下载队列）',
                        'ru': 'Скачивает видео и звук по общедоступным ссылкам соцсетей (выбор разрешения, плейлисты, очередь)'}
+TOOLS['md']['desc'] = {'tr': 'İnternetten hızlı indirme yöneticisi: çok bağlantılı, sürdürülebilir, tarayıcı eklentili',
+                       'en': 'Fast download manager: multi-connection, resumable, with browser integration',
+                       'fr': 'Gestionnaire de téléchargements rapide : multi-connexion, reprise possible, intégration au navigateur',
+                       'de': 'Schneller Download-Manager: mehrere Verbindungen, fortsetzbar, mit Browser-Integration',
+                       'es': 'Gestor de descargas rápido: multiconexión, reanudable, con integración en el navegador',
+                       'ar': 'مدير تنزيل سريع: اتصالات متعددة، قابل للاستئناف، مع تكامل المتصفح',
+                       'zh': '快速下载管理器：多连接、支持断点续传、集成浏览器扩展',
+                       'ru': 'Быстрый менеджер загрузок: многопоточный, с докачкой и интеграцией в браузер'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 # Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
 # kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına
@@ -893,7 +904,7 @@ def account(a: str, request: Request):
         apps = []
         for k, meta in APPS.items():
             L = lic(conn, u['id'], k)
-            apps.append({'app': k, 'name': meta['name'], 'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k),
+            apps.append({'app': k, 'name': meta['name'], 'group': app_group(k), 'site': app_site(k),
                          'license': L['license'], 'sync_enabled': bool(L['sync_enabled']),
                          'library': library_meta(conn, u['id'], k), 'release': release_public(latest_release(conn, k)),
                          'download_url': _dl_url(u, k), 'web': f'/web/{WEB_APPS[k]}/' if k in WEB_APPS else None,
@@ -982,12 +993,21 @@ def release_latest(a: str, request: Request):
 
 
 # ---------------- Master Tool masaüstü: uygulama kataloğu ve indirme (ortak oturumla) ----------------
-APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv') + tuple(TOOLS)
+def app_group(k):
+    """Katalog grubu: araçlar 'tools'; TOOLS kaydında group verilmişse o (md kendi sitesi olmayan bir uygulama)."""
+    return APPS[k].get('group') or ('tools' if k in TOOLS else 'apps')
+
+
+APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv') + tuple(sorted(TOOLS, key=lambda k: app_group(k) != 'apps'))   # uygulama grubundaki araçlar (md) önce
 
 
 def app_site(k):
     """Uygulamanın tanıtım adresi: kendi sitesi ya da (araçlar) mastertool.download/araclar/<slug>."""
-    return f"{settings.PORTAL_URL}/araclar/{TOOLS[k]['slug']}" if k in TOOLS else settings.SITE_URLS[k] + '/'
+    return settings.PORTAL_URL + tool_path(k) if k in TOOLS else settings.SITE_URLS[k] + '/'
+
+
+def tool_path(k):
+    return TOOLS[k].get('path') or f"/araclar/{TOOLS[k]['slug']}"
 
 
 def game_entry(k):
@@ -1018,7 +1038,7 @@ def mt_apps(request: Request, v: str = '', web: int = 0):
         for k in APP_ORDER:
             L = lic(conn, u['id'], k)
             out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
-                        'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'description': APPS[k].get('desc'), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
+                        'group': app_group(k), 'site': app_site(k), 'description': APPS[k].get('desc'), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
                         'license': L['license'], 'release': release_public(latest_release(conn, k))}
                        | ({'web': f'/web/{WEB_APPS[k]}/' if k in WEB_APPS else None} if webui else {})
                        | ({'download_url': _dl_url(u, k)} if personal else {}))
@@ -1979,11 +1999,20 @@ def page_game(slug: str, path: str, request: Request, lang: str = ''):
     return FileResponse(p, media_type=media, headers=hdr)
 
 
+@app.get('/master-download')
+def page_md(request: Request, lang: str = ''):
+    """Master Download tanıtım sayfası: kökte (TOOLS['md']['path']); içerik araç sayfasıyla aynı yoldan."""
+    return page_tool('master-download', request, lang, _path=True)
+
+
 @app.get('/araclar/{slug}')
-def page_tool(slug: str, request: Request, lang: str = ''):
-    """Araç tanıtım sayfası (yalnız mastertool.download): static/mt/araclar/<slug>.html — SEO etiketleri ana sayfalar gibi."""
+def page_tool(slug: str, request: Request, lang: str = '', _path: bool = False):
+    """Araç tanıtım sayfası (yalnız mastertool.download): static/mt/araclar/<slug>.html — SEO etiketleri ana sayfalar gibi.
+    Kendi yolu olan kayıtlar (path) /araclar/<slug> adresinden kalıcı olarak oraya yönlenir."""
     k = next((k for k, v in TOOLS.items() if v['slug'] == slug), None)
     p = settings.STATIC_DIR / 'mt' / 'araclar' / f'{slug}.html'
+    if k and TOOLS[k].get('path') and not _path and site_of(request) == 'mt':
+        return RedirectResponse(TOOLS[k]['path'] + (f'?lang={lang}' if lang in seo.LANGS else ''), status_code=301)
     if site_of(request) != 'mt' or not k or not p.is_file():
         return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
     with db.connect() as conn:

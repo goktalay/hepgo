@@ -171,7 +171,7 @@ def render_game(k, meta, page, lang):
 def render_tool(k, meta, page, lang, rel=None):
     """Araç tanıtım sayfası (mastertool.download/araclar/<slug>): ana sayfa SEO'su + adresler ve yapılandırılmış veri araca göre."""
     lang = lang if lang in LANGS else 'tr'
-    out, u, desc = _subpage(page, lang, f'{base("mt")}/araclar/{meta["slug"]}', rel)
+    out, u, desc = _subpage(page, lang, base("mt") + (meta.get('path') or f'/araclar/{meta["slug"]}'), rel)
     ld = _app_ld(meta['name'], 'UtilitiesApplication', u(lang), desc, f'{base("mt")}/brand/{k}-512.png', rel, lang)
     ld['isPartOf'] = {'@type': 'SoftwareApplication', 'name': 'Master Tool', 'url': f'{base("mt")}/#master-tool'}
     shots = _shots('mt', k)
@@ -183,6 +183,9 @@ def render_tool(k, meta, page, lang, rel=None):
         en = {x['stem'] for x in shots if x.get('en')}
         out = re.sub(r'/shots/([0-9a-z._-]+?)(-800)?\.webp', lambda m: f'/shots/{m[1]}-en{m[2] or ""}.webp' if m[1] in en and '-en' not in m[1] else m[0], out)
     return _put_ld(out, ld)
+
+
+TOOL_PATHS = {'master-download': '/master-download'}   # kökte yayımlanan araç sayfaları (main.TOOLS[..]['path'])
 
 
 def tool_pages():
@@ -213,7 +216,7 @@ def sitemap(site):
                    f'<priority>{"1.0" if l == "tr" else "0.8"}</priority></url>' for l in LANGS)
     urls += f'<url><loc>{base(site)}/gizlilik</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>'
     if site == 'mt':   # araç ve oyun tanıtım sayfaları (8 dil)
-        subs = [f'{base("mt")}/araclar/{s}' for s in tool_pages()] + [f'{base("mt")}/oyunlar/{s}/tanitim/' for s in game_pages()]
+        subs = [base("mt") + TOOL_PATHS.get(s, f'/araclar/{s}') for s in tool_pages()] + [f'{base("mt")}/oyunlar/{s}/tanitim/' for s in game_pages()]
         for t in subs:
             ta = ''.join(f'<xhtml:link rel="alternate" hreflang="{HREFLANG.get(l, l)}" href="{e(t if l == "tr" else t + "?lang=" + l)}"/>' for l in LANGS)
             urls += ''.join(f'<url><loc>{e(t if l == "tr" else t + "?lang=" + l)}</loc>{ta}<changefreq>weekly</changefreq>'

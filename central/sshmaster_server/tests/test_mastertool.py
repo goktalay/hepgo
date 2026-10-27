@@ -514,6 +514,7 @@ def main():
         assert mdc['group'] == 'apps' and mdc['site'].endswith('/master-download') and mdc['exe'] == 'Master Download.exe', mdc
         mdp = c.get('/master-download?lang=en', headers={'Host': 'mastertool.download'})
         assert mdp.status_code == 200 and 'canonical" href="https://mastertool.download/master-download?lang=en"' in mdp.text and '"isPartOf"' in mdp.text
+        assert '/shots/md-01-indirmeler-gece-en.webp' in mdp.text and mdp.text.count('data-theme-shot=') == 10 and '"screenshot"' in mdp.text
         r = c.get('/araclar/master-download', headers={'Host': 'mastertool.download'}, follow_redirects=False)
         assert r.status_code == 301 and r.headers['location'] == '/master-download', r.status_code
         assert c.get('/master-download', headers={'Host': 'sshmasters.com'}).status_code == 404

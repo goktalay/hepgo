@@ -1,5 +1,10 @@
 import logging
 import sqlite3
+import sys
+import threading
+import time
+import weakref
+from collections import Counter
 from datetime import datetime
 
 from fastapi import Depends, HTTPException
@@ -2825,8 +2830,62 @@ def _fmt(iso):
     return datetime.fromisoformat(iso).strftime('%d.%m.%Y %H:%M')
 
 
+# Bağlantı sızıntısı (29.10: Merkez ve 4 demo kiracı 1024 dosya sınırını doldurup 502 verdi). sqlite3'te `with conn` yalnız
+# commit/rollback yapar, KAPATMAZ; Python 3.12'de bağlantı kendi deyim önbelleğiyle referans döngüsündedir, yani dönüşte
+# serbest kalmaz, ancak çöp toplayıcının seyrek tam taramasında kapanır. Sık çalışan arka plan görevleri (ör. canlı yayın
+# temizleyicisi 10 sn'de bir) bu yüzden yüzlerce açık bağlantı biriktiriyordu. _Conn: `with connect() as conn` bloğu
+# bitince bağlantıyı kapatır (bloktan sonra conn kullanan kod yok — tests/test_db_conn_leak.py tarar).
+# Ayrıca her bağlantı açıldığı kod yeriyle kaydedilir; leak_report() uzun süre açık kalanları sayar (watchdog günlüğe yazar).
+_open = {}
+_open_lock = threading.Lock()
+
+
+class _Conn(sqlite3.Connection):
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+    def close(self):
+        with _open_lock:
+            _open.pop(id(self), None)
+        super().close()
+
+
+def _forget(key):
+    with _open_lock:
+        _open.pop(key, None)
+
+
+def _site():
+    """Bağlantıyı açan uygulama kodu: db.py dışındaki ilk 3 app/ çerçevesi (dosya:satır işlev)."""
+    out, f = [], sys._getframe(2)
+    while f and len(out) < 3:
+        fn = f.f_code.co_filename
+        if '/app/' in fn and not fn.endswith('/app/db.py'):
+            out.append(f"{fn.rsplit('/app/', 1)[1]}:{f.f_lineno} {f.f_code.co_name}")
+        f = f.f_back
+    return ' < '.join(out) or '?'
+
+
+def leak_report(min_age=None, top=6):
+    """min_age saniyeden uzun süredir açık bağlantılar: (toplam açık, eskimiş, [(kod yeri, adet)])."""
+    import os
+    min_age = int(os.environ.get('CAYMAZ_LEAK_AGE', '600')) if min_age is None else min_age
+    now = time.monotonic()
+    with _open_lock:
+        items = list(_open.values())
+    old = [s for t, s in items if now - t >= min_age]
+    return len(items), len(old), Counter(old).most_common(top)
+
+
 def connect():
-    conn = sqlite3.connect(config.DB_PATH, timeout=15, check_same_thread=False)
+    conn = sqlite3.connect(config.DB_PATH, timeout=15, check_same_thread=False, factory=_Conn)
+    key = id(conn)
+    with _open_lock:
+        _open[key] = (time.monotonic(), _site())
+    weakref.finalize(conn, _forget, key)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
     conn.execute('PRAGMA journal_mode = WAL')

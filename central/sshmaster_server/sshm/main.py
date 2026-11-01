@@ -1054,9 +1054,21 @@ def mt_apps(request: Request, v: str = '', web: int = 0):
 def mt_app_download(a: str, request: Request, kind: str = 'setup'):
     """Kurulum dosyasını ortak oturumla indirir (Master Tool'un indirme çubuğu için Content-Length ve X-Sha256 başlıkları).
     a = sm|fm|sq|np|cv ya da mt (Master Tool'un kendi güncellemesi). kind = setup|portable."""
+    return _app_download(a, request, kind, 'mt')
+
+
+@app.get('/api/{p}/apps/{a}/download')
+def self_app_download(p: str, a: str, request: Request, kind: str = 'setup'):
+    """Uygulama içi güncelleme: uygulama kendi oturumuyla yalnız KENDİ kurulum dosyasını indirir (ör. /api/md/apps/md/download)."""
+    if p != a or p not in APPS:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    return _app_download(a, request, kind, p)
+
+
+def _app_download(a, request, kind, sess):
     need_release_app(a)
     with db.connect() as conn:
-        u, _ = current(request, conn, a='mt')
+        u, _ = current(request, conn, a=sess)
         if a in APPS:
             need_license(conn, u['id'], a)
         r = latest_release(conn, a)

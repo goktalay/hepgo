@@ -464,6 +464,13 @@ def main():
         assert r1.status_code == 200 and r2.status_code == 200 and r1.json()['kdf'] == k and r1.json()['user']['email'] == 'eski@test.com', r1.text
         F1, S2 = {'Authorization': 'Bearer ' + r1.json()['token']}, {'Authorization': 'Bearer ' + r2.json()['token']}
         assert c.get('/api/fm/me', headers=F1).status_code == 200 and c.get('/api/sm/me', headers=S2).status_code == 200
+        # uygulama içi güncelleme: uygulama kendi oturumuyla yalnız kendi kurulum dosyasını indirir (/api/<kod>/apps/<kod>/download)
+        d2 = c.get('/api/fm/apps/fm/download', headers=F1)
+        assert d2.status_code == 200 and d2.headers['x-sha256'] == hashlib.sha256(d2.content).hexdigest() and d2.headers['x-version'], d2.text[:200]
+        assert c.get('/api/fm/apps/sm/download', headers=F1).status_code == 404       # başka uygulamanın dosyası değil
+        assert c.get('/api/sm/apps/fm/download', headers=S2).status_code == 404
+        assert c.get('/api/fm/apps/fm/download', headers=S2).json()['code'] == 'wrong_app'   # başka uygulamanın oturumu geçmez
+        assert TestClient(app).get('/api/fm/apps/fm/download').status_code == 401   # oturumsuz (çerezsiz istemci)
         assert c.post('/api/fm/auth/sso', json={'sso_token': 'yanlis'}).json()['code'] == 'session_expired'
         assert c.post('/api/mt/auth/sso', json={'sso_token': SSO}).status_code == 404
         r = c.post('/api/fm/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH}); assert r.status_code == 200, r.text; FM = {'Authorization': 'Bearer ' + r.json()['token']}

@@ -1,0 +1,6 @@
+[Unit]
+Description=HEPGO dış sağlık denetimi (yanıt vermeyen servisi yeniden başlatır)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/hepgo/bin/hepgo-health.sh

@@ -2837,7 +2837,7 @@ def _fmt(iso):
 # bitince bağlantıyı kapatır (bloktan sonra conn kullanan kod yok — tests/test_db_conn_leak.py tarar).
 # Ayrıca her bağlantı açıldığı kod yeriyle kaydedilir; leak_report() uzun süre açık kalanları sayar (watchdog günlüğe yazar).
 _open = {}
-_open_lock = threading.Lock()
+_open_lock = threading.RLock()   # RLock: kilit tutulurken çöp toplayıcı aynı iş parçacığında _forget'ı çağırabilir (03.11 kilitlenme)
 
 
 class _Conn(sqlite3.Connection):
@@ -2854,8 +2854,9 @@ class _Conn(sqlite3.Connection):
 
 
 def _forget(key):
-    with _open_lock:
-        _open.pop(key, None)
+    # weakref.finalize geri çağrısı: çöp toplayıcı herhangi bir anda (başka bir kilit tutulurken bile) çağırabilir → KİLİT ALMAZ;
+    # dict.pop GIL altında atomiktir. 03.11: kilit alan sürüm connect() içinde kendi kendini bekleyip caymaz'ı kilitlemişti.
+    _open.pop(key, None)
 
 
 def _site():
@@ -2874,8 +2875,12 @@ def leak_report(min_age=None, top=6):
     import os
     min_age = int(os.environ.get('CAYMAZ_LEAK_AGE', '600')) if min_age is None else min_age
     now = time.monotonic()
-    with _open_lock:
-        items = list(_open.values())
+    for _ in range(5):   # çöp toplayıcı kopyalama sırasında _forget çağırabilir
+        try:
+            items = list(_open.copy().values())
+            break
+        except RuntimeError:
+            items = []
     old = [s for t, s in items if now - t >= min_age]
     return len(items), len(old), Counter(old).most_common(top)
 
@@ -2883,8 +2888,9 @@ def leak_report(min_age=None, top=6):
 def connect():
     conn = sqlite3.connect(config.DB_PATH, timeout=15, check_same_thread=False, factory=_Conn)
     key = id(conn)
+    entry = (time.monotonic(), _site())   # yığın taraması kilit dışında
     with _open_lock:
-        _open[key] = (time.monotonic(), _site())
+        _open[key] = entry
     weakref.finalize(conn, _forget, key)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')

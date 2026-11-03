@@ -103,6 +103,22 @@ def main():
         assert total == base + 1 and sites, sites
         keep.close()
         del c
+        # 03.11 kilitlenme: kayıt kilidi tutulurken çöp toplayıcı kapanmamış bir bağlantıyı toplarsa (_forget) beklememeli
+        import threading
+        def orphan():   # referans döngüsünde, kapatılmamış bağlantı
+            x = db.connect()
+            x.self_ref = [x] if hasattr(x, '__dict__') else None
+            return x
+        orphan()
+        done = threading.Event()
+        def under_lock():
+            with db._open_lock:
+                gc.collect()          # _forget burada, kilit tutulurken aynı iş parçacığında çalışır
+                db.connect().close()  # connect() da kilit alır (RLock)
+            done.set()
+        t = threading.Thread(target=under_lock, daemon=True)
+        t.start()
+        assert done.wait(5), 'kayıt kilidi altında çöp toplama kilitlendi'
     finally:
         gc.enable()
     print('Bağlantı sızıntısı testleri geçti.')

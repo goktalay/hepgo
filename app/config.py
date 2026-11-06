@@ -92,6 +92,9 @@ VEILOX_SOCKET = os.environ.get('CAYMAZ_VEILOX_SOCKET', '/run/hepgo/veilox.sock')
 PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 # Testlerde arka plan yazıcı yoklamasını kapatmak için 0 yapılır.
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'
+# Yazıcı taraması (Otomatik ekle, IP tazeleme) için ağlar, virgülle: ör. 10.10.30.0/24 (06.11: yazıcılar ayrı kablolu ağda,
+# ajana yönlendirmeyle ulaşılıyor). Boşsa makinenin kendi arayüzlerindeki /24 ağları taranır.
+PRINTER_NETWORKS = [n.strip() for n in os.environ.get('CAYMAZ_PRINTER_NETWORKS', '').split(',') if n.strip()]
 # Video ve uçuş logu gibi büyük dosyalar yalnızca yerel ağdan yüklenir (Cloudflare tüneli üzerinden çok yavaş).
 LOCAL_URL = os.environ.get('CAYMAZ_LOCAL_URL', 'http://192.168.1.189:8080')
 # Büyük dosya (video/uçuş logu) yüklemesi yalnızca yerel ağdan mı zorunlu? Bulut/merkez kurulumda 0 yapılır.

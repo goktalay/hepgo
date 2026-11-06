@@ -202,6 +202,50 @@ def test_ip_conflicts():
         assert conn.execute('SELECT ip FROM printers WHERE mac = ?', (M2,)).fetchone()[0] == '10.0.0.50'
 
 
+def test_wired_only():
+    """06.11: Wi-Fi kapalı, yazıcılar ayrı kablolu ağda (10.10.30.x). Cihazın API'si yalnız eth0'ın yerel yönetimli MAC'ini
+    bildirir; ağ adı (K2Plus-XXXX) üretici MAC'inden türediği için ona uymaz. Bu MAC kalıcı kimliktir."""
+    ETH1, ETH2 = 'D6:72:24:19:71:AC', '56:58:EF:70:52:F9'
+    assert pi.is_random(ETH1) and pi.hw_matches('K2Plus-E5B7', ETH1) is None
+    # kayıtlı MAC = kablolu MAC: IP değişince tam MAC ile bulunur (ağ adı uyuşmazlığı çatışma sayılmaz)
+    clear()
+    p1 = add('Yazıcı 01', '10.10.30.74', ETH1, 'K2Plus-E5B7')
+    r = pi.apply_scan([['10.10.30.90', dict(live(None, 'K2Plus-E5B7'), macs=[ETH1])]])
+    assert get(p1)['ip'] == '10.10.30.90' and get(p1)['mac_checked_at'], (get(p1), r)
+    # API MAC listesi gelmedi ama ağ adı kayıtlı: ağ adıyla eşleşir (kayıtlı kablolu MAC çatışma sayılmaz)
+    pi.apply_scan([['10.10.30.91', live(None, 'K2Plus-E5B7')]])
+    assert get(p1)['ip'] == '10.10.30.91', get(p1)
+    # MAC'siz kayıt: cihazın bildirdiği kablolu MAC öğrenilir (kaynak 'cihaz')
+    clear()
+    p2 = add('Yazıcı 03', '10.10.30.38', None, None, '26')
+    pi.apply_scan([['10.10.30.38', dict(live(None, '26'), macs=[ETH2])]])
+    assert get(p2)['mac'] == ETH2 and get(p2)['mac_source'] == 'cihaz', get(p2)
+    # Otomatik ekle: yeni yazıcı kablolu MAC'iyle eklenir; ikinci taramada yinelenmez
+    clear()
+    r = pi.apply_scan([['10.10.30.38', dict(live(None, '26'), macs=[ETH2])]], add_new=True)
+    assert r['added'][0]['mac'] == ETH2, r
+    r = pi.apply_scan([['10.10.30.38', dict(live(None, '26'), macs=[ETH2])]], add_new=True)
+    assert not r['added'], r
+    with db.connect() as conn:
+        assert conn.execute('SELECT count(*) FROM printers').fetchone()[0] == 1
+    # Yalnız ARP'de görülen rastgele MAC hâlâ kimlik yapılmaz
+    clear()
+    p3 = add('P', '10.0.0.50', None, 'K2Plus-3697')
+    pi.apply_scan([['10.0.0.50', live(RND, 'K2Plus-3697')]])
+    assert get(p3)['mac'] is None
+    # Doğrulama: aynı IP'de başka cihaz (farklı kablolu MAC) → uyuşmazlık; kendi MAC'i → eşleşme
+    assert pi.verdict({'macs': [ETH2], 'hw': '26'}, ETH1) == 'mismatch'
+    assert pi.verdict({'macs': [ETH1], 'hw': 'K2Plus-E5B7'}, ETH1) == 'mac'
+    # Tarama ağı ayarı
+    from app import config
+    old = config.PRINTER_NETWORKS
+    try:
+        config.PRINTER_NETWORKS = ['10.10.30.0/24']
+        assert [str(n) for n in printer_driver._local_networks()] == ['10.10.30.0/24']
+    finally:
+        config.PRINTER_NETWORKS = old
+
+
 def test_resolve():
     clear()
     calls = {'discover': 0}
@@ -324,6 +368,7 @@ def main():
         ok(a.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
         test_migration(a)
         test_ip_conflicts()
+        test_wired_only()
         test_resolve()
         test_learn(a)
     print('Yazıcı MAC kimliği (normalize, göç, IP çakışması, gönderimde MAC doğrulama, önbellek, öğrenme) testleri geçti.')

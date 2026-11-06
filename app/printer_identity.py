@@ -75,10 +75,12 @@ def is_netname(hw):
 
 
 def hw_matches(hw, mac):
-    """Cihazın ağ adı (K2Plus-XXXX) MAC'in son iki baytıyla uyuşuyor mu. Ağ adı değilse None (bilinmiyor)."""
+    """Cihazın ağ adı (K2Plus-XXXX) MAC'in son iki baytıyla uyuşuyor mu. Ağ adı değilse None (bilinmiyor).
+    Ağ adı üretici (FC:EE:28…) MAC'inden türer; yerel yönetimli MAC için (kablolu arayüz, Wi-Fi kapalıyken tek görünen
+    adres — 06.11) karşılaştırma anlamsızdır → None (uyuşmazlık kanıtı değil)."""
     m = _NETNAME.match(str(hw or '').strip())
     mac = safe_mac(mac)
-    if not m or not mac:
+    if not m or not mac or is_random(mac):
         return None
     return m.group(1).upper() == mac[-5:].replace(':', '')
 
@@ -191,6 +193,16 @@ def scan(max_age=SCAN_TTL):
 
 def invalidate_scan():
     _scan_cache.update(t=0.0, v=None)
+
+
+def device_primary(live):
+    """Cihazın KENDİ API'sinin bildirdiği birincil arayüz MAC'i (liste kablolu önce sıralı; _moonraker_macs). ARP'de görülen
+    adres değil: Wi-Fi kapalı kablolu yazıcıda bu yerel yönetimli olsa da kalıcı kimliktir. Yoksa None."""
+    for m in ((live or {}).get('macs') or []) if isinstance(live, dict) else []:
+        m = safe_mac(m)
+        if m:
+            return m
+    return None
 
 
 def _entry_keys(live):
@@ -314,11 +326,11 @@ def _pick_primary_mac(ident, known_hw=None):
         for m, s in cands:
             if hw_matches(hw, m):
                 return m, s
-        return None, None
-    # Ağ adı yok (ad elle sayıya çevrilmiş): rastgele (Wi-Fi gizlilik) MAC kalıcı kimlik yapılmaz; cihazın listesindeki
-    # ilk kalıcı MAC (kablolu önce sıralı), yoksa ARP'deki kalıcı MAC
+    # Ağ adına uyan üretici MAC'i yok (Wi-Fi kapalı, yalnız kablolu) ya da ağ adı elle sayıya çevrilmiş: cihazın kendi
+    # bildirdiği ilk arayüz (kablolu önce sıralı) — yerel yönetimli olsa da kalıcıdır. Yalnız ARP'de görülen rastgele
+    # (Wi-Fi gizlilik) MAC kalıcı kimlik yapılmaz.
     for m, s in cands:
-        if s == 'cihaz' and not is_random(m):
+        if s == 'cihaz':
             return m, s
     if a and not is_random(a):
         return a, 'arp'
@@ -388,7 +400,7 @@ def apply_scan(found, user_id=None, add_new=False):
     rows = []
     for ip, live in (f for f in (found or []) if isinstance(f, (list, tuple)) and len(f) == 2 and isinstance(f[1], dict)):
         macs, hw = _entry_keys(live)
-        eth = next((m for m in sorted(macs) if hw_matches(hw, m)), None)
+        eth = next((m for m in sorted(macs) if hw_matches(hw, m)), None) or device_primary(live)
         rows.append({'ip': ip, 'live': live, 'macs': macs, 'hw': hw, 'eth': eth})
     rows.sort(key=lambda s: (s['eth'] is None, ipaddress.IPv4Address(s['ip'])))
     scan, seen = [], set()
@@ -467,7 +479,8 @@ def apply_scan(found, user_id=None, add_new=False):
             if pm and (pm in s['macs'] or hw_matches(s['hw'], pm)):
                 conn.execute('UPDATE printers SET mac_checked_at = ? WHERE id = ?', (now, pid))
             if not pm and s['eth'] and s['eth'] not in by_mac:   # MAC'i olmayan kayda cihazın kablolu MAC'i
-                conn.execute("UPDATE printers SET mac = ?, mac_source = 'arp', mac_checked_at = ? WHERE id = ?", (s['eth'], now, pid))
+                conn.execute('UPDATE printers SET mac = ?, mac_source = ?, mac_checked_at = ? WHERE id = ?',
+                             (s['eth'], 'cihaz' if s['eth'] == device_primary(live) else 'arp', now, pid))
                 by_mac[s['eth']] = pid
                 learned.append({'id': pid, 'name': r['name'], 'mac': s['eth']})
                 db.audit(conn, user_id, 'Yazıcının MAC adresini ağ taramasından öğrendi', 'printer', pid, f"{r['name']}: {s['eth']}")
@@ -490,9 +503,10 @@ def apply_scan(found, user_id=None, add_new=False):
             count += 1
             name = live.get('hostname') or f'K2 Plus {count:02d}'
             mac = s['eth'] if s['eth'] and s['eth'] not in by_mac else None
+            msrc = ('cihaz' if mac == device_primary(live) else 'arp') if mac else None
             cur = conn.execute('INSERT INTO printers (name, ip, hw_id, mac, mac_source, mac_checked_at, model, auto_added, created_at, '
                                'live_state, live_progress, live_file, live_source, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                               (name, None, s['hw'], mac, 'arp' if mac else None, now if mac else None,
+                               (name, None, s['hw'], mac, msrc, now if mac else None,
                                 live.get('model') or 'Creality K2 Plus', 1, now, live.get('state'), live.get('progress'),
                                 live.get('file'), live.get('source'), now))
             pid = cur.lastrowid

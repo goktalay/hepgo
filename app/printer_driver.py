@@ -294,7 +294,10 @@ def trigger_reconcile():
 
 
 def _local_networks():
-    """Makinenin fiziksel ağ arayüzlerindeki IPv4 /24 ağları (docker köprüleri hariç)."""
+    """Taranacak ağlar: config.PRINTER_NETWORKS verildiyse yalnız onlar (yönlendirilmiş ayrı yazıcı ağı da olabilir);
+    yoksa makinenin fiziksel ağ arayüzlerindeki IPv4 /24 ağları (docker köprüleri hariç)."""
+    if config.PRINTER_NETWORKS:
+        return [ipaddress.ip_network(n, strict=False) for n in config.PRINTER_NETWORKS]
     nets = set()
     try:
         out = subprocess.run(['ip', '-4', '-o', 'addr', 'show'], capture_output=True, text=True, timeout=5).stdout

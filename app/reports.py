@@ -832,6 +832,11 @@ def misafir(conn, p):
         ppl[v['arrived_at'][:10]] += v['n']
     stays = [mins(v['arrived_at'], v['left_at']) for v in visits if v['left_at']]
     hours = Counter(int(v['arrived_at'][11:13]) for v in visits)
+    people = db.rows(conn.execute('''SELECT gp.full_name AS name, COALESCE(NULLIF(TRIM(gp.phone), ''), '—') AS phone,
+                                            COALESCE(c.name, NULLIF(TRIM(gp.company_text), ''), '—') AS company, g.arrived_at
+                                     FROM guest_visit_people gp JOIN guest_visits g ON g.id = gp.visit_id
+                                     LEFT JOIN company_people cp ON cp.id = gp.person_id LEFT JOIN companies c ON c.id = cp.company_id
+                                     WHERE g.arrived_at BETWEEN ? AND ? ORDER BY g.arrived_at, gp.id''', (a, b)))
     return {
         'kpis': [{'icon': 'guest', 'label': 'Ziyaret (grup)', 'value': len(visits)}, {'icon': 'person', 'label': 'Misafir kişi', 'value': sum(v['n'] for v in visits)},
                  {'icon': 'calendar', 'label': 'Ort. ziyaret süresi', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
@@ -842,7 +847,9 @@ def misafir(conn, p):
                    {'title': 'Firmalar', 'type': 'hbar', 'labels': [k for k, _ in top(comp, 10)], 'datasets': [{'label': 'Kişi', 'data': [v for _, v in top(comp, 10)]}]},
                    {'title': 'Görüşülen kişiler', 'type': 'hbar', 'labels': [k for k, _ in top(hosts, 10)], 'datasets': [{'label': 'Ziyaret', 'data': [v for _, v in top(hosts, 10)]}]},
                    {'title': 'Geliş saatleri', 'type': 'bar', 'labels': [f'{h:02d}' for h in range(24)], 'datasets': [{'label': 'Ziyaret', 'data': [hours.get(h, 0) for h in range(24)]}]}],
-        'tables': [{'title': 'Ziyaretler', 'columns': [col('code', 'Kod'), col('arr', 'Geliş'), col('left', 'Çıkış'), col('n', 'Kişi', 'num'), col('stay', 'Süre', 'num'), col('purpose', 'Amaç')],
+        'tables': [{'title': 'Misafirler', 'columns': [col('name', 'Ad Soyad'), col('phone', 'Telefon'), col('company', 'Firma'), col('arr', 'Geliş')],
+                    'rows': [{**r, 'arr': fmt_dt(r['arrived_at'])} for r in people]},
+                   {'title': 'Ziyaretler', 'columns': [col('code', 'Kod'), col('arr', 'Geliş'), col('left', 'Çıkış'), col('n', 'Kişi', 'num'), col('stay', 'Süre', 'num'), col('purpose', 'Amaç')],
                     'rows': [{**v, 'arr': fmt_dt(v['arrived_at']), 'left': fmt_dt(v['left_at']), 'stay': dur(mins(v['arrived_at'], v['left_at'])) if v['left_at'] else 'İçeride',
                               'purpose': v['purpose'] or '—'} for v in visits]}],
     }

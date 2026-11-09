@@ -172,7 +172,8 @@ async function renderReport(view, key, ctx, headSlot) {
       MODULE_NAMES[data.module] || data.module), `  ${data.desc}`) }), moduleToolbar(typeSeg, printBtn));
     // Excel: raporun en çok satırlı tablosu (grafik görünümünde tablo ekranda olmasa da indirilebilir)
     const big = [...data.tables].sort((x, y) => y.rows.length - x.rows.length)[0];
-    setListExport(big ? () => ({ columns: big.columns.map(c => c.label), rows: big.rows.map(r => big.columns.map(c => r[c.key] ?? '')) }) : null);
+    setListExport(big ? () => ({ columns: big.columns.map(c => c.label),
+      rows: big.rows.map(r => (r._group ? [groupText(r._group), ...big.columns.slice(1).map(() => '')] : big.columns.map(c => r[c.key] ?? ''))) }) : null);
     draw();
   }
 
@@ -245,15 +246,25 @@ async function renderReport(view, key, ctx, headSlot) {
 const hasData = c => c.datasets?.some(ds => ds.data?.some(v => v));
 
 function tableCard(tc) {
-  return h('div', { class: 'card rp-table' }, h('div', { class: 'rp-table-head' }, h('h3', null, tc.title), h('span', { class: 'small muted' }, t('{n} satır', { n: tc.rows.length }))),
+  return h('div', { class: 'card rp-table' }, h('div', { class: 'rp-table-head' }, h('h3', null, tc.title), h('span', { class: 'small muted' }, tc.rows.some(r => r._group)
+      ? t('{g} grup · {n} kayıt', { g: tc.rows.filter(r => r._group).length, n: tc.rows.filter(r => !r._group).length })
+      : t('{n} satır', { n: tc.rows.length }))),
     tc.sub ? h('p', { class: 'small muted', style: { margin: '0 14px 8px' } }, tc.sub) : null,
     tc.rows.length ? h('div', { class: 'table-wrap' }, tableEl(tc)) : h('div', { class: 'empty small' }, 'Bu dönemde kayıt yok'));
 }
 
+// Gruplu tablo: satırda _group ([etiket, değer] çiftleri) varsa tüm genişlikte grup başlığı (ör. ziyaret), altındaki satırlar
+// o grubun kayıtları (ör. ziyarette gelen kişiler)
+const groupText = g => g.map(([k, v]) => (k ? `${k}: ${v}` : v)).join(' · ');
+
 function tableEl(t, print = false) {
-  return h('table', { class: print ? 'pf-table pf-list' : '' },
+  const grouped = t.rows.some(r => r._group);
+  return h('table', { class: `${print ? 'pf-table pf-list' : ''} ${grouped ? 'rp-grouped' : ''}` },
     h('thead', null, h('tr', null, t.columns.map(c => h('th', { class: c.align === 'num' ? 'num' : '' }, c.label)))),
-    h('tbody', null, t.rows.map(r => h('tr', null, t.columns.map(c => h('td', { class: c.align === 'num' ? 'num' : 'wrap' }, r[c.key] ?? '—'))))));
+    h('tbody', null, t.rows.map(r => (r._group
+      ? h('tr', { class: 'rp-grp' }, h('td', { colspan: t.columns.length }, r._group.map(([k, v], i) =>
+        h('span', { class: i ? 'rp-grp-f' : 'rp-grp-k' }, k ? h('span', { class: 'rp-grp-l' }, `${k}: `) : null, v))))
+      : h('tr', { class: grouped ? 'rp-grp-item' : '' }, t.columns.map(c => h('td', { class: c.align === 'num' ? 'num' : 'wrap' }, r[c.key] ?? '—')))))));
 }
 
 // Gün × saat ısı haritası

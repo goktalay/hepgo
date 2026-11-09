@@ -10321,3 +10321,12 @@ body:has(.fs-stage) .flash-stack, body:has(.fs-stage) .mascot, body:has(.fs-stag
 /* Simülasyon kayıtları: seçili satır (fare üzerinde / tıklanan; Del ile silinir) */
 .table.fs-runs tbody tr.fs-runs-cur > td { background: color-mix(in srgb, var(--primary) 9%, transparent); }
 .table.fs-runs tbody tr.fs-runs-cur > td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
+
+/* Raporlar: gruplu tablo (ör. Misafir Raporu — ziyaret satırı, altında gelen kişiler) */
+.rp-grouped .rp-grp td { background: var(--surface-2, #f1f4f9); border-top: 2px solid var(--border-strong, #9aa3b2); padding: 7px 10px; white-space: normal; line-height: 1.6; }
+.rp-grouped .rp-grp-k { font-weight: 700; margin-right: 12px; }
+.rp-grouped .rp-grp-f { margin-right: 14px; display: inline-block; }
+.rp-grouped .rp-grp-l { color: var(--muted, #6b7280); }
+.rp-grouped .rp-grp-item td:first-child { padding-left: 26px; }
+.print-area .rp-grouped .rp-grp { break-inside: avoid; break-after: avoid; }
+.print-area .rp-grouped .rp-grp td { background: #eef1f6; border-top: 1.2pt solid #555; }

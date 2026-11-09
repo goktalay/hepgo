@@ -2845,6 +2845,7 @@ registerCatalog('ar', {
 "{n} parça yazıcıda": "{n} قطعة في الطابعة",
 "{n} rapor · modül raporları": "{n} تقرير · تقارير الوحدات",
 "{n} satır": "{n} سطر",
+"{g} grup · {n} kayıt": "{g} مجموعة · {n} سجل",
 "{n} sözleşme": "{n} عقد",
 "{n} tanınan kişi": "{n} شخص مُتعرَّف عليه",
 "{n} video yüklendi": "تم رفع {n} فيديو",

@@ -832,11 +832,30 @@ def misafir(conn, p):
         ppl[v['arrived_at'][:10]] += v['n']
     stays = [mins(v['arrived_at'], v['left_at']) for v in visits if v['left_at']]
     hours = Counter(int(v['arrived_at'][11:13]) for v in visits)
-    people = db.rows(conn.execute('''SELECT gp.full_name AS name, COALESCE(NULLIF(TRIM(gp.phone), ''), '—') AS phone,
-                                            COALESCE(c.name, NULLIF(TRIM(gp.company_text), ''), '—') AS company, g.arrived_at
+    people, plates, met = {}, {}, {}   # ziyaret → kişiler / plakalar / görüşülen kişiler
+    for r in db.rows(conn.execute('''SELECT gp.visit_id, gp.full_name AS name, COALESCE(NULLIF(TRIM(gp.phone), ''), '—') AS phone,
+                                            COALESCE(c.name, NULLIF(TRIM(gp.company_text), ''), '—') AS company
                                      FROM guest_visit_people gp JOIN guest_visits g ON g.id = gp.visit_id
                                      LEFT JOIN company_people cp ON cp.id = gp.person_id LEFT JOIN companies c ON c.id = cp.company_id
-                                     WHERE g.arrived_at BETWEEN ? AND ? ORDER BY g.arrived_at, gp.id''', (a, b)))
+                                     WHERE g.arrived_at BETWEEN ? AND ? ORDER BY gp.id''', (a, b))):
+        people.setdefault(r['visit_id'], []).append(r)
+    for vid, plate in conn.execute('''SELECT gv.visit_id, vv.plate FROM guest_visit_vehicles gv JOIN vehicle_visits vv ON vv.id = gv.vehicle_id
+                                     JOIN guest_visits g ON g.id = gv.visit_id WHERE g.arrived_at BETWEEN ? AND ? ORDER BY vv.id''', (a, b)):
+        plates.setdefault(vid, []).append(plate)
+    for vid, name in conn.execute('''SELECT h.visit_id, u.full_name FROM guest_visit_hosts h JOIN users u ON u.id = h.user_id
+                                     JOIN guest_visits g ON g.id = h.visit_id WHERE g.arrived_at BETWEEN ? AND ? ORDER BY h.added_at''', (a, b)):
+        met.setdefault(vid, []).append(name)
+    grouped = []   # her ziyaret: grup satırı (_group: [etiket, değer] çiftleri) + altında o ziyaretin kişileri
+    for v in visits:
+        grouped.append({'_group': [['', v['code']],
+                                   ['Geliş', fmt_dt(v['arrived_at'])],
+                                   ['Çıkış', fmt_dt(v['left_at']) if v['left_at'] else 'İçeride'],
+                                   ['Süre', dur(mins(v['arrived_at'], v['left_at'])) if v['left_at'] else '—'],
+                                   ['Kişi', str(v['n'])],
+                                   ['Görüşülen', ', '.join(met.get(v['id'], [])) or '—'],
+                                   ['Araç', ', '.join(plates.get(v['id'], [])) or '—'],
+                                   ['Amaç', v['purpose'] or '—']]})
+        grouped += [{'name': r['name'], 'phone': r['phone'], 'company': r['company']} for r in people.get(v['id'], [])]
     return {
         'kpis': [{'icon': 'guest', 'label': 'Ziyaret (grup)', 'value': len(visits)}, {'icon': 'person', 'label': 'Misafir kişi', 'value': sum(v['n'] for v in visits)},
                  {'icon': 'calendar', 'label': 'Ort. ziyaret süresi', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
@@ -847,11 +866,8 @@ def misafir(conn, p):
                    {'title': 'Firmalar', 'type': 'hbar', 'labels': [k for k, _ in top(comp, 10)], 'datasets': [{'label': 'Kişi', 'data': [v for _, v in top(comp, 10)]}]},
                    {'title': 'Görüşülen kişiler', 'type': 'hbar', 'labels': [k for k, _ in top(hosts, 10)], 'datasets': [{'label': 'Ziyaret', 'data': [v for _, v in top(hosts, 10)]}]},
                    {'title': 'Geliş saatleri', 'type': 'bar', 'labels': [f'{h:02d}' for h in range(24)], 'datasets': [{'label': 'Ziyaret', 'data': [hours.get(h, 0) for h in range(24)]}]}],
-        'tables': [{'title': 'Misafirler', 'columns': [col('name', 'Ad Soyad'), col('phone', 'Telefon'), col('company', 'Firma'), col('arr', 'Geliş')],
-                    'rows': [{**r, 'arr': fmt_dt(r['arrived_at'])} for r in people]},
-                   {'title': 'Ziyaretler', 'columns': [col('code', 'Kod'), col('arr', 'Geliş'), col('left', 'Çıkış'), col('n', 'Kişi', 'num'), col('stay', 'Süre', 'num'), col('purpose', 'Amaç')],
-                    'rows': [{**v, 'arr': fmt_dt(v['arrived_at']), 'left': fmt_dt(v['left_at']), 'stay': dur(mins(v['arrived_at'], v['left_at'])) if v['left_at'] else 'İçeride',
-                              'purpose': v['purpose'] or '—'} for v in visits]}],
+        'tables': [{'title': 'Ziyaretler ve misafirler', 'sub': 'Her ziyaret satırının altında o ziyarette gelen kişiler; araç plakaları ziyaret satırında.',
+                    'columns': [col('name', 'Ad Soyad'), col('phone', 'Telefon'), col('company', 'Firma')], 'rows': grouped}],
     }
 
 

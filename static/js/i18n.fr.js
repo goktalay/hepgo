@@ -2845,6 +2845,7 @@ registerCatalog('fr', {
 "{n} parça yazıcıda": "{n} pièces sur l'imprimante",
 "{n} rapor · modül raporları": "{n} rapport(s) · rapports de module",
 "{n} satır": "{n} lignes",
+"{g} grup · {n} kayıt": "{g} groupes · {n} entrées",
 "{n} sözleşme": "{n} contrats",
 "{n} tanınan kişi": "{n} personnes reconnues",
 "{n} video yüklendi": "{n} vidéo(s) téléversée(s)",

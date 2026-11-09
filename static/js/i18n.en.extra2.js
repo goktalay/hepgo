@@ -112,6 +112,7 @@ registerCatalog('en', {
 "{n} parça yazıcıda": "{n} parts at the printer",
 "{n} rapor · modül raporları": "{n} reports · module reports",
 "{n} satır": "{n} rows",
+"{g} grup · {n} kayıt": "{g} groups · {n} entries",
 "{n} sözleşme": "{n} contracts",
 "{n} tanınan kişi": "{n} recognized people",
 "{n} video yüklendi": "{n} videos uploaded",

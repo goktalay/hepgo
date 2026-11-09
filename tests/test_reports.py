@@ -31,7 +31,8 @@ def check(d):
             assert all(len(ds['data']) == len(c['labels']) for ds in c['datasets']), (d['key'], c['title'])
     for t in d['tables']:
         keys = {c['key'] for c in t['columns']}
-        assert all(keys <= set(r) for r in t['rows']), (d['key'], t['title'])
+        # grup satırı (ör. Misafir Raporu ziyaret başlığı): _group = [[etiket, değer], …]; diğer satırlar tüm sütunları taşır
+        assert all(keys <= set(r) or (isinstance(r.get('_group'), list) and all(len(x) == 2 for x in r['_group'])) for r in t['rows']), (d['key'], t['title'])
 
 
 def main():
@@ -49,10 +50,19 @@ def main():
         ok(a.post(f'/api/orders/{oid}/parts/L1/start', json={'printer_id': pid}))
         ok(a.post(f'/api/orders/{oid}/parts/L1/error', data={'error_code': 'E-1', 'description': 'x'}))
         ok(a.post(f'/api/orders/{oid}/parts/L2/start', json={'printer_id': pid}))
-        ok(a.post('/api/security/vehicles', json={'plate': '34 AB 123'}))
-        ok(a.post('/api/secretariat/visits', json={'purpose': 'Toplantı'}))
+        veh = ok(a.post('/api/security/vehicles', json={'plate': '34 AB 123'}))
+        vis = ok(a.post('/api/secretariat/visits', json={'purpose': 'Toplantı'}))
+        ok(a.post(f'/api/secretariat/visits/{vis["id"]}/people', json={'full_name': 'Ayşe Konuk', 'company_text': 'Deneme Ltd.', 'phone': '05551112233'}))
+        ok(a.post(f'/api/secretariat/visits/{vis["id"]}/people', json={'full_name': 'Ali Konuk'}))
+        ok(a.post(f'/api/secretariat/visits/{vis["id"]}/vehicles', json={'ids': [veh['id']]}))
         for r in allr:
             check(ok(a.get(f'/api/reports/{r["key"]}')))
+        d = ok(a.get('/api/reports/misafir'))   # gruplu: ziyaret satırı (plaka, amaç) + altında o ziyaretin kişileri
+        rows = d['tables'][0]['rows']
+        assert len(d['tables']) == 1 and rows[0]['_group'][0][1] == vis['code'], rows
+        g = dict(rows[0]['_group'][1:])
+        assert g['Araç'] == '34 AB 123' and g['Amaç'] == 'Toplantı' and g['Kişi'] == '2' and g['Çıkış'] == 'İçeride', g
+        assert [(r['name'], r['phone'], r['company']) for r in rows[1:]] == [('Ayşe Konuk', '05551112233', 'Deneme Ltd.'), ('Ali Konuk', '—', '—')], rows
         d = ok(a.get('/api/reports/hata-analizi'))
         assert d['kpis'][0]['value'] == 1 and d['charts'][0]['labels'] == ['E-1']
         d = ok(a.get('/api/reports/uretim-performans'))

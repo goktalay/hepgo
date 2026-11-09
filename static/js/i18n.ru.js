@@ -2845,6 +2845,7 @@ registerCatalog('ru', {
 "{n} parça yazıcıda": "{n} дет. на принтере",
 "{n} rapor · modül raporları": "{n} отчётов · отчёты модулей",
 "{n} satır": "{n} строк",
+"{g} grup · {n} kayıt": "{g} групп · {n} записей",
 "{n} sözleşme": "{n} договоров",
 "{n} tanınan kişi": "распознанных лиц: {n}",
 "{n} video yüklendi": "Загружено {n} видео",

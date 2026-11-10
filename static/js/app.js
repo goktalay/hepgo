@@ -212,6 +212,7 @@ const FEATURES = [
   ['yapay zeka egitim resmi konum', 'Yapay Zeka (yüz/ses eğitimi)', '#/rehber', 'Rehber › kişi › Yapay Zeka', 'rehber'],
   ['ucus simulatoru simulator sitl mission planner sanal dunya 3b ucus', 'Uçuş Simülatörü', '#/drone/sim', 'Dron Yönetimi › Uçuş Simülatörü', 'drone'],
   ['dron kamera kameralar gimbal rtsp rtp goruntu koprusu jetson canli goruntu', 'Kameralar', '#/drone/cameras', 'Dron Yönetimi › Kameralar', 'drone'],
+  ['veri paketi paketleri uydu certus kota mb tarife data package', 'Veri Paketleri', '#/drone/packages', 'Dron Yönetimi › Veri Paketleri', 'drone'],
 ];
 
 // Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?

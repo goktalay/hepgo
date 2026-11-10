@@ -557,6 +557,17 @@ def _check_link(conn, body):
                 raise HTTPException(400, f'{label} şunlardan biri olmalı: sınırsız, ' + ', '.join(f'dakikada {x}' for x in allowed if x))
             if v:
                 out[key] = v
+    # Veri Paketleri: uydu hattı tüketimi bu pakete yazılır (her bağlantı türünde; Jetson dronda seri bağlıyken de uydu köprü ↔ sunucu)
+    pkg = _int(link.get('package_id')) if link.get('package_id') not in (None, '', 0, '0') else None
+    if pkg:
+        if not conn.execute('SELECT 1 FROM data_packages WHERE id = ? AND active = 1', (pkg,)).fetchone():
+            raise HTTPException(400, 'Veri paketi bulunamadı ya da pasif')
+        line = str(link.get('sat_line') or 'kopru_sunucu')
+        if line not in ('kopru_sunucu', 'dron_kopru'):
+            raise HTTPException(400, 'Uydu hattı köprü ↔ sunucu ya da dron ↔ köprü olmalı')
+        if line == 'dron_kopru' and kind == 'serial':
+            raise HTTPException(400, 'Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir')
+        out.update(package_id=pkg, sat_line=line)
     return json.dumps(out, ensure_ascii=False)
 
 

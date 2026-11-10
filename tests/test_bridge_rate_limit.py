@@ -58,7 +58,8 @@ def calistir(port, rate_pm, sure):
         with top.lock:
             bayt, paket = top.bayt - b0, top.paket - p0
         poz = [ts for ts, t, _ in top.turler(tb) if t == 'GLOBAL_POSITION_INT']
-        sonuc = {'bayt_sn': bayt / sure, 'paket_sn': paket / sure, 'poz': len(poz), 'fs_gcs': link.fs_gcs}
+        sonuc = {'bayt_sn': bayt / sure, 'paket_sn': paket / sure, 'poz': len(poz), 'fs_gcs': link.fs_gcs,
+                 'hat_rx': link.link_rx, 'hat_tx': link.link_tx}   # veri_sayaci: dron ↔ köprü hattı (TCP başlığı tahminiyle)
         if rate_pm:
             # mod değişikliği beklemeden: GUIDED'a geçince HEARTBEAT ve COMMAND_ACK ~hemen gelir (aralık 6 sn)
             ts = time.time()
@@ -93,11 +94,13 @@ def main():
     print(f"dakikada 10: {kisitli['bayt_sn']:.1f} B/sn, {kisitli['paket_sn']:.2f} paket/sn, 60 sn'de {kisitli['poz']} konum, oran %{oran * 100:.2f}, "
           f"FS_GCS={kisitli['fs_gcs']}, mod yanıtı {kisitli['ack_s']} sn, kalp atışı {kisitli['hb_s']} sn")
     print(f"tahmini saatlik: sınırsız {sinirsiz['bayt_sn'] * 3600 / 1e6:.1f} MB, dakikada 10 {kisitli['bayt_sn'] * 3600 / 1e6:.2f} MB")
+    print(f"dron ↔ köprü hattı (sayaç): sınırsız 20 sn {sinirsiz['hat_rx'] + sinirsiz['hat_tx']} B, dakikada 10 / 60 sn {kisitli['hat_rx'] + kisitli['hat_tx']} B")
     assert sinirsiz['poz'] >= 40, sinirsiz                      # 4 Hz × 20 sn ≈ 80
     assert 8 <= kisitli['poz'] <= 12, kisitli                    # 60 sn / 6 sn = 10
     assert oran < 0.1, oran                                      # en az 10 kat az
     assert kisitli['paket_sn'] < 0.5, kisitli                    # ~6 sn'de bir toplu paket (+ anlık olaylar)
     assert kisitli['fs_gcs'] is not None, kisitli                # FS_GCS okundu
+    assert sinirsiz['hat_rx'] > kisitli['hat_rx'] > 0 and kisitli['hat_tx'] > 0, (sinirsiz, kisitli)   # hat sayacı: kısıt otopilottan gelen veriyi de azaltır
     assert kisitli['ack_s'] is not None and kisitli['ack_s'] < 2, kisitli   # komut yanıtı beklemeden
     assert kisitli['hb_s'] is not None and kisitli['hb_s'] < 3, kisitli     # mod değişikliği beklemeden
     print('Köprü veri kısıtı testleri geçti.')

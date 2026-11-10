@@ -38,6 +38,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import auth, cameras, config, db, drone_params, drone_sitl
 from . import drone_mprelay as _mpr   # v1.4 Mission Planner aktarımı (drone_hub'ı yalnız çağrı anında kullanır)
+from . import data_packages as _dp   # Veri Paketleri: köprü hattı tüketim sayacı (uydu paketi)
 
 ws_router = APIRouter()
 
@@ -89,7 +90,8 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
 BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear',
                'video',   # v1.3: görüntü köprüsü (ayrı WebSocket /ws/drone/video; app/drone_video.py)   # köprünün bildirebileceği yetenekler
                'mp_relay',   # v1.4: Mission Planner aktarımı — sunucu → köprü ikili raw_up çerçevesi (0x01 + ham MAVLink; app/drone_mprelay.py)
-               'veri_kisiti'}   # v1.5: uydu veri kısıtı — link_open rate_pm (dakikada telemetri güncellemesi; köprü 1.1.7+ / çekirdek 1.1.1)
+               'veri_kisiti',   # v1.5: uydu veri kısıtı — link_open rate_pm (dakikada telemetri güncellemesi; köprü 1.1.7+ / çekirdek 1.1.1)
+               'veri_sayaci'}   # v1.5: dron ↔ köprü hattı bayt sayacı {t:'usage', rx, tx} (Veri Paketleri; köprü 1.1.8+ / çekirdek 1.1.2)
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 # Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
@@ -517,6 +519,7 @@ async def ws_bridge(ws: WebSocket):
             if m.get('type') == 'websocket.disconnect':
                 break
             bridge.last_seen = time.time()
+            _dp.count(bridge.id, 'kopru_sunucu', len(m.get('bytes') or b'') or len((m.get('text') or '').encode()))
             if m.get('bytes') is not None:
                 data = m['bytes']
                 if bridge.log:
@@ -535,6 +538,12 @@ async def ws_bridge(ws: WebSocket):
                 t = msg.get('t')
                 if t == 'ping':
                     await _safe_send(ws, {'t': 'pong', 'server_time': db.now()})
+                    _dp.count(bridge.id, 'kopru_sunucu', 48)
+                elif t == 'usage':   # köprü 'veri_sayaci': kendi MAVLink hattının (dron ↔ köprü) bayt sayacı (son bildirimden beri)
+                    try:
+                        _dp.count(bridge.id, 'dron_kopru', max(0, int(msg.get('rx') or 0)) + max(0, int(msg.get('tx') or 0)), frames=0)
+                    except (TypeError, ValueError):
+                        pass
                 elif t == 'res':
                     ent = _pending.get(msg.get('rid'))
                     if ent and not ent[0].done():
@@ -2012,7 +2021,9 @@ async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
             if name == 'kalib_pusula_baslat':
                 st.d['magkal_pct'] = 0; st.d['magkal_durum'] = None; st.d['magkal_rapor'] = None
     try:
-        await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
+        txt = json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}})
+        await b.ws.send_text(txt)
+        _dp.count(b.id, 'kopru_sunucu', len(txt.encode()))
         res = await asyncio.wait_for(fut, CMD_TIMEOUTS.get(name, CMD_TIMEOUT))
         ok = bool(res.get('ok'))
         err = str(res.get('error') or 'reddedildi')
@@ -2148,6 +2159,10 @@ async def _maintenance():
                             conn.execute("UPDATE drone_bridges SET last_seen = ?, status = 'CEVRIMICI' WHERE id = ?", (db.now(), bid))
                         conn.commit()
                 await _db(work)
+        except Exception:   # noqa: BLE001
+            pass
+        try:   # Veri Paketleri: biriken hat sayaçları paket tüketimine (data_usage)
+            await _db(_dp.flush)
         except Exception:   # noqa: BLE001
             pass
 

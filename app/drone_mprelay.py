@@ -253,6 +253,8 @@ class Relay:
                 continue
             try:
                 await b.ws.send_bytes(frame)
+                from . import data_packages
+                data_packages.count(self.bridge_id, 'kopru_sunucu', len(frame))   # Veri Paketleri: MP trafiği de uydu hattından geçer
             except Exception:   # noqa: BLE001
                 self.dropped_offline += 1
 

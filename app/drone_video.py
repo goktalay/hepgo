@@ -23,7 +23,7 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from . import auth, cameras, db, drone_hub
+from . import auth, cameras, db, drone_hub, data_packages
 
 log = logging.getLogger('hepgo.drone_video')
 
@@ -380,6 +380,8 @@ async def ws_video_bridge(ws: WebSocket):
             m = await ws.receive()
             if m.get('type') == 'websocket.disconnect':
                 break
+            # Veri Paketleri: görüntü köprüden sunucuya uydu hattından gelir (giden yön yalnız küçük denetim mesajları)
+            data_packages.count(vb.id, 'kopru_sunucu', len(m.get('bytes') or b'') or len((m.get('text') or '').encode()))
             if m.get('bytes') is not None:
                 _on_frame(vb, m['bytes'])
             elif m.get('text'):

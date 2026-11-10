@@ -13,7 +13,7 @@ import {
 
 // Canlı Uçuş sekmesi yok: harekât ekranı yalnız saha görevinden açılır (#/field/live?task=<id>; renderLive aşağıda)
 // Uçuş Simülatörü (#/drone/sim[/<oturum>]): flightsim.js dinamik yüklenir; yetki m.can.sim (RBAC 'drone.sim'). `?mock=1` arka uçsuz deneme.
-const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['cameras', 'Kameralar'], ['sim', 'Uçuş Simülatörü']];
+const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['cameras', 'Kameralar'], ['packages', 'Veri Paketleri'], ['sim', 'Uçuş Simülatörü']];
 const DRONE_BADGE = { AKTIF: 'green', BAKIMDA: 'yellow', ARIZALI: 'red', PASIF: 'gray' };
 const SESSION_BADGE = { ACIK: 'green', KAPANDI: 'gray', KOPTU: 'red', KESILDI: 'yellow' };
 // Dron türü (protocol): ürettiğimiz tüm Caymaz dronları MAVLink; sanal dron sunucu içi simülatör (köprü gerekmez); DJI ileride.
@@ -62,6 +62,11 @@ export async function render(view, params, ctx) {
     // Kameralar (görüntü köprüsü; RBAC 'drone.cameras') ayrı modülde: drone_cameras.js
     const cams = await import('./drone_cameras.js');
     return cams.render(view, ctx, m, head);
+  }
+  if (cur === 'packages') {
+    // Veri Paketleri (uydu hattı paketleri ve kalan kota; RBAC 'drone.packages'): drone_packages.js
+    const pk = await import('./drone_packages.js');
+    return pk.render(view, ctx, m, head);
   }
   if (cur === 'routes') {
     // Rotalar sekmesi ayrı modülde (routes.js: sol dar sütun + Cesium harita); yalnız gerekince yüklenir.

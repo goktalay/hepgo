@@ -480,6 +480,28 @@ async function renderTask(view, id, ctx) {
     const drawCost = () => { costNote.textContent = costText(Number(rateSel.value), Number(videoSel.value)); };
     rateSel.addEventListener('change', drawCost);
     videoSel.addEventListener('change', drawCost);
+    // Veri Paketleri: uydu hattı tüketimi seçilen pakete yazılır (her bağlantı türünde; dron ↔ köprü hattı yalnız TCP/UDP)
+    const pkgSel = h('select', { class: 'input', disabled: !can }, h('option', { value: '' }, 'Pakete bağlı değil'));
+    let satLine = f.link?.sat_line || 'kopru_sunucu';
+    const lineSeg = segmented([['kopru_sunucu', 'Köprü ↔ sunucu'], ['dron_kopru', 'Dron ↔ köprü']], satLine, v => { satLine = v; });
+    if (!can) lineSeg.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const pkgNote = h('div', { class: 'small muted', style: { margin: '-4px 0 12px' } });
+    const pkgBox = h('div');
+    let pkgs = [];
+    const drawPkg = () => {
+      const p = pkgs.find(x => String(x.id) === pkgSel.value);
+      pkgNote.textContent = p ? tr('Kalan {r} / {q} MB (%{u} kullanıldı) · dönem sonu {d} · {days} gün', { r: Math.round(p.remaining_mb), q: Math.round(p.quota_mb), u: p.pct ?? 0, d: p.period_end, days: p.days_left }) : '';
+      clear(pkgBox, h('div', { class: 'row' }, field('Veri paketi', pkgSel, 'Dron Yönetimi › Veri Paketleri. Harcanan veri bu paketten düşer.'),
+        p ? field('Uydu hattı', lineSeg, 'Köprü dronda (ör. Jetson): köprü ↔ sunucu. Köprü yerde, dron uydu ile bağlanıyorsa: dron ↔ köprü (TCP/UDP).') : null), p ? pkgNote : null);
+    };
+    pkgSel.addEventListener('change', drawPkg);
+    api.get('/api/drone/packages/options').then(r => {
+      pkgs = r.items || [];
+      const cur = f.link?.package_id;
+      if (cur && !pkgs.some(p => p.id === cur)) pkgs.push({ id: cur, name: tr('Paket #{id} (pasif)', { id: cur }), remaining_mb: 0, quota_mb: 0 });
+      pkgSel.append(...pkgs.map(p => h('option', { value: p.id, selected: p.id === cur }, `${p.name}${p.remaining_mb != null && p.quota_mb ? ` · ${Math.round(p.remaining_mb)} MB` : ''}`)));
+      drawPkg();
+    }).catch(() => { pkgBox.hidden = true; });
     const linkFields = h('div');
     const drawLinkFields = () => {
       drawCost();
@@ -498,7 +520,7 @@ async function renderTask(view, id, ctx) {
     });
     if (!can) typeSeg.querySelectorAll('button').forEach(b => { b.disabled = true; });
     const sysidField = () => field('MAVLink sysid', sysidIn, virtual ? 'Simülatörün dron kimliği (varsayılan 1).' : 'Aynı köprüde birden fazla dron varsa ayırt eder (1–255). Boş bırakılırsa köprünün ilk dronu.');
-    const linkDetail = h('div', { class: 'flight-link' }, field('Bağlantı türü', typeSeg), linkFields, sysidField());
+    const linkDetail = h('div', { class: 'flight-link' }, field('Bağlantı türü', typeSeg), linkFields, pkgBox, sysidField());
     const drawLink = () => { linkDetail.hidden = !bridgeId; if (bridgeId) drawLinkFields(); };
     const linkBody = h('div', null, h('div', { class: 'small muted' }, 'Köprüler yükleniyor…'));
     const linkFold = fold('Bağlantı', linkBody, { badge: virtual ? 'Sanal' : bridgeId ? `${f.bridge_name || tr('Köprü #{id}', { id: bridgeId })}${f.link?.type ? ` · ${linkText(f.link)}` : ''}` : 'Seçilmedi' });
@@ -532,6 +554,7 @@ async function renderTask(view, id, ctx) {
       });
     }
     // PUT body'ye eklenecek bağlantı alanları; istemci doğrulaması (hata varsa Bağlantı paneli açılır)
+    const pkgPart = () => (pkgSel.value ? { package_id: Number(pkgSel.value), sat_line: satLine } : {});
     const linkPayload = () => {
       if (bridgesFailed) return {};
       const fail = msg => { linkFold.toggle(true); throw new Error(msg); };
@@ -542,13 +565,14 @@ async function renderTask(view, id, ctx) {
       if (!linkType) fail('Bağlantı türünü seçin (Seri / TCP / UDP)');
       if (linkType === 'serial') {
         if (!serialIn.value.trim()) fail('Seri port girin (ör. /dev/ttyUSB0 ya da COM3)');
-        return { bridge_id: bridgeId, sysid, link: { type: 'serial', serial: serialIn.value.trim(), baud: Number(baudSel.value) } };
+        if (pkgSel.value && satLine === 'dron_kopru') fail('Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir');
+        return { bridge_id: bridgeId, sysid, link: { type: 'serial', serial: serialIn.value.trim(), baud: Number(baudSel.value), ...pkgPart() } };
       }
       const port = Number(portIn.value);
       if (!hostIn.value.trim()) fail('Sunucu adresi / IP girin');
       if (!Number.isInteger(port) || port < 1 || port > 65535) fail('Port 1–65535 arası olmalı');
       const rate = Number(rateSel.value), video = Number(videoSel.value);
-      return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port, ...(rate ? { rate_pm: rate } : {}), ...(video ? { video_pm: video } : {}) } };
+      return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port, ...(rate ? { rate_pm: rate } : {}), ...(video ? { video_pm: video } : {}), ...pkgPart() } };
     };
     const file = h('input', { class: 'input', type: 'file', accept: FLIGHT_LOG_ACCEPT, style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();

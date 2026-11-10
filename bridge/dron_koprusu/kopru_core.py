@@ -25,9 +25,10 @@ import time
 from pathlib import Path
 
 APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
-VERSION = '1.1.1'
+VERSION = '1.1.2'
 CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear', 'mp_relay',
-        'veri_kisiti']
+        'veri_kisiti', 'veri_sayaci']
+LINK_OVERHEAD = {'udp': 28, 'tcp': 40, 'serial': 0}   # veri_sayaci: MAVLink paketi başına IP/UDP ya da IP/TCP başlığı (tahmini)
 # Uydu / ücretli hat veri kısıtı (link_open rate_pm = dakikada telemetri güncellemesi): otopilottan yalnız bu mesajlar bu
 # aralıkla istenir; drondan gelen diğer sürekli akışlar köprüde tutulup aralıkla tek seferde iletilir.
 LIMITED_MSGS = (33, 30, 1, 74, 24)   # GLOBAL_POSITION_INT, ATTITUDE, SYS_STATUS, VFR_HUD, GPS_RAW_INT
@@ -118,6 +119,9 @@ class MavLink:
         self._held = {}               # (src, tür) → son çerçeve (kısıtlı kipte aralıkla iletilir)
         self._held_lock = threading.Lock()
         self._last_mode = {}          # src → (base_mode, custom_mode): değişince HEARTBEAT beklemeden iletilir
+        # veri_sayaci: dron ↔ köprü hattında gelen / giden bayt (+ paket başlığı tahmini); oturum son bildirimden beri farkı yollar
+        self.link_rx = self.link_tx = 0
+        self._oh = LINK_OVERHEAD.get(self.spec.get('type'), 0)
 
     # ---- bağlantı ----
     def open(self):
@@ -138,6 +142,12 @@ class MavLink:
                                                 source_system=255, source_component=190)
         else:
             raise ValueError('Bağlantı türü serial / tcp / udp olmalı')
+        orig_write = self.m.write   # giden her MAVLink çerçevesi (kalp atışı, komut, MP baytları) buradan geçer
+
+        def counted_write(buf):
+            self.link_tx += len(buf) + self._oh
+            return orig_write(buf)
+        self.m.write = counted_write
         self.running = True
         threading.Thread(target=self._read, daemon=True, name='mav-okuyucu').start()
         threading.Thread(target=self._gcs_heartbeat, daemon=True, name='mav-kalp').start()
@@ -220,6 +230,10 @@ class MavLink:
                 continue
             self.errors = 0
             t = msg.get_type()
+            try:
+                self.link_rx += len(msg.get_msgbuf()) + self._oh
+            except Exception:   # noqa: BLE001
+                pass
             if t == 'BAD_DATA':
                 continue
             src = msg.get_srcSystem()
@@ -855,9 +869,17 @@ class Bridge:
         self.ui('server', 'stopped', '')
 
     async def _pinger(self):
+        sent = {}   # MavLink nesnesi → (rx, tx) son bildirilen (bağlantı yenilenince sıfırdan)
         while True:
             await asyncio.sleep(PING_S)
             await self._send({'t': 'ping'})
+            mav = self.mav
+            if mav is not None:   # veri_sayaci: dron ↔ köprü hattı tüketimi (son bildirimden beri)
+                prx, ptx = sent.get(id(mav), (0, 0))
+                rx, tx = mav.link_rx, mav.link_tx
+                if rx > prx or tx > ptx:
+                    await self._send({'t': 'usage', 'rx': rx - prx, 'tx': tx - ptx, 'link': link_text(self.link_spec or {})})
+                sent = {id(mav): (rx, tx)}
             self.ui('stats', {'tx': self.tx, 'rx': self.mav.rx if self.mav else 0,
                               'drone': self.mav.target if self.mav else None,
                               'last_rx': self.mav.last_rx if self.mav else 0, 'mp': self.mp_info()})

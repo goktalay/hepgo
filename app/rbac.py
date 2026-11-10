@@ -47,6 +47,7 @@ CATALOG = [
     ('drone.drones', 'Dron Envanteri', 'Saha & Operasyon'), ('drone.routes', 'Rotalar', 'Saha & Operasyon'),
     ('drone.bridges', 'Dron Köprüleri', 'Saha & Operasyon'),
     ('drone.cameras', 'Dron Kameraları', 'Saha & Operasyon'),   # köprü üzerinden RTSP/RTP görüntü (app/drone_video.py)
+    ('drone.packages', 'Veri Paketleri', 'Saha & Operasyon'),   # uydu / ücretli hat veri paketleri ve tüketim (app/data_packages.py)
     ('drone.sim', 'Uçuş Simülatörü', 'Saha & Operasyon'),   # ArduPilot SITL + Mission Planner köprüsü + 3B dünya (docs/ucus-simulatoru.md)
     ('fleet', 'Araç Yönetimi', 'Saha & Operasyon'), ('certs', 'Sertifikasyon', 'Saha & Operasyon'),
     ('cleaning', 'Temizlik', 'Saha & Operasyon'),

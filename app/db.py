@@ -1651,6 +1651,40 @@ CREATE TABLE IF NOT EXISTS field_task_cameras (
     UNIQUE (task_id, camera_id)
 );
 CREATE INDEX IF NOT EXISTS ix_field_task_cameras_camera ON field_task_cameras(camera_id);
+-- Dron Yönetimi › Veri Paketleri: uydu / ücretli hat veri paketleri (ör. Certus 100 Aviation). Uçuş bağlantısı
+-- (field_flights.link.package_id) pakete bağlanır; ölçülen tüketim data_usage'a yazılır, paketin GEÇERLİ döneminden düşer.
+-- period: AYLIK | 3_AYLIK | 6_AYLIK | YILLIK. Otomatik yenilemede dönem başlangıçtan itibaren period aralıklarıyla döner.
+CREATE TABLE IF NOT EXISTS data_packages (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    provider        TEXT,
+    period          TEXT NOT NULL DEFAULT 'AYLIK',
+    quota_mb        REAL NOT NULL,
+    price           REAL,
+    currency        TEXT NOT NULL DEFAULT 'USD',
+    overage_per_mb  REAL,
+    start_date      TEXT NOT NULL,
+    auto_renew      INTEGER NOT NULL DEFAULT 1,
+    sim_count       INTEGER,
+    note            TEXT,
+    active          INTEGER NOT NULL DEFAULT 1,
+    created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT
+);
+-- Tüketim: paket × uçuş × hat × gün başına bayt (aynı gün üzerine eklenir). line: kopru_sunucu | dron_kopru
+CREATE TABLE IF NOT EXISTS data_usage (
+    id          INTEGER PRIMARY KEY,
+    package_id  INTEGER NOT NULL REFERENCES data_packages(id) ON DELETE CASCADE,
+    flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL,
+    task_id     INTEGER REFERENCES field_tasks(id) ON DELETE SET NULL,
+    line        TEXT NOT NULL,
+    day         TEXT NOT NULL,
+    bytes       INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL,
+    UNIQUE (package_id, flight_id, line, day)
+);
+CREATE INDEX IF NOT EXISTS ix_data_usage_pkg_day ON data_usage(package_id, day);
 CREATE INDEX IF NOT EXISTS ix_drone_bridge_sessions_open ON drone_bridge_sessions(ended_at);
 CREATE TABLE IF NOT EXISTS drone_route_centers (
     id          INTEGER PRIMARY KEY,

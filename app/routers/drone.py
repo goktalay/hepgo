@@ -171,6 +171,7 @@ def meta(user=Depends(auth.current_user)):
             'can': {'drones': 'drone.drones' in user['modules'], 'live': 'field.live' in user['modules'],
                     'routes': 'drone.routes' in user['modules'], 'bridges': 'drone.bridges' in user['modules'],
                     'sim': 'drone.sim' in user['modules'], 'cameras': 'drone.cameras' in user['modules'],
+                    'packages': 'drone.packages' in user['modules'],
                     'camera_view': drone_video.can_view(user),
                     'command': drone_hub.can_command(user) if 'write_modules' in user else False},
             'write': {'drones': 'drone.drones' in user.get('write_modules', []), 'cameras': drone_video.can_edit(user)},

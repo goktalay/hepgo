@@ -93,8 +93,9 @@ export async function render(view, ctx, m, head, params) {
   const badge = h('div', { class: 'rt-badge', hidden: true });
   const msg = h('div', { class: 'rt-msg' }, '3B harita yükleniyor…');
   const pop = h('div', { class: 'rt-pop', hidden: true });
-  // Dron Yönetimi sekmeleri haritanın üstünde küçük kapsülde (sayfa başlığı yok: harita başlık ile alt bilgi arasını kaplar)
-  const NAV = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['sim', 'Uçuş Simülatörü']].filter(([k]) => m.can?.[k]);
+  // Dron Yönetimi sekmeleri haritanın üstünde küçük kapsülde (sayfa başlığı yok: harita başlık ile alt bilgi arasını kaplar);
+  // liste drone.js TABS ile aynı tutulur
+  const NAV = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['cameras', 'Kameralar'], ['packages', 'Veri Paketleri'], ['sim', 'Uçuş Simülatörü']].filter(([k]) => m.can?.[k]);
   const nav = h('div', { class: 'rt-nav' },
     h('a', { class: 'rt-nav-back', href: '#/', title: 'Geri', onclick: e => { if (history.length > 1) { e.preventDefault(); history.back(); } } }, '←'),
     NAV.map(([k, l]) => h('a', { class: `rt-nav-tab ${k === 'routes' ? 'on' : ''}`, href: `#/drone/${k}` }, l)));
@@ -107,7 +108,7 @@ export async function render(view, ctx, m, head, params) {
     const caret = h('button', { class: 'rt-fp-caret', type: 'button', title: 'Katla / aç' }, '▾');
     const headEl = h('div', { class: 'rt-fp-head' }, caret, title, countEl, h('span', { class: 'spacer' }), actions);
     const el = h('div', { class: `rt-fp ${st.k ? 'katli' : ''}`, 'data-k': key }, headEl, h('div', { class: 'rt-fp-body' }, ...body));
-    const save = () => localStorage.setItem(store, JSON.stringify({ x: el.offsetLeft, y: el.offsetTop, k: el.classList.contains('katli') }));
+    const save = () => localStorage.setItem(store, JSON.stringify(Object.assign(st, { x: el.offsetLeft, y: el.offsetTop, k: el.classList.contains('katli') })));
     const toggle = () => { el.classList.toggle('katli'); save(); };
     caret.addEventListener('click', e => { e.stopPropagation(); toggle(); });
     headEl.addEventListener('dblclick', e => { if (!e.target.closest('button, input')) toggle(); });
@@ -165,11 +166,19 @@ export async function render(view, ctx, m, head, params) {
   });
   clear(view, wrap);
 
-  requestAnimationFrame(() => {
+  const placePanels = () => {
     const p1 = treePanel._pos, p2 = stepPanel._pos;
     treePanel.style.left = `${p1.x ?? 56}px`; treePanel.style.top = `${p1.y ?? 10}px`;
     stepPanel.style.left = `${p2.x ?? 56}px`; stepPanel.style.top = `${p2.y ?? Math.round(layer.clientHeight / 2 + 4)}px`;   // varsayılan: alt yarı (paneller en çok %50 yükseklikte; çakışmaz)
-  });
+  };
+  requestAnimationFrame(placePanels);
+  // Varsayılan konum katman yüksekliğine bağlıdır: harita ilk karede henüz son boyutunda değilse (stil geç yüklenir, pencere boyutu
+  // değişir) Adımlar paneli Rotalar'ın üstüne biner; panel elle taşınana dek boyut değiştikçe yeniden yerleştirilir
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => { if (stepPanel._pos.y == null) placePanels(); });
+    ro.observe(layer);
+    onLeave(() => ro.disconnect());
+  }
   onLeave(() => { destroyed = true; });
 
   // ---------- veri ----------

@@ -15,10 +15,10 @@ export async function render(view, params, ctx) {
   const dateInput = h('input', { type: 'date', class: 'input', value: day });
   const shift = n => { const d = new Date(day + 'T00:00'); d.setDate(d.getDate() + n); day = d.toLocaleDateString('sv'); dateInput.value = day; load(); };
   dateInput.addEventListener('change', () => { day = dateInput.value || today(); load(); });
-  const bar = h('div', { class: 'cl-bar' },
-    h('button', { class: 'btn', type: 'button', onclick: () => shift(-1) }, '‹'),
+  const bar = h('div', { class: 'filters cl-bar' },
+    h('button', { class: 'btn cl-nav', type: 'button', onclick: () => shift(-1) }, '‹'),
     dateInput,
-    h('button', { class: 'btn', type: 'button', onclick: () => shift(1) }, '›'),
+    h('button', { class: 'btn cl-nav', type: 'button', onclick: () => shift(1) }, '›'),
     h('button', { class: 'btn', type: 'button', onclick: () => { day = today(); dateInput.value = day; load(); } }, 'Bugün'),
     h('span', { class: 'spacer' }),
     h('button', { class: 'btn primary', type: 'button', onclick: () => edit() }, '＋ Rezervasyon'));

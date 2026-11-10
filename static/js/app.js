@@ -394,17 +394,20 @@ function enterApp() {
     document.body.append(h('div', { class: 'support-pill' }, '🛟 ',
       h('b', null, 'Destek oturumu'), h('span', null, ` · ${ctx.meta?.company || ''}`)));
   }
-  drawTaskPill(ctx.user?.pending_tasks || 0);   // bekleyen ZORUNLU günlük görev uyarı şeridi (üstte)
-  drawSurveyPill(ctx.user?.pending_surveys || 0);   // bekleyen ZORUNLU anket uyarı şeridi
 }
 
+// Zorunlu görev / anket uyarıları üst çubukta, logo ile sağ düğmeler arasında yan yana durur (sayfa başlığını örtmez);
+// yer daraldıkça önce açıklama, sonra etiket gizlenir (CSS kapsayıcı sorgusu).
+function mustPill(sel, node, first) {
+  document.querySelector(sel)?.remove();
+  const host = document.querySelector('.must-pills');
+  if (!host || !node) return;
+  if (first) host.prepend(node); else host.append(node);
+}
 // Zorunlu günlük görev uyarı şeridi: tamamlanana kadar üstte durur, tıklanınca Görevlerim'e gider
 function drawTaskPill(n) {
-  document.querySelector('.task-pill')?.remove();
-  if (!n) return;
-  const pill = h('button', { class: 'task-pill', type: 'button', title: 'Görevlerim', onclick: () => { location.hash = '#/my-tasks'; } },
-    '⚠️ ', h('b', null, n > 1 ? `${n} zorunlu görev` : 'Zorunlu görev'), h('span', null, ' · yapmanız bekleniyor'));
-  document.body.append(pill);
+  mustPill('.task-pill:not(.survey-pill)', n > 0 && h('button', { class: 'task-pill', type: 'button', title: 'Görevlerim', onclick: () => { location.hash = '#/my-tasks'; } },
+    '⚠️ ', h('b', null, n > 1 ? `${n} zorunlu görev` : 'Zorunlu görev'), h('span', { class: 'tp-more' }, ' · yapmanız bekleniyor')), true);
 }
 async function refreshTaskPill() {
   try { const d = await api.get('/api/my/tasks'); if (ctx.user) ctx.user.pending_tasks = d.pending_mandatory; drawTaskPill(d.pending_mandatory); }
@@ -414,11 +417,8 @@ window.addEventListener('hepgo:tasks-changed', refreshTaskPill);
 
 // Zorunlu anket uyarı şeridi: cevaplanana kadar üstte durur, tıklanınca Anketlerim'e gider
 function drawSurveyPill(n) {
-  document.querySelector('.survey-pill')?.remove();
-  if (!n) return;
-  const pill = h('button', { class: 'task-pill survey-pill', type: 'button', title: 'Anketlerim', onclick: () => { location.hash = '#/my-surveys'; } },
-    '📋 ', h('b', null, n > 1 ? `${n} zorunlu anket` : 'Zorunlu anket'), h('span', null, ' · cevaplamanız bekleniyor'));
-  document.body.append(pill);
+  mustPill('.survey-pill', n > 0 && h('button', { class: 'task-pill survey-pill', type: 'button', title: 'Anketlerim', onclick: () => { location.hash = '#/my-surveys'; } },
+    '📋 ', h('b', null, n > 1 ? `${n} zorunlu anket` : 'Zorunlu anket'), h('span', { class: 'tp-more' }, ' · cevaplamanız bekleniyor')));
 }
 async function refreshSurveyPill() {
   try { const d = await api.get('/api/my/surveys'); if (ctx.user) ctx.user.pending_surveys = d.pending_mandatory; drawSurveyPill(d.pending_mandatory); }
@@ -1050,6 +1050,7 @@ function renderShell() {
         ctx.meta?.white_label   // firma kendi markası: HEPGO yerine firma adı
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
+      h('div', { class: 'must-pills' }),
       spotifyStrip(),
       h('div', { class: 'header-right' }, searchButton(),
         docsCountdown(), todoButton(), inboxButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu, rdAnchor))),
@@ -1059,6 +1060,8 @@ function renderShell() {
       betaButton(ctx),
       pageMeter(),
       statusBar())));
+  drawTaskPill(ctx.user?.pending_tasks || 0);   // bekleyen ZORUNLU günlük görev uyarısı (üst çubukta)
+  drawSurveyPill(ctx.user?.pending_surveys || 0);   // bekleyen ZORUNLU anket uyarısı
   // Açılış sayfası (Ayarlar → Arayüz): girişte ana sayfa yerine seçilen modül
   const start = u.prefs?.settings?.start;
   if (start && start !== 'dashboard' && hasModule(u, start) && !location.hash.replace(/^#\/?/, '')) {

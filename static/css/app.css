@@ -4673,8 +4673,9 @@ body.rd-docked .rd-onair { left: 356px; }
   .filters > .seg-pick, .filters .seg-pick { flex: 1 1 100%; width: 100%; }
 }
 @media (max-width: 640px) {
-  /* Filtre ızgarasında tek kalan liste / arama kutusu yarım satırda kalmasın */
-  .filters > select:only-of-type, .filters > select:last-child, .filters > .input:last-child,
+  /* Filtre ızgarasında tek kalan liste / arama kutusu yarım satırda kalmasın: listeler ikişer yan yana dizilir,
+     sayıları tekse sonuncusu satırı doldurur (çift sayıda listenin sonuncusu tek başına tam satıra yayılmaz) */
+  .filters > select:nth-of-type(odd):last-of-type, .filters > input.input:last-child,
   .filters > input:not([type=date]):not([type=checkbox]), .filters > .seg-pick { grid-column: 1 / -1; }
   /* Başlıkta doğrudan duran tek düğme (ör. Satış › Yeni Fatura) */
   .page-head > .btn:last-child { flex: 1 1 100%; justify-content: center; margin-left: 0; }
@@ -4824,7 +4825,7 @@ html, body { overflow: hidden; height: 100%; }
 .page-head > .head-right + .xl-btn, .page-head > .seg + .xl-btn { margin-left: 8px; }
 .page-head > .xl-btn:hover { background: #eaf6ef; border-color: #1d6f42; }
 .page-head > .xl-btn svg { flex: none; }
-@media (max-width: 640px) { .page-head > .xl-btn { position: absolute; top: 0; right: 0; } .page-head { position: relative; } }
+@media (max-width: 640px) { .page-head > .xl-btn { position: absolute; top: 12px; right: 12px; } .page-head { position: relative; } }
 @media (max-width: 640px) {
   .page-head > .xl-btn { padding: 0 9px; height: 34px; }
   .page-head > .xl-btn span { display: none; }
@@ -5483,7 +5484,16 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .org-path-sep { color: var(--muted); font-size: 16px; padding: 0 2px; }
 
 /* Temizlik modülü (günlük çeklist) */
-.cl-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* Gün gezinme çubuğu (‹ tarih › Bugün · eylem): ortak araç satırı kutusunda (.filters.cl-bar) */
+.cl-bar > .cl-nav { width: 38px; padding: 0; justify-content: center; font-size: 18px; line-height: 1; }
+.cl-bar > .input[type=date] { width: auto; }
+@media (max-width: 640px) {
+  /* dar ekranda da tek sıra: oklar ve Bugün sabit, tarih kalan yeri doldurur; eylem ve gün adı alt satıra iner */
+  .filters.cl-bar { display: flex; }
+  .filters.cl-bar > .btn { flex: none; }
+  .filters.cl-bar > .input[type=date] { width: auto !important; flex: 1 1 120px; min-width: 0; }
+  .filters.cl-bar > .btn.primary { flex: 1 1 100%; justify-content: center; }
+}
 .cl-bar .cl-day { color: var(--muted); font-weight: 600; }
 .cl-prog { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
 .cl-list { display: flex; flex-direction: column; gap: 8px; }
@@ -5677,14 +5687,30 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
   display: inline-flex; align-items: center; gap: 4px; background: #0f766e; color: #fff; border-radius: 999px;
   padding: 7px 14px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .support-pill b { font-weight: 700; }
-/* Zorunlu günlük görev uyarı şeridi (üstte, dikkat çekici, tıklanınca Görevlerim) */
-.task-pill { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 1250;
+/* Zorunlu görev / anket uyarıları: üst çubukta logo ile sağ düğmeler arasında yan yana (sayfa başlığını örtmez).
+   Yer daraldıkça önce açıklama (.tp-more), sonra etiket gizlenir; en dar halde yalnız ikon kalır. */
+.must-pills { flex: 1 1 0; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 8px; margin: 0 12px; container-type: inline-size; }
+.task-pill { flex: none; height: 36px; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px; background: linear-gradient(180deg, #ef4444, #dc2626); color: #fff;
-  border: none; border-radius: 999px; padding: 8px 18px; font-size: 13.5px; font-family: inherit; cursor: pointer;
-  box-shadow: 0 8px 24px rgba(220,38,38,.4); animation: taskpulse 2s ease-in-out infinite; max-width: calc(100% - 24px); }
+  border: none; border-radius: 999px; padding: 0 16px; font-size: 13.5px; font-family: inherit; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220,38,38,.35); animation: taskpulse 2s ease-in-out infinite; }
+@container (max-width: 560px) { .task-pill > .tp-more { display: none; } }
+@container (max-width: 330px) { .task-pill > b { display: none; } .task-pill { width: 34px; height: 34px; padding: 0; justify-content: center; gap: 0; } }
+/* Dar ekranda (telefon / dik tablet) üst çubukta yer kalmaz: uyarılar çubuğun altında kendi satırına iner, içeriği aşağı iter.
+   Çubuk tek satır esnek kalır (logo eskisi gibi daralır); uyarı satırı için alta 40px pay açılır. */
+@media (max-width: 820px) {
+  .app-header:has(.task-pill) { position: relative; height: calc(104px + env(safe-area-inset-top, 0px)); padding-bottom: 40px; }
+  .app-header:has(.task-pill) > .must-pills { position: absolute; bottom: 8px; margin: 0;
+    left: calc(20px + env(safe-area-inset-left, 0px)); right: calc(20px + env(safe-area-inset-right, 0px)); }
+  .app-header:has(.task-pill) .task-pill { flex: 1 1 0; min-width: 0; width: auto; height: 32px; padding: 0 12px; gap: 5px; justify-content: center; font-size: 13px; overflow: hidden; }
+  .app-header:has(.task-pill) .task-pill > b { display: inline; }
+}
+@media (max-width: 640px) {
+  .app-header:has(.task-pill) > .must-pills { left: calc(12px + env(safe-area-inset-left, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); gap: 6px; }
+}
 .task-pill b { font-weight: 700; }
 .task-pill:hover { filter: brightness(1.05); }
-@keyframes taskpulse { 0%,100% { box-shadow: 0 8px 24px rgba(220,38,38,.4); } 50% { box-shadow: 0 8px 30px rgba(220,38,38,.7); } }
+@keyframes taskpulse { 0%,100% { box-shadow: 0 4px 14px rgba(220,38,38,.35); } 50% { box-shadow: 0 4px 20px rgba(220,38,38,.7); } }
 /* Görevlerim: zorunlu bekleyen görev vurgusu + tamamlanan */
 .cl-item.task-must { box-shadow: inset 4px 0 0 #dc2626; background: color-mix(in srgb, #dc2626 7%, transparent); }
 .cl-item.done { opacity: .72; }
@@ -8124,9 +8150,9 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 
 /* ===== Anket modülü (mysurvey + surveysadmin) ===== */
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-/* Zorunlu anket uyarı şeridi: görev şeridinin altında, mor tonlu */
-.survey-pill { top: 52px; background: linear-gradient(180deg, #6366f1, #4f46e5) !important;
-  box-shadow: 0 8px 24px rgba(79,70,229,.4) !important; animation: none !important; }
+/* Zorunlu anket uyarı şeridi: görev şeridinin yanında, mor tonlu */
+.survey-pill { background: linear-gradient(180deg, #6366f1, #4f46e5) !important;
+  box-shadow: 0 4px 14px rgba(79,70,229,.35) !important; animation: none !important; }
 .survey-pill:hover { filter: brightness(1.06); }
 
 /* -- Personel: anket listesi + cevaplama -- */
@@ -10445,3 +10471,27 @@ html[dir="rtl"] .module-toolbar.filters:has(> .input, > select, > input, > label
 }
 
 .card > textarea.input { width: 100%; }
+/* Başlık bandı alt başlık olsun olmasın aynı yükseklikte: modüller arasında gezerken altındaki içerik yerinden oynamaz */
+@media (min-width: 641px) { main#view .page-head { min-height: 81px; } }
+/* Özet kutuları ikonlu / ikonsuz aynı yükseklikte */
+.stat-strip > .stat { min-height: 64px; justify-content: center; }
+.stat-strip > .stat.has-ic { justify-content: flex-start; }
+/* --- Dar ekranda yatay taşma: sayfa yana kaymaz --- */
+/* Kart içine doğrudan konmuş (sarmalayıcısız) geniş tablo: kart kendi içinde yatay kayar */
+@media (max-width: 900px) { .card:has(> table.table) { overflow-x: auto; } }
+/* Kart altlığı çok sütunlu yerleşimde tüm sütunlara yayılmaz (kartın dışına taşıyordu) */
+.card > .hr-save { column-span: none; }
+/* Alt alta dizilen ayar düzeninde içerik sütunu tam genişlikte kalır */
+@media (max-width: 800px) { .ms-wrap { align-items: stretch; } }
+/* Araç satırındaki etiketli denetim (Sırala / Hassasiyet) kendi satırını doldurur, hücreden taşmaz */
+@media (max-width: 640px) { .filters > .fc-sens { min-width: 0; grid-column: 1 / -1; } .filters > .fc-sens > input, .filters > .fc-sens > select { flex: 1 1 0; min-width: 0; width: auto !important; } }
+/* Uçuş Simülatörü, dar ekran: sekme seçici kendi satırında tam genişlik, eylemler altında; dönem seçici satıra sığar */
+@media (max-width: 640px) {
+  .fs-tabs-row { flex-wrap: wrap; gap: 8px; border-bottom: 0; }
+  .fs-tabs-row .fs-tabs { flex: 1 1 100%; overflow: visible; }
+  .fs-tabs-row .module-toolbar.fs-tabs-actions { flex: 1 1 100%; margin: 0; }
+  .fs-tabs-actions .pill-group { width: 100%; }
+  .fs-tabs-actions .pill-group > .btn { flex: 1 1 0; justify-content: center; }
+  .fs-runs-pill { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .fs-runs-pill > .btn.sm { flex: none; padding: 0 9px; }
+}

@@ -190,12 +190,12 @@ async function renderBuilding(body) {
   dateInput.addEventListener('change', () => { day = dateInput.value || bToday(); load(); });
   const label = h('b', { class: 'cl-day' });
   const shift = n => { const d = new Date(day + 'T00:00'); d.setDate(d.getDate() + n); day = d.toLocaleDateString('sv'); dateInput.value = day; load(); };
-  const bar = h('div', { class: 'cl-bar' },
-    h('button', { class: 'btn', type: 'button', title: 'Önceki gün', onclick: () => shift(-1) }, '‹'), dateInput,
-    h('button', { class: 'btn', type: 'button', title: 'Sonraki gün', onclick: () => shift(1) }, '›'),
+  const bar = h('div', { class: 'filters cl-bar' },
+    h('button', { class: 'btn cl-nav', type: 'button', title: 'Önceki gün', onclick: () => shift(-1) }, '‹'), dateInput,
+    h('button', { class: 'btn cl-nav', type: 'button', title: 'Sonraki gün', onclick: () => shift(1) }, '›'),
     h('button', { class: 'btn', type: 'button', onclick: () => { day = bToday(); dateInput.value = day; load(); } }, 'Bugün'),
-    h('span', { class: 'spacer' }),
-    day === bToday() ? h('button', { class: 'btn primary', type: 'button', onclick: () => startPatrol(day, null) }, '+ Kontrol Başlat') : null, label);
+    h('span', { class: 'spacer' }), label,
+    day === bToday() ? h('button', { class: 'btn primary', type: 'button', onclick: () => startPatrol(day, null) }, '+ Kontrol Başlat') : null);
   const list = h('div', { class: 'cl-list bc-list' });
   const active = h('aside', { class: 'bc-side' });
   const wrap = h('div', { class: 'bc-wrap' }, list, active);

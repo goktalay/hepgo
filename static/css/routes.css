@@ -9,8 +9,9 @@ body.immersive .rt-layer { top: 76px; }
 body.immersive .rt-mapbtns, body.immersive .rt-tools, body.immersive .rt-nav { top: 80px; }
 /* Sekmeler: haritanın üstünde ortada küçük kapsül */
 .rt-nav { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 2px;
-  background: rgba(11, 18, 32, .72); padding: 3px; border-radius: 999px; backdrop-filter: blur(4px); white-space: nowrap; }
-.rt-nav a { color: #e6e9ef; text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; }
+  background: rgba(11, 18, 32, .72); padding: 3px; border-radius: 999px; backdrop-filter: blur(4px); white-space: nowrap;
+  max-width: calc(100% - 16px); overflow-x: auto; scrollbar-width: none; }
+.rt-nav a { flex: none; color: #e6e9ef; text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; }
 .rt-nav a:hover { background: rgba(255, 255, 255, .12); }
 .rt-nav a.on { background: var(--primary); color: #fff; }
 .rt-nav .rt-nav-back { padding: 5px 10px; font-size: 14px; }

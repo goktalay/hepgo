@@ -322,7 +322,8 @@ function dCevir(k){
   const renk = renkTablosu()[uid];
   return {
     sysid: k.gorunen, gercek_sysid: k.sysid,
-    baglanti: !!(b && b.online) && yas !== null && yas < 5,
+    // uydu veri kısıtı (link.rate_pm, dakikada güncelleme): kalp atışı seyrek gelir → 3 güncelleme aralığı tolerans
+    baglanti: !!(b && b.online) && yas !== null && yas < (f && f.link && f.link.rate_pm ? Math.max(5, 180 / f.link.rate_pm) : 5),
     armed: !!s.armed, mod: (s.mode === null || s.mode === undefined) ? "" : String(s.mode),
     arac_tipi: s.type, tip: s.type_name || "", otopilot: s.autopilot,
     isim: ad || s.type_name || ("SYS" + k.sysid), kullanici_isim: ad || undefined,
@@ -1313,8 +1314,14 @@ var CEVIR = {
       hwToast(hwT("Uçuşun bağlantısı seçilmemiş; görev › Uçuş Yönetimi › Düzenle › Bağlantı", "No link selected for this flight; task › Flight Management › Edit › Link"), "uyari", "KÖPRÜ");
       return;
     }
+    // Uydu veri kısıtı seçili ama köprü eski (veri_kisiti yeteneği yok): köprü kısıtı bilmez, SINIRSIZ akış başlatırdı → bağlanma
+    const kb = KOPRULER[String(f.bridge_id)];
+    if (f.link.rate_pm && kb && !(kb.caps || []).includes("veri_kisiti")){
+      hwToast(hwT("Bu uçuşta uydu veri kısıtı seçili ama köprü eski sürüm; kısıt uygulanamaz. Köprüyü güncelleyin (Linux/Jetson 1.1.7+): ", "Satellite data limit is set but the bridge is outdated and cannot apply it. Update the bridge (Linux/Jetson 1.1.7+): ") + ucusKopruAdi(f), "uyari", "KÖPRÜ");
+      return;
+    }
     const params = {type: f.link.type};
-    ["host", "port", "serial", "baud"].forEach(k => { if (hwVar(f.link[k]) && f.link[k] !== "") params[k] = f.link[k]; });
+    ["host", "port", "serial", "baud", "rate_pm"].forEach(k => { if (hwVar(f.link[k]) && f.link[k] !== "") params[k] = f.link[k]; });   // rate_pm: uydu veri kısıtı (köprü 1.1.7+)
     if (hwVar(f.sysid)) params.sysid = Number(f.sysid);
     const sysid = hwVar(f.sysid) ? Number(f.sysid) : 1;
     const rid = cmdKopruye(f.bridge_id, sysid, sysid, "link_open", params, "link_open", {flight_id: f.id, etiket: ucusEtiket(f)});

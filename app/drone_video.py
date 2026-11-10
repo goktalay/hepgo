@@ -68,6 +68,8 @@ class CamStream:
         self.off_task = None      # LINGER sonrası want:false
         self.next_fts = None      # köprünün bildirdiği sonraki parçanın çıkış anı (sunucu saati, ms)
         self.snap = None          # bekleyen anlık görüntü Future'ı
+        self.snap_jpg = None      # son anlık görüntü (uydu video kısıtında aralık dolmadan tekrar verilir)
+        self.snap_at = 0.0
 
     def summary(self):
         return {'state': self.state, 'detail': self.detail, 'stat': self.stat, 'mime': self.mime, 'viewers': len(self.viewers),
@@ -417,10 +419,41 @@ def can_edit(user):
     return 'drone.cameras' in (user.get('write_modules') or [])
 
 
+def _with_conn(fn, *a):
+    with db.connect() as conn:
+        return fn(conn, *a)
+
+
 def _camera_row(cam_id):
     with db.connect() as conn:
         return db.row(conn.execute(f'SELECT c.id, c.name, {EFF_BRIDGE} AS bridge_id, c.drone_id, c.active, c.kind, c.codec, c.fps FROM drone_cameras c WHERE c.id = ?',
                                    (cam_id,)))
+
+
+def video_limit(conn, cam_id):
+    """Uydu / ücretli hat video kısıtı: kameranın etkin köprüsünü kullanan AÇIK görevdeki uçuşların link.video_pm değerlerinin
+    en sıkısı (dakikada kare). 0 = sınırsız (canlı yayın serbest)."""
+    bid = effective_bridge(conn, cam_id)
+    if bid is None:
+        return 0
+    lim = 0
+    for (txt,) in conn.execute("""SELECT f.link FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
+                                  WHERE f.bridge_id = ? AND t.status IN ('BASLANGIC', 'GOREVDE') AND f.link IS NOT NULL""", (bid,)):
+        try:
+            v = int((json.loads(txt) or {}).get('video_pm') or 0)
+        except (ValueError, TypeError, AttributeError):
+            v = 0
+        if v > 0:
+            lim = v if not lim else min(lim, v)
+    return lim
+
+
+def snap_cached(cam_id, limit_pm):
+    """Kısıtlı kamerada aralık dolmadıysa son kare (yoksa None): birden çok izleyici uydudan fazladan kare çekmez."""
+    st = STREAMS.get(cam_id)
+    if not limit_pm or st is None or st.snap_jpg is None:
+        return None
+    return st.snap_jpg if time.time() - st.snap_at < 60.0 / limit_pm else None
 
 
 def effective_bridge(conn, cam_id):
@@ -492,6 +525,11 @@ async def ws_video_watch(ws: WebSocket):
         await _send(ws, {'t': 'error', 'error': 'Kamera bulunamadı ya da pasif'})
         await ws.close(code=4404)
         return
+    limit = await asyncio.to_thread(lambda: _with_conn(video_limit, cam_id))
+    if limit:   # uydu video kısıtı: canlı yayın yok; istemci dakikada N kare anlık görüntüye geçer
+        await _send(ws, {'t': 'error', 'error': f'Bu uçuşta video dakikada {limit} kare ile sınırlı (uydu veri kısıtı)', 'limit_pm': limit})
+        await ws.close(code=4430)
+        return
     st = stream(cam_id)
     if len(st.viewers) >= VIEWERS_PER_CAM:
         await _send(ws, {'t': 'error', 'error': 'Bu kamerayı izleyen kişi sayısı sınırda; biraz sonra deneyin'})
@@ -537,7 +575,7 @@ async def ws_video_watch(ws: WebSocket):
 
 
 # ---------------- JPEG anlık görüntü (REST: routers/drone.py) ----------------
-async def snapshot(cam_id, bridge_id):
+async def snapshot(cam_id, bridge_id, small=False):
     """Köprüden tek JPEG ister (yayın gerekmez). Hata: RuntimeError (çevrim dışı / zaman aşımı / köprü hatası)."""
     vb = VBRIDGES.get(bridge_id)
     if vb is None or cam_id not in vb.cams:
@@ -547,11 +585,13 @@ async def snapshot(cam_id, bridge_id):
         fut = st.snap   # aynı anda gelen istekler tek isteği paylaşır
     else:
         fut = st.snap = asyncio.get_running_loop().create_future()
-        await _send(vb.ws, {'t': 'snap', 'camera_id': cam_id, 'rid': secrets.token_hex(6)})
+        await _send(vb.ws, {'t': 'snap', 'camera_id': cam_id, 'rid': secrets.token_hex(6), **({'small': 1} if small else {})})
     try:
-        return await asyncio.wait_for(asyncio.shield(fut), SNAP_TIMEOUT)
+        jpg = await asyncio.wait_for(asyncio.shield(fut), SNAP_TIMEOUT)
     except asyncio.TimeoutError:
         raise RuntimeError('Anlık görüntü zaman aşımı (köprü yanıt vermedi)')
+    st.snap_jpg, st.snap_at = jpg, time.time()
+    return jpg
 
 
 def snapshot_all():

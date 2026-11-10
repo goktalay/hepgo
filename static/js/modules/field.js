@@ -35,9 +35,22 @@ const PROTOCOL_TEXT = { mavlink: 'MAVLink', sanal: 'Sanal Dron', dji: 'DJI' };
 const LINK_TYPES = [['serial', 'Seri'], ['tcp', 'TCP'], ['udp', 'UDP']];
 const LINK_DEFAULT_PORT = { tcp: 5760, udp: 14550 };
 const BAUDS = [57600, 115200, 921600, 38400, 19200, 9600];
+// Uydu / ücretli hat (TCP-UDP) veri kısıtı: link.rate_pm = dakikadaki telemetri güncellemesi (0 = sınırsız),
+// link.video_pm = dakikadaki görüntü karesi (0 = sınırsız canlı). Tahmini saatlik veri (MB) ve Certus ~5 $/MB ile maliyet.
+const RATE_OPTS = [[0, 'Sınırsız'], [30, 'Dakikada 30'], [10, 'Dakikada 10'], [5, 'Dakikada 5'], [1, 'Dakikada 1']];
+const VIDEO_OPTS = [[0, 'Sınırsız (canlı)'], [6, 'Dakikada 6 kare'], [2, 'Dakikada 2 kare'], [1, 'Dakikada 1 kare']];
+const USD_PER_MB = 5;
+const rateMbH = pm => (pm ? pm * 60 * 400 / 1e6 : 12);         // SITL ölçümü: dakikada 10 → 0,24 MB/sa (güncelleme ~400 B), sınırsız ≈ 12 MB/sa
+const videoMbH = pm => (pm ? pm * 60 * 12000 / 1e6 : 450);     // küçük JPEG ~12 KB; canlı ~1 Mbit/sn ≈ 450 MB/sa
+const costText = (rpm, vpm) => {
+  const t = rateMbH(rpm), v = videoMbH(vpm), f = n => (n >= 10 ? Math.round(n).toLocaleString('tr') : n.toFixed(n >= 1 ? 1 : 2).replace('.', ','));
+  return tr('Tahmini (uydu, ~{usd} $/MB): telemetri {t} MB/sa (~{tc} $), görüntü yalnız izlenirken {v} MB/sa (~{vc} $). Komutlar her zaman anında gider.',
+    { usd: USD_PER_MB, t: f(t), tc: f(t * USD_PER_MB), v: f(v), vc: f(v * USD_PER_MB) });
+};
 const isVirtual = f => (f.protocol || f.drone_protocol) === 'sanal';   // sanal dron: sunucu içi simülatör, köprü gerekmez
 // Bağlantı özeti: "UDP 14550" · "TCP 5760" · "Seri /dev/ttyUSB0 @57600"
-const linkText = l => (!l?.type ? '' : l.type === 'serial' ? `Seri ${l.serial || '?'} @${l.baud || '?'}` : `${String(l.type).toUpperCase()} ${l.port || '?'}`);
+const linkText = l => (!l?.type ? '' : l.type === 'serial' ? `Seri ${l.serial || '?'} @${l.baud || '?'}`
+  : `${String(l.type).toUpperCase()} ${l.port || '?'}${l.rate_pm ? ` · ${l.rate_pm}/dk` : ''}${l.video_pm ? ` · ${l.video_pm} kare/dk` : ''}`);
 const tl = v => `${Number(v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
 const km = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('tr-TR')} km`);
 const isManager = ctx => ctx.user.roles.some(r => r === 'Sistem Yöneticisi' || r === 'Saha Sorumlusu');
@@ -461,11 +474,23 @@ async function renderTask(view, id, ctx) {
     const serialIn = h('input', { class: 'input mono', value: f.link?.serial || '', placeholder: '/dev/ttyUSB0 ya da COM3', disabled: !can });
     const baudSel = h('select', { class: 'input', disabled: !can }, BAUDS.map(b => h('option', { value: b, selected: b === Number(f.link?.baud || 57600) }, String(b))));
     const sysidIn = h('input', { class: 'input mono', type: 'number', min: '1', max: '255', value: f.sysid ?? '', placeholder: '1', disabled: !can, style: { maxWidth: '140px' } });
+    const rateSel = h('select', { class: 'input', disabled: !can }, RATE_OPTS.map(([v, l]) => h('option', { value: v, selected: v === Number(f.link?.rate_pm || 0) }, l)));
+    const videoSel = h('select', { class: 'input', disabled: !can }, VIDEO_OPTS.map(([v, l]) => h('option', { value: v, selected: v === Number(f.link?.video_pm || 0) }, l)));
+    const costNote = h('div', { class: 'small muted', style: { margin: '-4px 0 12px' } });
+    const drawCost = () => { costNote.textContent = costText(Number(rateSel.value), Number(videoSel.value)); };
+    rateSel.addEventListener('change', drawCost);
+    videoSel.addEventListener('change', drawCost);
     const linkFields = h('div');
-    const drawLinkFields = () => clear(linkFields,
-      linkType === 'serial' ? h('div', { class: 'row' }, field('Seri port', serialIn), field('Baud', baudSel))
-        : linkType ? h('div', { class: 'row' }, field('Sunucu / IP', hostIn), field('Port', portIn))
-          : h('div', { class: 'small muted', style: { marginBottom: '12px' } }, 'Bağlantı türünü seçin: Seri (USB telemetri), TCP ya da UDP (MAVLink akışı).'));
+    const drawLinkFields = () => {
+      drawCost();
+      clear(linkFields,
+        linkType === 'serial' ? h('div', { class: 'row' }, field('Seri port', serialIn), field('Baud', baudSel))
+          : linkType ? [h('div', { class: 'row' }, field('Sunucu / IP', hostIn), field('Port', portIn)),
+            // Uydu modemi gibi ücretli hatlar: sürekli akan telemetri ve görüntü seyreltilir (köprü 1.1.7+)
+            h('div', { class: 'row' }, field('Veri kısıtı (telemetri)', rateSel, 'Konum, irtifa, hız, yön, batarya ve uçuş kipi bu sıklıkla gelir.'),
+              field('Video', videoSel, 'Sınırlıysa canlı yayın yerine belirli aralıkla tek kare.')), costNote]
+            : h('div', { class: 'small muted', style: { marginBottom: '12px' } }, 'Bağlantı türünü seçin: Seri (USB telemetri), TCP ya da UDP (MAVLink akışı).'));
+    };
     const typeSeg = segmented(LINK_TYPES, linkType, v => {
       linkType = v;
       if (!portIn.value && LINK_DEFAULT_PORT[v]) portIn.value = LINK_DEFAULT_PORT[v];   // tür seçilince port boşsa yaygın varsayılan
@@ -522,7 +547,8 @@ async function renderTask(view, id, ctx) {
       const port = Number(portIn.value);
       if (!hostIn.value.trim()) fail('Sunucu adresi / IP girin');
       if (!Number.isInteger(port) || port < 1 || port > 65535) fail('Port 1–65535 arası olmalı');
-      return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port } };
+      const rate = Number(rateSel.value), video = Number(videoSel.value);
+      return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port, ...(rate ? { rate_pm: rate } : {}), ...(video ? { video_pm: video } : {}) } };
     };
     const file = h('input', { class: 'input', type: 'file', accept: FLIGHT_LOG_ACCEPT, style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();

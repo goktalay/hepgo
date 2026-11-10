@@ -34,6 +34,8 @@ EXPENSE_CATEGORIES = ['Yakıt', 'Konaklama', 'Yemek', 'Ulaşım / otoyol', 'Malz
 FINISHED = ('GOREV_TAMAMLANDI', 'BASARISIZ')
 OPEN = ('BASLANGIC', 'GOREVDE')                 # açık görev: uçak eklenir/kaldırılır, canlı uçuş yapılır
 LINK_TYPES = ('serial', 'tcp', 'udp')           # uçuşun köprü → dron yerel bağlantı türü (field_flights.link.type)
+LINK_RATES = (0, 30, 10, 5, 1)    # link.rate_pm: dakikada telemetri güncellemesi (0 = sınırsız)
+LINK_VIDEO = (0, 6, 2, 1)         # link.video_pm: dakikada görüntü karesi (0 = sınırsız canlı)
 
 
 class TaskIn(BaseModel):
@@ -548,6 +550,13 @@ def _check_link(conn, body):
         if not host or not port or not 1 <= port <= 65535:
             raise HTTPException(400, 'TCP/UDP bağlantısı için sunucu adresi ve port (1…65535) gerekli')
         out.update(host=host, port=port)
+        # Uydu / ücretli hat veri kısıtı (köprü 1.1.7+): telemetri güncellemesi ve görüntü karesi / dakika; 0 ya da yok = sınırsız
+        for key, allowed, label in (('rate_pm', LINK_RATES, 'Veri kısıtı'), ('video_pm', LINK_VIDEO, 'Video kısıtı')):
+            v = _int(link.get(key)) if link.get(key) not in (None, '', 0, '0') else 0
+            if v not in allowed:
+                raise HTTPException(400, f'{label} şunlardan biri olmalı: sınırsız, ' + ', '.join(f'dakikada {x}' for x in allowed if x))
+            if v:
+                out[key] = v
     return json.dumps(out, ensure_ascii=False)
 
 

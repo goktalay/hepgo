@@ -780,11 +780,14 @@ async def camera_snapshot(cid: int, user=Depends(_view_user)):
     cam = await asyncio.to_thread(load)
     if not cam or not cam['active']:
         raise HTTPException(404, 'Kamera bulunamadı ya da pasif')
-    try:
-        jpg = await drone_video.snapshot(cid, cam['bridge_id'])
-    except RuntimeError as e:
-        raise HTTPException(503, str(e))
-    return Response(jpg, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+    limit = await asyncio.to_thread(lambda: drone_video._with_conn(drone_video.video_limit, cid))
+    jpg = drone_video.snap_cached(cid, limit)   # uydu video kısıtı: aralık dolmadan uydudan yeni kare çekilmez
+    if jpg is None:
+        try:
+            jpg = await drone_video.snapshot(cid, cam['bridge_id'], small=bool(limit))
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+    return Response(jpg, media_type='image/jpeg', headers={'Cache-Control': 'no-store', **({'X-Video-Limit': str(limit)} if limit else {})})
 
 
 @router.get('/camera-list')

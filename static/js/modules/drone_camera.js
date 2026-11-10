@@ -111,6 +111,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
     off: null, rtt: null, fts: null, fmap: [], fps: null, latency: null, latSrc: null, kbps: null, frames: 0 };   // ölçümler: tarayıcı FPS'i, köprü→ekran gecikmesi
   const listeners = new Set();
   let low = false, snapTimer = null, edgeTimer = null, retry = null, url = null, running = false, pingT = null, metT = null;
+  let limitPm = 0;   // uydu video kısıtı (sunucu 4430 ile bildirir): canlı yok, dakikada limitPm kare
 
   const MS = window.ManagedMediaSource || window.MediaSource;
   const setState = (state, detail = '') => {
@@ -195,7 +196,8 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
     video.hidden = low; snapImg.hidden = !low;
     if (low) {
       const pull = () => { const i = new Image(); i.onload = () => { snapImg.src = i.src; }; i.src = `/api/drone/cameras/${cameraId}/snapshot.jpg?t=${Date.now()}`; };
-      pull(); snapTimer = setInterval(pull, 2000);
+      pull(); snapTimer = setInterval(pull, limitPm ? 60000 / limitPm : 2000);
+      if (limitPm) showMsg(t('Uydu veri kısıtı: dakikada {n} kare', { n: limitPm }));
       if (!forced) closeWs();   // düşük bant: canlı akış kapatılır (köprü izleyici kalmayınca yayını durdurur)
     } else if (!forced) { showMsg(''); connect(); }
   }
@@ -223,7 +225,10 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
           }
           if (m.age != null) S.age = m.age;
         }
-        else if (m.t === 'error') { setState(m.error === 'auth' ? 'yetki' : 'hata', m.error === 'auth' ? '' : m.error); S.closed = m.error === 'auth'; }
+        else if (m.t === 'error' && m.limit_pm) {   // uydu video kısıtı: canlı yerine dakikada N kare (JPEG düğmesi kilitli)
+          limitPm = Number(m.limit_pm); lowBtn.disabled = true; lowBtn.title = t('Uydu veri kısıtı: dakikada {n} kare', { n: limitPm });
+          setState('canli', t('Dakikada {n} kare', { n: limitPm })); setLow(true, true);
+        } else if (m.t === 'error') { setState(m.error === 'auth' ? 'yetki' : 'hata', m.error === 'auth' ? '' : m.error); S.closed = m.error === 'auth'; }
         return;
       }
       const fr = splitFrame(ev.data);
@@ -244,7 +249,7 @@ export function createPlayer({ cameraId, hud = false, getTelemetry = null, drone
       clearTimeout(pingT);
       if (S.ws !== ws) return;
       S.ws = null;
-      if (S.closed || ev.code === 4403 || ev.code === 4404) { if (ev.code === 4404) setState('hata', 'Kamera bulunamadı ya da pasif'); return; }
+      if (S.closed || ev.code === 4403 || ev.code === 4404 || ev.code === 4430) { if (ev.code === 4404) setState('hata', 'Kamera bulunamadı ya da pasif'); return; }
       if (!running) return;
       setState('baglaniyor', 'Yeniden bağlanılıyor');
       retry = setTimeout(connect, 3000);

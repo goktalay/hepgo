@@ -25,8 +25,16 @@ import time
 from pathlib import Path
 
 APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
-VERSION = '1.1.0'
-CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear', 'mp_relay']
+VERSION = '1.1.1'
+CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear', 'mp_relay',
+        'veri_kisiti']
+# Uydu / ücretli hat veri kısıtı (link_open rate_pm = dakikada telemetri güncellemesi): otopilottan yalnız bu mesajlar bu
+# aralıkla istenir; drondan gelen diğer sürekli akışlar köprüde tutulup aralıkla tek seferde iletilir.
+LIMITED_MSGS = (33, 30, 1, 74, 24)   # GLOBAL_POSITION_INT, ATTITUDE, SYS_STATUS, VFR_HUD, GPS_RAW_INT
+LIMITED_OFF = (193, 241)             # EKF_STATUS_REPORT, VIBRATION: kısıtlı kipte kapatılır
+# Beklemeden iletilen (kullanıcı işleminin yanıtı / olay) mesajlar; HEARTBEAT ayrıca mod ya da kurulum değişince
+LIMITED_NOW = ('STATUSTEXT', 'COMMAND_ACK', 'HOME_POSITION', 'AUTOPILOT_VERSION', 'FILE_TRANSFER_PROTOCOL')
+LIMITED_NOW_PREFIX = ('MISSION_', 'PARAM_', 'LOG_')
 RAW_UP = 0x01                     # v1.4 sunucu → köprü ikili çerçeve türü: 0x01 + ham MAVLink (Mission Planner aktarımı)
 RAW_MAX = 4096                    # raw_up / yerel MP datagramı üst sınırı (MAVLink çerçevesi ≤ 280 bayt)
 RAW_PPS, RAW_BPS = 400, 256 * 1024   # drona yazılan MP trafiği hız sınırı (paket/sn, bayt/sn; aşan atılır)
@@ -67,7 +75,8 @@ def link_text(spec):
     t = spec.get('type')
     if t == 'serial':
         return f"serial:{spec.get('serial')}:{spec.get('baud') or 57600}"
-    return f"{t}:{spec.get('host') or '0.0.0.0'}:{spec.get('port') or (14550 if t == 'udp' else 5760)}"
+    rate = f" · {spec['rate_pm']}/dk" if spec.get('rate_pm') else ''
+    return f"{t}:{spec.get('host') or '0.0.0.0'}:{spec.get('port') or (14550 if t == 'udp' else 5760)}{rate}"
 
 
 # ======================================================================
@@ -99,6 +108,16 @@ class MavLink:
         self.errors = 0
         self.streams = set()   # veri akışı istenmiş sysid'ler
         self._wlock = threading.Lock()   # write_raw (MP baytları) seri yazımı bölünmesin
+        # Veri kısıtı (uydu): 0 = sınırsız. Aralık (sn) = 60 / rate_pm
+        try:
+            self.rate_pm = max(0, min(60, int(spec.get('rate_pm') or 0)))
+        except (TypeError, ValueError):
+            self.rate_pm = 0
+        self.every = 60.0 / self.rate_pm if self.rate_pm else 0.0
+        self.fs_gcs = None            # FS_GCS_ENABLE / FS_GCS_ENABL değeri (None = okunamadı → güvenli: sinyal 1 sn)
+        self._held = {}               # (src, tür) → son çerçeve (kısıtlı kipte aralıkla iletilir)
+        self._held_lock = threading.Lock()
+        self._last_mode = {}          # src → (base_mode, custom_mode): değişince HEARTBEAT beklemeden iletilir
 
     # ---- bağlantı ----
     def open(self):
@@ -122,6 +141,9 @@ class MavLink:
         self.running = True
         threading.Thread(target=self._read, daemon=True, name='mav-okuyucu').start()
         threading.Thread(target=self._gcs_heartbeat, daemon=True, name='mav-kalp').start()
+        if self.rate_pm:
+            self.log(f'Veri kısıtı: dakikada {self.rate_pm} güncelleme (her {self.every:g} sn)')
+            threading.Thread(target=self._flusher, daemon=True, name='mav-kisit').start()
 
     def close(self):
         self.running = False
@@ -146,7 +168,41 @@ class MavLink:
                 self.m.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
             except Exception:   # noqa: BLE001
                 pass
-            time.sleep(1)
+            # Kısıtlı kipte sinyal YALNIZ dronda yer istasyonu kopma güvenliği (FS_GCS) açıkça kapalıysa seyrelir; açıksa ya da
+            # okunamadıysa 1 sn (aksi hâlde otopilot bağlantı koptu sanıp eve dönüş başlatabilir)
+            wait = self.every if (self.rate_pm and self.fs_gcs == 0) else 1.0
+            end = time.time() + wait
+            while self.running and time.time() < end:
+                time.sleep(max(0.0, min(1.0, end - time.time())))
+
+    def _deliver(self, data):
+        try:
+            self.on_bytes(data)
+        except Exception:   # noqa: BLE001
+            pass
+
+    def _hold(self, msg, t, src):
+        """Kısıtlı kip: True → çerçeve tutuldu (aralıkla iletilecek); False → hemen ilet."""
+        if t in LIMITED_NOW or t.startswith(LIMITED_NOW_PREFIX):
+            return False
+        if t == 'HEARTBEAT':
+            key = (msg.base_mode, msg.custom_mode, msg.system_status)
+            if self._last_mode.get(src) != key:   # mod / kurulum / durum değişti: beklemeden
+                self._last_mode[src] = key
+                return False
+        with self._held_lock:
+            self._held[(src, t)] = bytes(msg.get_msgbuf())
+        return True
+
+    def _flusher(self):
+        while self.running:
+            end = time.time() + self.every
+            while self.running and time.time() < end:
+                time.sleep(min(0.5, max(0.0, end - time.time())))
+            with self._held_lock:
+                frames, self._held = list(self._held.values()), {}
+            if frames:
+                self._deliver(b''.join(frames))   # tek paket: uydu oturum / paket başı ücreti en aza
 
     def _read(self):
         while self.running:
@@ -177,15 +233,16 @@ class MavLink:
             elif t == 'GLOBAL_POSITION_INT' and src == self.target:
                 self.last_pos = (msg.lat, msg.lon, msg.relative_alt / 1000)
             elif t == 'PARAM_VALUE':
-                self.param_types[str(msg.param_id).rstrip('\x00')] = msg.param_type
+                pid = str(msg.param_id).rstrip('\x00')
+                self.param_types[pid] = msg.param_type
+                if pid in ('FS_GCS_ENABLE', 'FS_GCS_ENABL'):
+                    self.fs_gcs = int(msg.param_value)
             if src == 255:
                 continue   # kendi GCS kalp atışımızın yankısı
             self.rx += 1
             self.last_rx = time.time()
-            try:
-                self.on_bytes(bytes(msg.get_msgbuf()))
-            except Exception:   # noqa: BLE001
-                pass
+            if not (self.rate_pm and self._hold(msg, t, src)):
+                self._deliver(bytes(msg.get_msgbuf()))
             with self.wlock:
                 ws = list(self.waiters)
             for w in ws:
@@ -198,9 +255,19 @@ class MavLink:
         (SRx_*) sıfır olan otopilotlar istek gelmeden telemetri yaymaz."""
         self.streams.add(sysid)
         try:
-            self.m.mav.request_data_stream_send(sysid, comp, 0, 4, 1)   # MAV_DATA_STREAM_ALL
-            for mid, us in ((193, 500000), (241, 500000), (242, 5000000)):
-                self.m.mav.command_long_send(sysid, comp, 511, 0, mid, us, 0, 0, 0, 0, 0)   # MAV_CMD_SET_MESSAGE_INTERVAL
+            if self.rate_pm:   # uydu veri kısıtı: tüm akışlar durdurulur, yalnız temel telemetri seçilen aralıkla
+                us = int(self.every * 1e6)
+                self.m.mav.request_data_stream_send(sysid, comp, 0, 0, 0)   # MAV_DATA_STREAM_ALL durdur
+                for mid in LIMITED_MSGS:
+                    self.m.mav.command_long_send(sysid, comp, 511, 0, mid, us, 0, 0, 0, 0, 0)
+                for mid in LIMITED_OFF:
+                    self.m.mav.command_long_send(sysid, comp, 511, 0, mid, -1, 0, 0, 0, 0, 0)
+                for name in (b'FS_GCS_ENABLE', b'FS_GCS_ENABL'):   # Copter / Plane: yer istasyonu kopma güvenliği açık mı
+                    self.m.mav.param_request_read_send(sysid, comp, name, -1)
+            else:
+                self.m.mav.request_data_stream_send(sysid, comp, 0, 4, 1)   # MAV_DATA_STREAM_ALL
+                for mid, us in ((193, 500000), (241, 500000), (242, 5000000)):
+                    self.m.mav.command_long_send(sysid, comp, 511, 0, mid, us, 0, 0, 0, 0, 0)   # MAV_CMD_SET_MESSAGE_INTERVAL
             self.m.mav.command_long_send(sysid, comp, 512, 0, 242, 0, 0, 0, 0, 0, 0)       # MAV_CMD_REQUEST_MESSAGE (HOME)
         except Exception:   # noqa: BLE001
             self.streams.discard(sysid)

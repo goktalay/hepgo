@@ -88,7 +88,8 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              'mission_start', 'mission_clear', 'mission_pause', 'mission_resume', 'mission_cancel', 'mission_resume_at'}
 BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear',
                'video',   # v1.3: görüntü köprüsü (ayrı WebSocket /ws/drone/video; app/drone_video.py)   # köprünün bildirebileceği yetenekler
-               'mp_relay'}   # v1.4: Mission Planner aktarımı — sunucu → köprü ikili raw_up çerçevesi (0x01 + ham MAVLink; app/drone_mprelay.py)
+               'mp_relay',   # v1.4: Mission Planner aktarımı — sunucu → köprü ikili raw_up çerçevesi (0x01 + ham MAVLink; app/drone_mprelay.py)
+               'veri_kisiti'}   # v1.5: uydu veri kısıtı — link_open rate_pm (dakikada telemetri güncellemesi; köprü 1.1.7+ / çekirdek 1.1.1)
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 # Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'

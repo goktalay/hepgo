@@ -422,6 +422,32 @@ def main():
         assert ok(a.get(f"/api/field/tasks/{t['id']}"))['flights'][0]['link'] == {'type': 'serial', 'serial': 'COM5', 'baud': 57600}
         ok(put({'launch': 'RAMPA', 'bridge_id': b['id'], 'sysid': 7, 'link': {'type': 'udp', 'host': '0.0.0.0', 'port': 14550}}))
         assert ok(a.get('/api/drone/bridges'))[0]['flight_count'] == 1
+        # uydu veri kısıtı (link.rate_pm / video_pm): yalnız izin verilen değerler; 0 = sınırsız (saklanmaz)
+        sat = {'type': 'tcp', 'host': '10.0.0.5', 'port': 5760}
+        assert put({'bridge_id': b['id'], 'sysid': 7, 'link': {**sat, 'rate_pm': 7}}).status_code == 400
+        assert put({'bridge_id': b['id'], 'sysid': 7, 'link': {**sat, 'video_pm': 30}}).status_code == 400
+        ok(put({'launch': 'RAMPA', 'bridge_id': b['id'], 'sysid': 7, 'link': {**sat, 'rate_pm': '10', 'video_pm': 2}}))
+        assert ok(a.get(f"/api/field/tasks/{t['id']}"))['flights'][0]['link'] == {**sat, 'rate_pm': 10, 'video_pm': 2}
+        from app import drone_video
+        with db.connect() as conn:   # video kısıtı: köprüyü kullanan açık görevdeki uçuşun video_pm'i (kamera bu köprüde)
+            cid = conn.execute("INSERT INTO drone_cameras (name, bridge_id, kind, url, active, created_at) VALUES ('Uydu kam', ?, 'rtsp', 'rtsp://10.0.0.9/a', 1, ?)",
+                               (b['id'], db.now())).lastrowid
+            conn.commit()
+            assert drone_video.video_limit(conn, cid) == 2
+        st = drone_video.stream(cid)   # aralık (30 sn) dolmadan son kare önbellekten: uydudan yeni kare çekilmez
+        st.snap_jpg, st.snap_at = b'\xff\xd8kare\xff\xd9', time.time()
+        r = a.get(f'/api/drone/cameras/{cid}/snapshot.jpg')
+        assert r.status_code == 200 and r.content == st.snap_jpg and r.headers['x-video-limit'] == '2', (r.status_code, r.text[:200])
+        st.snap_at = time.time() - 31   # aralık doldu: köprüden yeni kare istenir (köprü çevrim dışı → 503)
+        assert a.get(f'/api/drone/cameras/{cid}/snapshot.jpg').status_code == 503
+        with a.websocket_connect(f'/ws/drone/video/watch?camera_id={cid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as w:
+            m = json.loads(w.receive_text())
+            assert m['t'] == 'error' and m['limit_pm'] == 2, m   # canlı yok: istemci dakikada 2 kareye geçer
+        ok(put({'launch': 'RAMPA', 'bridge_id': b['id'], 'sysid': 7, 'link': {'type': 'udp', 'host': '0.0.0.0', 'port': 14550}}))
+        with db.connect() as conn:
+            assert drone_video.video_limit(conn, cid) == 0   # kısıt kalkınca canlı serbest
+            conn.execute('DELETE FROM drone_cameras WHERE id = ?', (cid,))
+            conn.commit()
 
         # --- Faz 1: görev bağlamı REST (live) ---
         lv = ok(a.get(f"/api/field/tasks/{t['id']}/live"))

@@ -213,7 +213,7 @@ def _mav_hb(sysid=255, comp=190, tip=6):
 
 def mp_tests(tmp):
     import kopru_core as kc
-    assert kc.VERSION == '1.1.0' and 'mp_relay' in kc.CAPS and hk.LINUX_VERSION == '1.1.6'
+    assert kc.VERSION == '1.1.1' and {'mp_relay', 'veri_kisiti'} <= set(kc.CAPS) and hk.LINUX_VERSION == '1.1.7'
     # ayrıştırma
     assert kc.parse_mp_udp('0.0.0.0:14550') == ('dinle', '0.0.0.0', 14550)
     assert kc.parse_mp_udp('192.168.1.50:14550') == ('gonder', '192.168.1.50', 14550)

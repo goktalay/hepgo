@@ -672,11 +672,12 @@ class CameraWorker:
             raise RuntimeError(redact(err.decode('utf-8', 'replace').strip().splitlines()[-1] if err.strip() else 'JPEG üretilemedi')[:200])
         return jpg
 
-    async def snapshot(self):
+    async def snapshot(self, small=False):
         """JPEG: yayın açıksa önbellekteki init + son anahtar parçadan (kaynağa ikinci bağlantı yok — RTP portu meşgul olsa da çalışır),
-        değilse kaynaktan tek kare."""
+        değilse kaynaktan tek kare. small: uydu video kısıtı — 480 px, düşük kalite (~10-15 KB)."""
         ff = self.tools.ffmpeg
-        out = ['-frames:v', '1', '-vf', "scale='min(1280,iw)':-2", '-q:v', '5', '-f', 'image2', '-c:v', 'mjpeg', 'pipe:1']
+        w, q = (480, '10') if small else (1280, '5')
+        out = ['-frames:v', '1', '-vf', f"scale='min({w},iw)':-2", '-q:v', q, '-f', 'image2', '-c:v', 'mjpeg', 'pipe:1']
         sdp_path = None
         try:
             if self.running() and self.init and self.last_key:
@@ -830,12 +831,12 @@ class VideoBridge:
             if w and not self.always:
                 await w.stop()
 
-    async def snap(self, cid, rid=None):
+    async def snap(self, cid, rid=None, small=False):
         w = self.workers.get(cid)
         try:
             if w is None:
                 raise RuntimeError('Kamera bu köprüde tanımlı değil')
-            jpg = await w.snapshot()
+            jpg = await w.snapshot(small)
             if self.ws is not None:
                 await self.ws.send(bytes([T_JPEG]) + struct.pack('>I', cid) + jpg)
         except Exception as e:   # noqa: BLE001
@@ -945,7 +946,7 @@ class VideoBridge:
             elif t == 'want':
                 await self.want(cid, bool(m.get('on')))
             elif t == 'snap':
-                asyncio.ensure_future(self.snap(cid, m.get('rid')))
+                asyncio.ensure_future(self.snap(cid, m.get('rid'), bool(m.get('small'))))
 
 
 class _Fatal(Exception):

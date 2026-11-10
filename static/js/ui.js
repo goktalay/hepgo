@@ -320,15 +320,19 @@ export function pageHead(title, { back, sub, right, tabs } = {}) {
     right || null);
 }
 
-// Alt-modüle ait eylem düğmeleri için başlığın hemen altında ayrı toolbar. Hiza kullanıcı ayarından (sol/orta/sağ, varsayılan orta).
-// İşlem düğmeleri ve görünüm seçicileri (.btn/.seg/.icon-btn) baloncuk (pill-group) içinde toplanır; arama/filtre girişleri (input/select) baloncuk dışında aynı satırda kalır.
-// Kullanım: clear(view, pageHead(...), moduleToolbar(btn1, btn2, ...), body). Düğüm yoksa görünmez.
+// Alt-modüle ait araç çubuğu: başlığın (ve varsa özet şeridinin) altında, filtre satırıyla (.filters) AYNI kutu.
+// Arama/filtre girişleri solda, görünüm seçici (.seg) ve eylem düğmeleri sağda durur (CSS: .module-toolbar.filters);
+// yalnız düğme varsa hiza kullanıcı ayarından (sol/orta/sağ, varsayılan sağ). Eylem düğmeleri (.btn/.icon-btn) baloncukta (pill-group) toplanır.
+// İçinde alt çizgili sekme (.seg-tabs) varsa kutu değil, ikinci düzey sekme çubuğudur (.module-tabs görünümü).
+// Kullanım: clear(view, pageHead(...), statStrip, moduleToolbar(arama, btn1, btn2, ...), body). Düğüm yoksa görünmez.
 export function moduleToolbar(...items) {
   const kids = items.flat().filter(Boolean);
   if (!kids.length) return null;
-  const bar = h('div', { class: 'module-toolbar' });
-  // Yalnızca EYLEM düğmeleri (.btn/.icon-btn) baloncukta gruplanır; görünüm seçiciler (.seg) ve arama/filtre girişleri kendi başına kalır.
-  const isBtn = el => el.classList && (el.classList.contains('btn') || el.classList.contains('icon-btn')) && !el.classList.contains('back');
+  const tabs = kids.some(el => el.classList && el.classList.contains('seg-tabs'));
+  const bar = h('div', { class: tabs ? 'module-toolbar module-tabs' : 'module-toolbar filters' });
+  // Yalnızca EYLEM düğmeleri (.btn/.icon-btn ve açılır menülü düğme sarmalayıcıları) eylem kümesinde gruplanır; görünüm seçiciler (.seg) ve arama/filtre girişleri kendi başına kalır.
+  const isBtn = el => el.classList && !el.classList.contains('back') && (el.classList.contains('btn') || el.classList.contains('icon-btn')
+    || ((el.classList.contains('menu-anchor') || el.classList.contains('new-wrap')) && !!el.querySelector(':scope > .btn')));
   let group = null;
   for (const el of kids) {
     if (isBtn(el)) {
@@ -341,8 +345,8 @@ export function moduleToolbar(...items) {
 
 // Toolbar hizasını (kişisel ayar) belge köküne uygula; CSS justify-content'i buradan okur.
 export function applyToolbarAlign(v) {
-  const al = v || pref('toolbarAlign', 'center');
-  document.documentElement.dataset.toolbarAlign = ['left', 'center', 'right'].includes(al) ? al : 'center';
+  const al = v || pref('toolbarAlign', 'right');
+  document.documentElement.dataset.toolbarAlign = ['left', 'center', 'right'].includes(al) ? al : 'right';
 }
 
 // Görünüm tercihlerini (kart/liste vb.) tarayıcıda hatırla.

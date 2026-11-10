@@ -10,7 +10,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 export async function render(view, params, ctx) {
   const reloadRef = { fn: null };
   const catBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => openCatalog(() => reloadRef.fn && reloadRef.fn()) }, '🏷️ Ürünler');
-  clear(view, pageHead('Esnaf Kasa', { right: catBtn }));
+  clear(view, pageHead('Esnaf Kasa', { back: '#/', right: catBtn }));
   const wrap = h('div', { class: 'pos-wrap' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
   view.append(wrap);
 

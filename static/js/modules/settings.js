@@ -1,7 +1,7 @@
 // Ayarlar (kullanıcı menüsü): kişisel tercihler. Sunucuda kullanıcıya bağlı saklanır (users.prefs.settings) ve her cihazda
 // aynı uygulanır. Bölümler: Arayüz, Bildirimler, Sesler, Gizlilik, Pano, Hesap. Değişiklik anında uygulanır ve kaydedilir.
 import { api, getUploadCfg, setUploadCfg } from '../api.js';
-import { applySettings, deviceNotify, setDeviceNotify } from '../prefs.js';
+import { applySettings, deviceNotify, setDeviceNotify, toolbarAlignOf } from '../prefs.js';
 import { ANIMATIONS, createAnimPreview, showScreensaver } from '../screensaver.js';
 import { DEFAULTS, EVENTS, SOUND_NAMES, playSound } from '../sounds.js';
 import { segIconByKey } from '../segicons.js';
@@ -101,7 +101,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     dnd: { calls: false, messages: false, until: null, dur: 'always', ...(cur.dnd || {}) },   // dur: always | 1 | 2 | 4 | today | offhours
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
-    toolbarAlign: cur.toolbarAlign || 'center',
+    toolbarAlign: toolbarAlignOf(cur),
+    toolbarAlignSet: !!cur.toolbarAlignSet,   // hiza yeni düzende açıkça seçildi mi (eski örtük 'center' varsayılan sayılır)
     textCase: ['title', 'upper', 'lower'].includes(cur.textCase) ? cur.textCase : 'original',
     feedView: cur.feedView === 'map' ? 'map' : 'feed',
     feedFullMobile: !!cur.feedFullMobile,
@@ -114,7 +115,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   const save = (msg = 'Ayarlar kaydedildi') => {
     applySettings(s);
     try {   // giriş ekranı da aynı açılsın diye cihazda yansıt (tema/boyut gibi)
-      localStorage.setItem('caymaz.toolbarAlign', s.toolbarAlign || 'center');
+      localStorage.setItem('caymaz.toolbarAlign2', s.toolbarAlign || 'right');
       localStorage.setItem('caymaz.uiColors', JSON.stringify(s.colors || {}));
       localStorage.setItem('caymaz.uiBg', s.background || '');
     } catch { /* gizli pencere */ }
@@ -150,7 +151,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     s.textCase, v => { s.textCase = v; save('Metin biçimi güncellendi'); });
 
   // ---------- Görünüm & Renkler (MERKEZİ: üst bar, alt bar, footer, zemin — aktif temaya göre; modül içeriğine dokunulmaz)
-  const alignSeg = segmented([['left', 'Sol'], ['center', 'Orta'], ['right', 'Sağ']], s.toolbarAlign || 'center', v => { s.toolbarAlign = v; save(); });
+  const alignSeg = segmented([['left', 'Sol'], ['center', 'Orta'], ['right', 'Sağ']], s.toolbarAlign || 'right', v => { s.toolbarAlign = v; s.toolbarAlignSet = true; save(); });
   const themeKeyNow = () => (s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) ? 'dark' : 'light';
   const DEFAULT_COLORS = {
     light: { header: '#edf0f5', band: '#f1f3f7', footer: '#ffffff', bg: '#f8f9fb', accent: '#1d4f91' },

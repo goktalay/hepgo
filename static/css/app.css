@@ -247,10 +247,10 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 /* Sağdan-sola (Arapça): banttaki seçici ve geri oku yönü */
 html[dir="rtl"] .page-head > .seg.seg-tabs { margin-left: 0; margin-right: auto; }
 html[dir="rtl"] .back { transform: scaleX(-1); }
-/* Alt-modüle ait eylem düğmeleri: başlığın altında ayrı toolbar; hiza kişisel ayardan (varsayılan orta) */
-.module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; justify-content: center; }
+/* Alt-modüle ait araç çubuğu: başlığın altında; hiza kişisel ayardan (varsayılan sağ). Kutu görünümü ve giriş/eylem yerleşimi: dosya sonu "Tasarım bütünlüğü" */
+.module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; justify-content: flex-end; }
 html[data-toolbar-align="left"] .module-toolbar { justify-content: flex-start; }
-html[data-toolbar-align="right"] .module-toolbar { justify-content: flex-end; }
+html[data-toolbar-align="center"] .module-toolbar { justify-content: center; }
 
 /* ---- Gövde (orta alan) arka plan desenleri — Görünüm ayarı; hafif, okunurluğu bozmaz ----
    Desen içeriğin ve opak barların (üst bar, başlık bandı, footer) ARKASINDA (z-index:-1); yalnız kart boşluklarından görünür. */
@@ -1098,7 +1098,8 @@ main#view.tone-red .card { border-color: #f1d9d6; }
 .stat.muted .v { color: var(--muted); }
 /* Sol büyük ikonlu kart: ikon solda, değer/etiket sağda dikey */
 .stat.has-ic { flex-direction: row; align-items: center; gap: 12px; }
-.stat.has-ic .stat-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.stat-main { display: flex; flex-direction: column; min-width: 0; }   /* ikonsuz kartta da değer üstte, etiket altta */
+.stat.has-ic .stat-main { flex: 1; }
 .stat-ic { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px;
   background: var(--primary-soft, rgba(37,99,235,.1)); color: var(--primary); }
 .stat-ic svg { width: 26px; height: 26px; }
@@ -10330,3 +10331,117 @@ body:has(.fs-stage) .flash-stack, body:has(.fs-stage) .mascot, body:has(.fs-stag
 .rp-grouped .rp-grp-item td:first-child { padding-left: 26px; }
 .print-area .rp-grouped .rp-grp { break-inside: avoid; break-after: avoid; }
 .print-area .rp-grouped .rp-grp td { background: #eef1f6; border-top: 1.2pt solid #555; }
+
+/* ---------- Veri tabloları: sütun başlığından sıralama + filtre (datatable.js) ---------- */
+table.dt-on th.dt-th { cursor: pointer; user-select: none; -webkit-user-select: none; }
+table.dt-on th.dt-th:hover { color: var(--text); }
+table.dt-on th.dt-th[aria-sort] { color: var(--primary); }
+.dt-s, .dt-f { display: none; }
+table.dt-on th.dt-th[aria-sort] > .dt-s { display: inline-block; margin-inline-start: 4px; font-size: 8px; line-height: 1; vertical-align: 1px; }
+table.dt-on th.dt-th[aria-sort="ascending"] > .dt-s::after { content: '▲'; }
+table.dt-on th.dt-th[aria-sort="descending"] > .dt-s::after { content: '▼'; }
+/* Huni, başlığın sağ iç boşluğuna taşar: sütunları genişletmez */
+table.dt-on th.dt-th > .dt-f {
+  display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 16px; margin: -3px 0; margin-inline-end: -12px;
+  padding: 0; border: 0; border-radius: 3px; background: none; color: inherit; opacity: 0; cursor: pointer; vertical-align: middle; transition: opacity .12s;
+}
+table.dt-on th.dt-th:last-child > .dt-f { margin-inline-end: 0; margin-inline-start: 2px; }
+table.dt-on th.dt-th:hover > .dt-f, table.dt-on th.dt-th > .dt-f:focus-visible { opacity: .55; }
+table.dt-on th.dt-th > .dt-f:hover, table.dt-on th.dt-th > .dt-f.open { opacity: 1; color: var(--primary); }
+table.dt-on th.dt-th > .dt-f.on { opacity: 1; color: var(--primary); }
+@media (hover: none) { table.dt-on th.dt-th > .dt-f { opacity: .4; } }
+tr.dt-hide { display: none !important; }
+tfoot.dt-stale, tr.dt-stale { opacity: .45; }
+caption.dt-cap { caption-side: top; text-align: start; padding: 0; background: var(--primary-soft); border-bottom: 1px solid var(--border); }
+.dt-cap-in { position: sticky; inset-inline-start: 0; display: inline-flex; align-items: center; gap: 12px; padding: 6px 12px; font-size: 12px; color: var(--primary); white-space: nowrap; }
+.dt-cap-in button { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.dt-pop {
+  position: fixed; z-index: 12000; width: 264px; max-width: calc(100vw - 16px); display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg); font-size: 13px;
+}
+.dt-pop-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-pop-sort { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dt-pop-sort button, .dt-pop-foot button {
+  height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.dt-pop-sort button:hover, .dt-pop-foot button:hover { background: var(--surface-2); }
+.dt-pop-sort button.on, .dt-pop-foot .dt-pop-ok { background: var(--primary); border-color: var(--primary); color: #fff; }
+.dt-pop input[type=search], .dt-pop-range input {
+  width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; min-width: 0;
+}
+.dt-pop input[type=search]:focus, .dt-pop-range input:focus { outline: 2px solid var(--primary-soft); border-color: var(--primary); }
+.dt-pop-range { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dt-pop-range label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); min-width: 0; }
+.dt-pop-list { flex: 1 1 auto; min-height: 56px; max-height: 232px; overflow: auto; margin: 0 -4px; border-top: 1px solid var(--border); padding-top: 4px; }
+.dt-pop-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.dt-pop-i:hover { background: var(--surface-2); }
+.dt-pop-i input { flex: none; margin: 0; width: 15px; height: 15px; accent-color: var(--primary); }
+.dt-pop-all { margin: 0 -4px -4px; font-weight: 600; }
+.dt-pop-v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-pop-c { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dt-pop-more { padding: 4px 6px; font-size: 11px; color: var(--muted); }
+.dt-pop-foot { display: flex; justify-content: space-between; gap: 6px; }
+@media print { .dt-f, .dt-s, caption.dt-cap, .dt-pop { display: none !important; } }
+
+/* =====================================================================================================================
+   Tasarım bütünlüğü — ortak sayfa iskeleti. Her modül aynı sırayı ve aynı bileşen dilini kullanır:
+     [başlık bandı: ← başlık / alt başlık … kapsül sekmeler · seçici · eylem]
+     [ikinci düzey sekmeler: sola yaslı, alt çizgili, tam genişlik]
+     [özet şeridi (.stat-strip)]
+     [araç çubuğu kutusu (.filters): solda arama / filtreler … sağda görünüm seçici + eylemler]
+     [içerik: kart / tablo]
+   Dil: gezinme ve araç çubuğu denetimleri KAPSÜL (999px); form, kart ve pencere içi denetimler 8px köşeli.
+   ===================================================================================================================== */
+
+/* --- Araç çubuğu = filtre kutusu (ui.js moduleToolbar → .module-toolbar.filters) --- */
+.module-toolbar.filters { margin: 0 0 16px; gap: 10px; }
+/* Arama / filtre girişi varsa: girişler solda, eylem baloncuğu sağda (hiza ayarı yalnız düğmelerden oluşan çubukta geçerlidir) */
+.module-toolbar.filters:has(> .input, > select, > input, > label:not(.btn), > .field, > .seg-pick, > .period-filter) { justify-content: flex-start; }
+.module-toolbar.filters:has(> .input, > select, > input, > label:not(.btn), > .field, > .seg-pick, > .period-filter) > .pill-group { order: 6; margin-left: auto; }
+.module-toolbar.filters > .pill-group ~ .pill-group { margin-left: 0 !important; }
+html[dir="rtl"] .module-toolbar.filters:has(> .input, > select, > input, > label:not(.btn), > .field, > .seg-pick, > .period-filter) > .pill-group { margin-left: 0; margin-right: auto; }
+/* İkinci düzey sekme çubuğu (toolbar içinde .seg-tabs): kutu değil; sola yaslı, alt çizgi tam genişlik; yanındaki eylemler sağda */
+.module-toolbar.module-tabs { justify-content: flex-start; flex-wrap: nowrap; align-items: flex-end; margin: 4px 0 16px; }
+.module-tabs > .seg.seg-tabs { display: flex; flex: 1 1 auto; }
+.module-toolbar.module-tabs > :not(.seg-tabs) { flex: none; align-self: center; }
+
+/* --- Araç satırı denetimleri: kapsül, ortak yükseklik (38px) — sarmalanmış seçiciler dahil --- */
+.filters .input:not(textarea), .filters select, .filters input[type="search"] { border-radius: 999px; }
+.filters > .input:not(textarea), .filters > select, .filters > label > .input:not(textarea), .filters > label > select { height: 38px; padding-left: 14px; }
+/* sarmalayıcı içindeki (dönem seçici, tarih aralığı vb.) denetimler de aynı yükseklikte */
+.filters > span > select.input, .filters > span > input.input, .filters > span > .field > input.input, .filters > span > .btn:not(.sm):not(.xs),
+.filters > .bz-newwrap > .btn, .filters > .doc-search-wrap > .input { height: 38px; }
+.filters .btn { border-radius: 999px; }
+.filters > .btn:not(.sm):not(.xs), .filters > a.btn:not(.sm):not(.xs), .filters > .menu-anchor > .btn:not(.sm):not(.xs), .filters > .new-wrap > .btn:not(.sm):not(.xs) { height: 38px; }
+/* Araç satırındaki eylem kümesi: baloncuk kabı yok; her eylem girişlerle aynı boyda ayrı kapsül (birincil eylem dolu) */
+.filters .pill-group { border: 0; background: none; padding: 0; border-radius: 0; gap: 8px; flex-wrap: wrap; }
+.filters .pill-group > .btn, .filters .pill-group > .menu-anchor > .btn, .filters .pill-group > .new-wrap > .btn { height: 38px; border-width: 1px; border-style: solid; }
+.filters .pill-group > .btn:not(.primary):not(.danger):not(.success):not(.ghost) { border-color: var(--border-strong); background: var(--surface); }
+.filters .pill-group > .btn:not(.primary):not(.danger):not(.success):not(.ghost):hover { background: var(--surface-2); }
+.filters .pill-group > .icon-btn { width: 38px; height: 38px; border: 1px solid var(--border-strong); background: var(--surface); }
+/* Görev listesi kartındaki birleşik (kenarlıksız) filtre şeridi kendi ölçüsünde kalır */
+.task-list-card > .filters .input:not(textarea), .task-list-card > .filters select { border-radius: 0; height: auto; padding-left: 10px; }
+
+/* --- Başlık bandı: seçici ve düğmeler de kapsül --- */
+.page-head select.input, .page-head .input:not(textarea) { height: 40px; border-radius: 999px; padding: 0 14px; font-weight: 600; }
+.page-head .btn:not(.xs) { border-radius: 999px; }
+.page-head > .seg:not(.seg-tabs) button, .page-head .head-right .seg:not(.seg-tabs) button { height: 32px; }
+
+/* --- İkinci düzey sekmeler: tek ölçü (40px yükseklik, 16px yan boşluk, 3px vurgu çizgisi, 600 kalınlık) --- */
+.tab { height: 40px; padding: 0 16px; }
+.beta-tab { height: 40px; padding: 0 16px; border-bottom-width: 3px; font-weight: 600; }
+/* Sekme sarmalayıcıları sayfa gövdesinde sekme çubuğu aralığını kullanır */
+.cf-tabs > .seg.seg-tabs { display: flex; }
+
+/* --- Yan panel başlık satırı (Roller) sığmayınca ezilmesin --- */
+.rl-side > * { flex: none; }
+
+@media (max-width: 640px) {
+  .filters > .pill-group { grid-column: 1 / -1; display: flex; }
+  .module-toolbar.filters > .pill-group { margin-left: 0 !important; margin-right: 0 !important; }
+  .filters > .pill-group > .btn { flex: 1 1 auto; }
+  .module-toolbar.module-tabs { flex-wrap: wrap; }
+  .page-head select.input { width: 100%; }
+}
+
+.card > textarea.input { width: 100%; }

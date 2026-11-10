@@ -2,16 +2,15 @@
 // Her anket: başlık + açıklama + zorunlu/anonim + sorular (metin/tek seçim/çok seçim/puan/evet-hayır).
 // Sonuçlar: her soru için dağılım grafiği + metin cevaplar + (anonim değilse) kişi bazlı cevap tablosu.
 import { api } from '../api.js';
-import { clear, h, pageHead, toast, toastError, confirmDialog } from '../ui.js';
+import { clear, h, moduleToolbar, pageHead, toast, toastError, confirmDialog } from '../ui.js';
 
 const QTYPES = [['single', 'Tek seçim'], ['multi', 'Çok seçim'], ['yesno', 'Evet / Hayır'], ['rating', 'Puan (1-5)'], ['text', 'Serbest metin']];
 const qLabel = t => (QTYPES.find(x => x[0] === t) || [, t])[1];
 const fmt = iso => (iso ? new Date(iso).toLocaleString('tr', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
 export async function render(view) {
-  clear(view, pageHead('Anket Yönetimi'));
-  const bar = h('div', { class: 'toolbar' },
-    h('button', { class: 'btn primary', type: 'button', onclick: () => openEditor(view, null) }, '+ Yeni Anket'));
+  clear(view, pageHead('Anket Yönetimi', { back: '#/' }));
+  const bar = moduleToolbar(h('button', { class: 'btn primary', type: 'button', onclick: () => openEditor(view, null) }, '+ Yeni Anket'));
   const list = h('div', { class: 'card' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
   view.append(bar, list);
   await reload(view, list);

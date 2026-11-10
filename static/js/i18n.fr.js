@@ -5772,4 +5772,13 @@ registerCatalog('fr', {
   "Paket #{id} (pasif)": "Forfait #{id} (inactif)",
   "Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir": "Une liaison satellite drone ↔ pont n’est possible qu’en TCP / UDP",
   "{n} SIM": "{n} SIM",
+  "Filtrele": "Filtrer",
+  "Artan": "Croissant",
+  "Azalan": "Décroissant",
+  "En az": "Min.",
+  "En çok": "Max.",
+  "(Boş)": "(Vide)",
+  "{n} / {N} kayıt gösteriliyor": "{n} sur {N} enregistrements affichés",
+  "Filtreleri temizle": "Effacer les filtres",
+  "Toplamlar tüm kayıtlar içindir": "Les totaux portent sur tous les enregistrements",
 });

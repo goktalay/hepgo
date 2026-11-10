@@ -103,7 +103,7 @@ function renderPersonnel(view, head, list, m) {
   q.addEventListener('input', draw);
   st.addEventListener('change', draw);
   const add = h('button', { class: 'btn primary', onclick: () => applicationForm(m) }, '＋ Personel Ekle');
-  clear(view, head('Personel kayıtları, özlük dosyaları ve sözleşmeler', [q, st, add]), stats, grid);
+  clear(view, head('Personel kayıtları, özlük dosyaları ve sözleşmeler'), stats, moduleToolbar(q, st, add), grid);
   draw();
 }
 
@@ -1314,10 +1314,10 @@ export async function renderMyLeaves(view) {
   const pending = data.items.filter(l => l.status === 'BEKLIYOR').length;
   clear(view,
     pageHead('İzinlerim', { back: '#/', sub: 'İzin talepleri ve İK kararları' }),
-    moduleToolbar(add),
     h('div', { class: 'stat-strip' },
       h('div', { class: 'stat' }, h('span', { class: 'v' }, data.used_paid_this_year), h('span', { class: 'l' }, t('{year} kullanılan ücretli izin (gün)', { year: new Date().getFullYear() }))),
       h('div', { class: 'stat' }, h('span', { class: 'v' }, pending), h('span', { class: 'l' }, 'Onay bekleyen talep'))),
+    moduleToolbar(add),
     data.items.length ? leaveTable(data.items, { mine: true }) : h('div', { class: 'card empty' }, 'Henüz izin talebiniz yok. “İzin Talebi” ile oluşturun.'));
 }
 

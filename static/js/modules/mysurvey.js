@@ -9,7 +9,7 @@ const fmt = iso => (iso ? new Date(iso).toLocaleString('tr', { day: 'numeric', m
 export async function render(host, params) {
   const id = (typeof params === 'string' && /^\d+$/.test(params)) ? +params : null;
   if (id) return openSurvey(host, id);
-  clear(host, pageHead('Anketlerim'));
+  clear(host, pageHead('Anketlerim', { back: '#/' }));
   const list = h('div', { class: 'card' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
   host.append(list);
   let data;

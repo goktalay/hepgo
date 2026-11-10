@@ -26,11 +26,18 @@ export function activeThemeKey() {
   const t = current.theme || 'light';
   return (t === 'dark' || (t === 'system' && media.matches)) ? 'dark' : 'light';
 }
+export function toolbarAlignOf(s) {
+  const v = s && s.toolbarAlign;
+  if (v === 'left' || v === 'right') return v;
+  return v === 'center' && s.toolbarAlignSet ? 'center' : 'right';
+}
 export function applyUiCustom() {
   const root = document.documentElement;
-  let align = current.toolbarAlign;
-  if (!align) { try { align = localStorage.getItem('caymaz.toolbarAlign'); } catch { /* */ } }
-  root.dataset.toolbarAlign = ['left', 'center', 'right'].includes(align) ? align : 'center';
+  // Araç çubuğu hizası: varsayılan SAĞ. Eski varsayılan 'center' her ayar kaydında örtük yazıldığından, kullanıcı hizayı
+  // yeni düzende açıkça seçmedikçe (toolbarAlignSet) 'center' varsayılan sayılır; 'left' açık bir seçimdir, korunur.
+  let align = toolbarAlignOf(current);
+  if (!current.toolbarAlign) { try { align = localStorage.getItem('caymaz.toolbarAlign2') || align; } catch { /* */ } }
+  root.dataset.toolbarAlign = ['left', 'center', 'right'].includes(align) ? align : 'right';
   let colors = current.colors;
   if (!colors) { try { colors = JSON.parse(localStorage.getItem('caymaz.uiColors') || 'null'); } catch { /* */ } }
   const c = (colors && colors[activeThemeKey()]) || {};

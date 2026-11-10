@@ -5772,4 +5772,13 @@ registerCatalog('ar', {
   "Paket #{id} (pasif)": "الباقة #{id} (غير نشطة)",
   "Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir": "خط القمر الصناعي بين الطائرة والجسر ممكن عبر TCP / UDP فقط",
   "{n} SIM": "{n} SIM",
+  "Filtrele": "تصفية",
+  "Artan": "تصاعدي",
+  "Azalan": "تنازلي",
+  "En az": "الحد الأدنى",
+  "En çok": "الحد الأقصى",
+  "(Boş)": "(فارغ)",
+  "{n} / {N} kayıt gösteriliyor": "عرض {n} من {N} سجل",
+  "Filtreleri temizle": "مسح عوامل التصفية",
+  "Toplamlar tüm kayıtlar içindir": "الإجماليات تشمل جميع السجلات",
 });

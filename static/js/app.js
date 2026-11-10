@@ -94,6 +94,7 @@ import './i18n.ru.js';   // Rusça
 import { enableSegSelect } from './segselect.js';
 import { enableListExport } from './listexport.js';
 import { enableHeadGroup } from './headgroup.js';
+import { enableDataTables } from './datatable.js';
 import { enableToolbarMerge } from './toolbarmerge.js';
 
 // Ana sayfadaki modül düğmeleri; yeni modül eklemek için bu listeye bir satır eklenir.
@@ -1696,6 +1697,7 @@ enableSegSelect();   // telefonda düğme grupları (sekme / görünüm / filtre
 enableToolbarMerge();   // alt-modül eylem düğmelerini (Yeni/Excel/görünüm) filtre satırına taşır (boşuna satır olmasın)
 enableListExport();  // tüm listelerde başlığın en sağında Excel indirme düğmesi
 enableHeadGroup();   // başlıktaki bağımsız eylem düğmelerini (ör. "+ Yeni" + "Excel") tek kapsülde toplar
+enableDataTables();  // tüm veri tablolarında sütun başlığından sıralama + filtre
 window.addEventListener('caymaz:toast', e => toast(e.detail));
 // İskelet kabları (başlık + içerik + alt çubuk) asla kaymamalı; tarayıcı odak / scrollIntoView ile kaydırırsa geri al
 // Kaydırması kapalı (overflow: hidden / clip) her kap da buna dahil: ör. mesajlarda kayarsa yazma kutusu alt çubuğun arkasında kalıyordu.

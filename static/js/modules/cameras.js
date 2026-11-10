@@ -18,7 +18,7 @@ export async function renderCameras(body, ctx, params) {
   const nav = segmented([['watch', 'İzleme'], ['list', 'Kamera Listesi']], sub,
     v => { location.hash = v === 'list' ? '#/cameras/list' : '#/cameras'; }, { tabs: true });
   const box = h('div');
-  clear(body, h('div', { class: 'filters' }, nav), box);
+  clear(body, h('div', { class: 'module-tabs' }, nav), box);
   return sub === 'list' ? renderList(box) : renderWall(box);
 }
 

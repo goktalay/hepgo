@@ -40,6 +40,7 @@ function tableSpec(t) {
   const rows = [];
   for (const tr of t.tBodies[0]?.rows || []) {
     if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) continue;   // ara başlık / boş satır
+    if (tr.classList.contains('dt-hide')) continue;                   // sütun filtresiyle gizlenen satır (datatable.js)
     const cells = [...tr.cells];
     rows.push((keep.length ? keep : cells.map((_, i) => i)).map(i => typed(cells[i] ? cellText(cells[i]) : '')));
   }

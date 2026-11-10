@@ -5772,4 +5772,13 @@ registerCatalog('es', {
   "Paket #{id} (pasif)": "Paquete #{id} (inactivo)",
   "Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir": "Un enlace satelital dron ↔ puente solo es posible por TCP / UDP",
   "{n} SIM": "{n} SIM",
+  "Filtrele": "Filtrar",
+  "Artan": "Ascendente",
+  "Azalan": "Descendente",
+  "En az": "Mín.",
+  "En çok": "Máx.",
+  "(Boş)": "(Vacío)",
+  "{n} / {N} kayıt gösteriliyor": "Mostrando {n} de {N} registros",
+  "Filtreleri temizle": "Borrar filtros",
+  "Toplamlar tüm kayıtlar içindir": "Los totales incluyen todos los registros",
 });

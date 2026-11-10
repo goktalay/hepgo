@@ -4,7 +4,7 @@
 // Reddedilmişler) ve tarih filtresi (Tüm tarihler / Bu hafta / Bu ay / Bu yıl). Üst çubuktaki TODO ikonu (app.js
 // todoButton) /api/todos/pending ile aynı veriyi gösterir. Günlük Görevler'den bağımsız.
 import { api } from '../api.js';
-import { avatar, clear, confirmDialog, every, field, h, modal, segmented, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, field, h, modal, moduleTabs, pageHead, segmented, toast, toastError } from '../ui.js';
 
 const ADMIN = 'Sistem Yöneticisi';
 export const isAdmin = ctx => !!ctx?.user?.master || (ctx?.user?.roles || []).includes(ADMIN);
@@ -206,24 +206,24 @@ export async function render(view, params, ctx) {
   }
 
   // ---- başlık + araç çubuğu
-  const tabs = admin ? segmented([['mine', 'Bana atanan'], ['given', 'Verdiğim görevler']], tab, v => { tab = v; location.replace(`#/my-todos${v === 'given' ? '/given' : ''}`); layout(); }) : null;
+  const tabs = admin ? moduleTabs([['mine', 'Bana atanan'], ['given', 'Verdiğim görevler']], tab, v => { tab = v; location.replace(`#/my-todos${v === 'given' ? '/given' : ''}`); layout(); }) : null;
   const doneTog = h('label', { class: 'small', style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' } },
     h('input', { type: 'checkbox', onchange: e => { showDone = e.target.checked; load(); } }), 'Tamamlananları da göster');
   const viewSeg = segmented([['list', 'Liste'], ['card', 'Kart'], ['todo', 'TODO']], viewMode, v => { viewMode = v; setPref('view', v); draw(); });
   const periodSel = h('select', { class: 'input', title: 'Tarih', onchange: e => { period = e.target.value; setPref('period', period); drawPeople(); load(); } },
     [['all', 'Tüm tarihler'], ['week', 'Bu hafta'], ['month', 'Bu ay'], ['year', 'Bu yıl']].map(([v, l]) => h('option', { value: v, selected: v === period }, l)));
   const newBtn = admin ? h('button', { class: 'btn primary', type: 'button', onclick: () => editDialog(null) }, '＋ Görev ver') : null;
-  const toolbar = h('div', { class: 'todo-tabs' });
+  const toolbar = h('div', { class: 'filters' });   // ortak araç çubuğu kutusu: solda filtre, sağda görünüm seçici + eylem
   const main = h('div', { class: 'todo-main' }, toolbar, body);
   const split = h('div', { class: 'todo-split' }, peopleEl, main);
   const page = h('div');
   function layout() {
-    clear(toolbar, tabs, tab === 'mine' ? doneTog : [viewSeg, periodSel], h('span', { class: 'spacer' }));
+    clear(toolbar, tab === 'mine' ? doneTog : periodSel, h('span', { class: 'spacer' }), tab === 'mine' ? null : viewSeg, newBtn ? h('div', { class: 'pill-group' }, newBtn) : null);
     clear(page, tab === 'given' ? split : main);
     if (tab === 'given') drawPeople();
     load();
   }
-  clear(view, h('div', { class: 'page-head' }, h('h1', null, 'Yapılacaklar'), h('div', { class: 'spacer' }), newBtn), page);
+  clear(view, pageHead('Yapılacaklar', { back: '#/' }), tabs, page);
   layout();
   // saniyede bir: devam eden görevlerin süresi (kart, liste, pano ve açık pencere)
   every(1000, () => list.forEach(t => { if (!ticking(t)) return; document.querySelectorAll(`.todo-timer[data-id="${t.id}"] .v`).forEach(el => { el.textContent = fmtDur(liveElapsed(t)); }); }));

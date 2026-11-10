@@ -5772,4 +5772,13 @@ registerCatalog('ru', {
   "Paket #{id} (pasif)": "Пакет #{id} (неактивен)",
   "Dron ↔ köprü uydu hattı yalnız TCP / UDP bağlantıda olabilir": "Спутниковый канал дрон ↔ мост возможен только по TCP / UDP",
   "{n} SIM": "{n} SIM",
+  "Filtrele": "Фильтр",
+  "Artan": "По возрастанию",
+  "Azalan": "По убыванию",
+  "En az": "Мин.",
+  "En çok": "Макс.",
+  "(Boş)": "(Пусто)",
+  "{n} / {N} kayıt gösteriliyor": "Показано {n} из {N} записей",
+  "Filtreleri temizle": "Сбросить фильтры",
+  "Toplamlar tüm kayıtlar içindir": "Итоги рассчитаны по всем записям",
 });

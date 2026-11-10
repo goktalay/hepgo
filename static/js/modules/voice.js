@@ -866,7 +866,7 @@ async function renderDetail(view, cid) {
   } else {
     parts.push(h('div', { class: 'card empty' }, 'Bu görüşme kaydedilmedi (kayıt tüm katılımcıların onayını gerektirir).'));
   }
-  clear(view, pageHead('Görüşme Detayı', { back: '#/my-voice-calls', sub: others.map(p => p.full_name).join(', ') || 'Sesli görüşme' }), ...parts);
+  clear(view, pageHead('Görüşme Detayı', { back: '#/messages', sub: others.map(p => p.full_name).join(', ') || 'Sesli görüşme' }), ...parts);
 }
 
 // Konuşmacılar: tanınanların adı gelir; tanınmayanlar "Kişi N" — arayüzden kişiye atanır (atayınca ses profili öğrenilir).

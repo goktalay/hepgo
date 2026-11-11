@@ -14,8 +14,54 @@ const CERTUS = [
   ...[[1000, 5700, 5.70], [2000, 10904, 5.45], [5000, 26125, 5.23], [7500, 37923, 5.06], [10000, 48984, 4.90], [12000, 57000, 4.75], [15000, 69154, 4.61], [20000, 89571, 4.48], [30000, 130625, 4.35]].map(x => ['YILLIK', ...x]),
 ];
 const PERIOD_TEXT = Object.fromEntries(PERIODS);
+// Turkcell ve Türk Telekom hazır paketleri (operatör sitelerinden, Kasım 2026; ₺, KDV + ÖİV dahil). Kota GB → MB (× 1024).
+// Satır: [dahil veri, fiyat ₺, not şablonunun değişkenleri]. Taahhütlü tarifelerde fiyat taahhütlü aylık bedeldir; taahhütsüzü nota yazılır.
+const GB = 1024;
+const N_COMMIT = '12 ay taahhütlü fiyat; taahhütsüz {a} ₺/ay.';
+const N_COMMIT_ONLY = '12 ay taahhütlü fiyat.';
+const N_PREPAID = 'Faturasız paket; 30 gün geçerlidir.';
+const N_STOP = 'Aşım ücreti yok; kota bitince internet durur.';
+const N_TC_M2M = '24 ay kampanyalı fiyat; liste fiyatı {a} ₺/ay. Aşım kademeli ücretlenir (MB başına değil).';
+const N_TT_M2M = '12 ay taahhütlü fiyat; taahhütsüz {a} ₺, 24 ay taahhütlü {b} ₺. M2M tarife ücretine ektir.';
+const N_TC_YEAR = 'Yıllık paket; 365 gün geçerlidir, {a} ₺ × 12 taksit. Ses hattı paketidir.';
+const N_TT_YEAR = 'Yıllık paket; 360 gün geçerlidir. Faturasız ses hattı paketidir (20.000 dk + 20.000 SMS dahil).';
+// notes: not şablonları; {a} / {b} satırın 3. ve 4. değeridir (taahhütsüz / liste fiyatı vb.).
+const rows = (per, title, list, notes, over = null) => list.map(([q, price, a, b]) => ({ per, mb: q, price, cur: 'TRY', over, name: title, note: notes.map(n => [n, { a, b }]) }));
+const OPERATORS = [
+  { provider: 'Turkcell', groups: [
+    ['Mobil Wifi · faturalı (aylık kota, 12 ay taahhüt)', [
+      ...rows('AYLIK', 'Turkcell Mobil Wifi', [[20 * GB, 415, 715], [100 * GB, 635, 935], [200 * GB, 815, 1115]], [N_COMMIT]),
+      ...rows('AYLIK', 'Turkcell Mobil Wifi', [[50 * GB, 535], [400 * GB, 1400], [600 * GB, 1800]], [N_COMMIT_ONLY]),
+    ].sort((x, y) => x.mb - y.mb)],
+    ['Mobil Wifi · faturasız (30 gün)', rows('AYLIK', 'Turkcell Faturasız Mobil Wifi', [[50 * GB, 550], [200 * GB, 850], [400 * GB, 1200]], [N_PREPAID])],
+    ['M2M-IoT · kurumsal (aylık kota, 24 ay kampanya)', rows('AYLIK', 'Turkcell M2M', [[100, 84, 99], [1 * GB, 169, 219], [2 * GB, 179, 229], [5 * GB, 259, 329], [8 * GB, 379, 499],
+      [15 * GB, 529, 799], [25 * GB, 649, 999], [50 * GB, 999, 1599], [150 * GB, 2299, 3599], [250 * GB, 2899, 4599], [500 * GB, 4999, 8199]], [N_TC_M2M])],
+    ['Yıllık Dev Paketler (365 gün)', [['Dev Star', 120, 600], ['Dev Star', 240, 800], ['Dev Platinum Star', 480, 1100]].flatMap(([t, q, m]) =>
+      rows('YILLIK', `Turkcell Yıllık ${t}`, [[q * GB, m * 12, m]], [N_TC_YEAR]))],
+  ] },
+  { provider: 'Türk Telekom', groups: [
+    ['Cep Magnet · faturalı (aylık kota, 12 ay taahhüt)', [
+      ...rows('AYLIK', 'Türk Telekom Cep Magnet', [[50 * GB, 460, 780], [100 * GB, 625, 1050]], [N_COMMIT, N_STOP]),
+      ...rows('AYLIK', 'Türk Telekom Cep Magnet', [[200 * GB, 810], [300 * GB, 1110]], [N_COMMIT_ONLY, N_STOP]),
+    ]],
+    ['Mobil Wi-Fi · faturasız (30 gün)', rows('AYLIK', 'Türk Telekom Faturasız Mobil Wi-Fi', [[20 * GB, 300], [100 * GB, 560], [200 * GB, 720], [300 * GB, 975]], [N_PREPAID])],
+    ['M2M Data · kurumsal (aylık kota, 12 ay taahhüt)', rows('AYLIK', 'Türk Telekom M2M', [[500, 12.42, 15.53, 9.32], [1 * GB, 14.50, 25.89, 11.39], [2 * GB, 19.67, 31.07, 15.53],
+      [5 * GB, 30.03, 41.43, 25.89], [10 * GB, 40.39, 51.79, 36.25], [20 * GB, 61.11, 72.51, 56.97], [30 * GB, 81.82, 93.22, 77.68], [50 * GB, 102.55, 113.94, 98.40],
+      [100 * GB, 206.13, 227.88, 191.63]], [N_TT_M2M], 0.051)],
+    ['Yıllık (360 gün)', rows('YILLIK', 'Türk Telekom Geniş 12 Ay', [[100 * GB, 3300]], [N_TT_YEAR])],
+  ] },
+];
+const SYMBOL = { USD: '$', TRY: '₺', EUR: '€' };
+const size = q => (q >= GB && q % GB === 0 ? `${(q / GB).toLocaleString('tr')} GB` : `${q.toLocaleString('tr')} MB`);
 const mb = v => (v == null ? '—' : v >= 100 ? Math.round(v).toLocaleString('tr') : Number(v).toLocaleString('tr', { maximumFractionDigits: 2 }));
-const money = (v, cur = 'USD') => (v == null ? '—' : `${Number(v).toLocaleString('tr', { maximumFractionDigits: 2 })} ${cur === 'USD' ? '$' : cur}`);
+const money = (v, cur = 'USD', digits = 2) => (v == null ? '—' : `${Number(v).toLocaleString('tr', { minimumFractionDigits: Number.isInteger(Number(v)) ? 0 : 2, maximumFractionDigits: digits })} ${SYMBOL[cur] || cur || '$'}`);
+// Aşım maliyeti para birimine göre ayrı toplanır (dolar tarifesi ile ₺ tarifesi aynı toplamda birleşmez).
+const overTotal = live => {
+  const by = {};
+  for (const p of live) if (p.over_cost) by[p.currency || 'USD'] = (by[p.currency || 'USD'] || 0) + p.over_cost;
+  const curs = [...new Set(live.map(p => p.currency || 'USD'))];
+  return Object.keys(by).length ? Object.entries(by).map(([c, v]) => money(v, c)).join(' + ') : curs.length === 1 ? money(0, curs[0]) : '0';
+};
 const inp = (value, attrs = {}) => h('input', { class: 'input', value: value ?? '', ...attrs });
 const numOrNull = v => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const bar = (pct, over) => h('div', { style: { height: '10px', borderRadius: '6px', background: 'var(--surface-2, #eef1f6)', overflow: 'hidden', margin: '8px 0 4px' } },
@@ -33,7 +79,7 @@ export async function render(view, ctx, m, head) {
       { icon: 'documents', label: 'Etkin paket', value: live.length },
       { icon: 'calendar', label: 'Bu dönem harcanan', value: `${mb(live.reduce((s, p) => s + p.used_mb, 0))} MB` },
       { icon: 'note', label: 'Kalan', value: `${mb(live.reduce((s, p) => s + p.remaining_mb, 0))} MB`, tone: 'ok' },
-      { icon: 'warning', label: 'Aşım maliyeti', value: money(live.reduce((s, p) => s + (p.over_cost || 0), 0)), tone: live.some(p => p.over_mb > 0) ? 'alert' : 'muted' },
+      { icon: 'warning', label: 'Aşım maliyeti', value: overTotal(live), tone: live.some(p => p.over_mb > 0) ? 'alert' : 'muted' },
     ]);
     clear(body, items.length ? h('div', { class: 'grid-cards', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' } },
       items.map(p => h('div', { class: 'card', style: { padding: '16px', opacity: p.active ? 1 : 0.6 } },
@@ -49,7 +95,7 @@ export async function render(view, ctx, m, head) {
         h('div', { class: 'small muted', style: { marginTop: '6px' } },
           tr('Dönem {a} – {b} · {d} gün kaldı', { a: fmtDate(p.period_start), b: fmtDate(p.period_end), d: p.days_left }),
           p.auto_renew ? ` · ${tr('otomatik yenilenir')}` : ''),
-        p.price != null ? h('div', { class: 'small muted' }, tr('Paket {p} · aşım {o}/MB', { p: money(p.price, p.currency), o: p.overage_per_mb != null ? money(p.overage_per_mb, p.currency) : '—' })) : null,
+        p.price != null ? h('div', { class: 'small muted' }, tr('Paket {p} · aşım {o}/MB', { p: money(p.price, p.currency), o: p.overage_per_mb != null ? money(p.overage_per_mb, p.currency, 4) : '—' })) : null,
         h('div', { class: 'pill-group', style: { marginTop: '10px' } },
           h('button', { class: 'btn sm primary', onclick: () => detailModal(p.id) }, 'Tüketim'),
           data.can_write ? h('button', { class: 'btn sm', onclick: () => packageForm(p, load) }, 'Düzenle') : null,
@@ -68,9 +114,22 @@ export async function render(view, ctx, m, head) {
 }
 
 export function packageForm(p, done) {
-  const preset = h('select', { class: 'input' }, h('option', { value: '' }, '— Hazır paket (Certus 100 Aviation) —'),
-    PERIODS.map(([k, l]) => h('optgroup', { label: tr(l) }, CERTUS.filter(x => x[0] === k).map(([per, q, price, over]) =>
-      h('option', { value: `${per}|${q}|${price}|${over}` }, tr('{q} MB · {p} $ · aşım {o} $/MB', { q: q.toLocaleString('tr'), p: price.toLocaleString('tr'), o: over }))))));
+  // Hazır paket: önce tarife (Certus / Turkcell / Türk Telekom), sonra o tarifenin paketi. Seçenek değeri TARIFFS[t].items dizinidir.
+  const TARIFFS = [
+    { provider: 'Certus 100 Aviation', groups: PERIODS.map(([k, l]) => [l, CERTUS.filter(x => x[0] === k).map(([per, q, price, over]) => ({ per, mb: q, price, cur: 'USD', over,
+      label: tr('{q} MB · {p} $ · aşım {o} $/MB', { q: q.toLocaleString('tr'), p: price.toLocaleString('tr'), o: over }) }))]) },
+    ...OPERATORS,
+  ].map(x => ({ ...x, items: x.groups.flatMap(g => g[1]) }));
+  const tariff = h('select', { class: 'input', style: { maxWidth: '220px' } }, TARIFFS.map((x, i) => h('option', { value: i }, x.provider)));
+  const preset = h('select', { class: 'input', style: { width: '100%' } });
+  const optionText = it => it.label || (it.over != null ? tr('{q} · {p} · aşım {o}/MB', { q: size(it.mb), p: money(it.price, it.cur), o: money(it.over, it.cur, 4) }) : `${size(it.mb)} · ${money(it.price, it.cur)}`);
+  const fillPresets = () => {
+    const tf = TARIFFS[tariff.value];
+    clear(preset, h('option', { value: '' }, '— Paket seçin —'),
+      tf.groups.map(([l, list]) => h('optgroup', { label: tr(l) }, list.map(it => h('option', { value: tf.items.indexOf(it) }, optionText(it))))));
+  };
+  fillPresets();
+  tariff.addEventListener('change', fillPresets);
   const name = inp(p?.name);
   const provider = inp(p?.provider ?? 'Certus 100 Aviation');
   const period = h('select', { class: 'input' }, PERIODS.map(([k, l]) => h('option', { value: k, selected: k === (p?.period || 'AYLIK') }, l)));
@@ -83,17 +142,24 @@ export function packageForm(p, done) {
   const note = h('textarea', { class: 'input', rows: 2 }, p?.note ?? '');
   const renew = h('input', { type: 'checkbox', checked: p ? !!p.auto_renew : true });
   const active = h('input', { type: 'checkbox', checked: p ? !!p.active : true });
+  let auto = { name: '', note: '' };   // hazır paketten dolan ad / not: kullanıcı değiştirmediyse yeni seçimde yenilenir
   preset.addEventListener('change', () => {
-    if (!preset.value) return;
-    const [per, q, pr, ov] = preset.value.split('|');
-    period.value = per; quota.value = q; price.value = pr; over.value = ov; currency.value = 'USD';
-    if (!name.value.trim()) name.value = tr('Certus {per} {q} MB', { per: tr(PERIOD_TEXT[per]), q: Number(q).toLocaleString('tr') });
+    if (preset.value === '') return;
+    const tf = TARIFFS[tariff.value], it = tf.items[preset.value];
+    period.value = it.per; quota.value = it.mb; price.value = it.price; over.value = it.over ?? ''; currency.value = it.cur; provider.value = tf.provider;
+    const fresh = {
+      name: it.name ? `${it.name} ${size(it.mb)}` : tr('Certus {per} {q} MB', { per: tr(PERIOD_TEXT[it.per]), q: it.mb.toLocaleString('tr') }),
+      note: (it.note || []).map(([n, v]) => tr(n, v && Object.fromEntries(Object.entries(v).filter(e => e[1] != null).map(([k, x]) => [k, x.toLocaleString('tr')])))).join(' '),
+    };
+    for (const [el, k] of [[name, 'name'], [note, 'note']]) if (!el.value.trim() || el.value === auto[k]) el.value = fresh[k];
+    auto = fresh;
   });
   modal({
     title: p ? tr('{name} · veri paketi', { name: p.name }) : 'Yeni Veri Paketi',
     wide: true,
     body: h('div', null,
-      p ? null : field('Hazır paket', preset, 'Yüklenen tarifeden seçin; alanlar dolar, isterseniz düzenleyin.'),
+      p ? null : field('Hazır paket', h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, tariff, h('div', { style: { flex: '1 1 260px' } }, preset)),
+        'Tarifeyi ve paketi seçin; alanlar dolar, isterseniz düzenleyin. Turkcell ve Türk Telekom fiyatları Kasım 2026 tarihlidir (KDV + ÖİV dahil); güncelini operatörden doğrulayın.'),
       h('div', { class: 'row' }, field('Paket adı', name), field('Sağlayıcı', provider)),
       h('div', { class: 'row' }, field('Dönem', period), field('Dahil veri (MB)', quota, 'SIM\'ler arasında ortak kullanılır.')),
       h('div', { class: 'row' }, field('Paket fiyatı', price), field('Para birimi', currency), field('Aşım ücreti (MB başına)', over)),

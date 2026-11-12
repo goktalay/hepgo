@@ -145,7 +145,7 @@ function listView(list) {
 // ---------- Sipariş detayı ----------
 async function renderOrder(view, id, ctx) {
   let order = await api.get(`/api/orders/${id}`);
-  const plane = await loadPlane(order.product_id);
+  const plane = await loadPlane(order.product_id, order.id);
   const spare = !!order.product_stocked;   // basılı stok parçası: montaj yok, parça görünümünde kalır
   if (!spare && ASSEMBLY_VIEW.includes(order.status)) return renderAssemblyOrder(view, order, plane, ctx);
   const canOperate = ctx.user.roles.some(r => PART_OPERATORS.includes(r));

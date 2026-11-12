@@ -129,7 +129,9 @@ def list_products(active_only: bool = False, user=Depends(auth.current_user), co
 
 @router.get('/schemas')
 def list_schemas(user=Depends(products_admin)):
-    return [{'key': k, 'title': v['title'], 'part_count': len(v['module'].part_ids())} for k, v in catalogs.SCHEMAS.items()]
+    # dondurulmuş revizyonlar (eski siparişlerin şeması) yeni ürüne seçilemez
+    return [{'key': k, 'title': v['title'], 'part_count': len(v['module'].part_ids())} for k, v in catalogs.SCHEMAS.items()
+            if not v.get('frozen')]
 
 
 GCODE_MODULES = {'products', 'production', 'printers', 'stock', 'warehouse'}
@@ -242,10 +244,12 @@ def save_assembly_overrides(schema_key: str, body: AssemblyOverridesIn, user=Dep
 
 
 @router.get('/{pid}/plane')
-def product_plane(pid: int, user=Depends(auth.current_user), conn=db.DB):
-    """Parça çizimi; her parçaya baskı dosyası ve süresi eklenir (ipuçları, yazıcı seçimi, kalan süre)."""
+def product_plane(pid: int, order: Optional[int] = None, user=Depends(auth.current_user), conn=db.DB):
+    """Parça çizimi; her parçaya baskı dosyası ve süresi eklenir (ipuçları, yazıcı seçimi, kalan süre).
+    order: bu ürünün bir siparişi — şeması sonradan değişen üründe siparişin verildiği revizyon çizilir."""
     p = _get(conn, pid)
-    key = p['schema']
+    rev = conn.execute('SELECT schema_rev FROM orders WHERE id = ? AND product_id = ?', (order, pid)).fetchone() if order else None
+    key = rev[0] if rev and rev[0] in catalogs.SCHEMAS else p['schema']
     plane = catalogs.printed_plane(p) if catalogs.is_printed_custom(p) else catalogs.plane_json(key)
     plane['schema'] = key
     info = semis.print_info(conn)

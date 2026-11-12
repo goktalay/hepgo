@@ -99,4 +99,9 @@ PRINT_FILES = {
     '08-V4': ('O8 - V3_ABS_16h46m', 1006),
     '09-V4': ('O9 - V3_ABS_4h10m', 250),
     'SERVO-KAPAK-V2': ('SERVO KAPAK - V2_ABS_7h0m', 420),
+    # CAYMAZ V4 servo kapağı revizyonu (2026-11-12): yeni siparişler Servo Kapak V3 ile üretilir
+    'SERVO-KAPAK-V3': ('SERVO KAPAK - V3_ABS_7h32m', 452),
 }
+
+# Bir baskıda birden çok adet çıkan parçalar (parça yedeği açılırken per_print; yazılmayan 1)
+PER_PRINT = {'SERVO-KAPAK-V3': 4}

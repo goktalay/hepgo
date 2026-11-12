@@ -53,7 +53,7 @@ def production_errors(conn, user):
 def assembly_waiting(conn, user):
     """Montaj aşamasındaki uçaklar ve tamamlanmamış bölümleri."""
     rows = db.rows(conn.execute(
-        """SELECT o.id, o.code, p.schema FROM orders o JOIN products p ON p.id = o.product_id
+        """SELECT o.id, o.code, COALESCE(o.schema_rev, p.schema) AS schema FROM orders o JOIN products p ON p.id = o.product_id
            WHERE o.status IN ('MONTAJ', 'SAHADA_MONTAJ') ORDER BY o.id"""))
     names = []
     for r in rows:
@@ -71,7 +71,7 @@ def electronics_waiting(conn, user):
     """Depoya alınmış, elektronik komponentleri henüz monte edilmemiş elektronik parçalar (elektronik kat, K04)."""
     rows = []
     for o in db.rows(conn.execute(
-            """SELECT o.id, o.code, p.schema FROM orders o JOIN products p ON p.id = o.product_id
+            """SELECT o.id, o.code, COALESCE(o.schema_rev, p.schema) AS schema FROM orders o JOIN products p ON p.id = o.product_id
                WHERE o.status NOT IN ('KALIBRASYON', 'SAHA_ONAY', 'TAMAMLANDI', 'HURDA') ORDER BY o.id""")):
         for pid in catalogs.electronics_parts(o['schema']):
             if conn.execute("SELECT 1 FROM order_parts WHERE order_id = ? AND part_id = ? AND state = 'DEPO' "

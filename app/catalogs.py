@@ -33,10 +33,28 @@ SCHEMAS = {
     'caymaz-v2': {'module': plane_v2, 'title': 'CAYMAZ V2 delta kanat (büyük kapaklar, karbon takviye, kelepçeli kanat)'},
     'caymaz-v3': {'module': plane_v3, 'title': 'CAYMAZ V3 delta kanat (V2 + yeniden çizilen L4, R4 ve gövde 01)'},
     'caymaz-v4': {'module': plane_v4, 'title': 'CAYMAZ V4 delta kanat (V2 + yeniden çizilen L2, L3, R2, R3, burun 08, 09 ve servo kapağı)'},
+    # dondurulmuş revizyon: servo kapağı V3'e geçmeden önce verilen CAYMAZ V4 siparişleri (orders.schema_rev)
+    'caymaz-v4-r1': {'module': plane_v4.R1, 'frozen': True, 'layout': 'caymaz-v4',
+                     'title': 'CAYMAZ V4 delta kanat (Servo Kapak V2 revizyonu)'},
     **spares.SCHEMAS,   # yedek parçalar: tek parçalı şemalar (kamera tutucu, klipsler)
     **semis.SCHEMAS,    # yarı mamuller: CAYMAZ'ın dört ana yapısı (sol/sağ kanat, gövde, elektronik)
 }
 DEFAULT_SCHEMA = 'caymaz'
+
+# Şeması sonradan değişen ürünler: ürünün şema anahtarı → [(dondurulmuş revizyon anahtarı, o revizyona özgü parça)].
+# Değişiklikten önce verilen sipariş (parça listesinde revizyona özgü parça olan) o revizyona sabitlenir
+# (orders.schema_rev): parça listesi, montaj adımları ve çizimi değişmez. Yeni sipariş ürünün güncel şemasıyla açılır.
+REVISIONS = {
+    'caymaz-v4': [('caymaz-v4-r1', plane_v4.SERVO_COVER_R1)],
+    'semi-v4-gvd': [('semi-v4r1-gvd', plane_v4.SERVO_COVER_R1)],
+}
+# SQL: siparişin şeması (o = orders, p = products)
+ORDER_SCHEMA = 'COALESCE(o.schema_rev, p.schema)'
+
+
+def layout_key(key):
+    """Elle yapılan 3B yerleşimlerin anahtarı: dondurulmuş revizyon güncel şemanın yerleşimini kullanır."""
+    return SCHEMAS.get(key, {}).get('layout', key)
 
 
 def schema(key):

@@ -69,8 +69,23 @@ def create_order(conn, user_id, product, start_date, end_date, note, company_id=
 
 
 def _schema(conn, order_id):
-    return conn.execute('SELECT p.schema FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?',
+    """Siparişin şeması: dondurulmuş revizyonu (schema_rev) varsa o, yoksa ürünün güncel şeması."""
+    return conn.execute(f'SELECT {catalogs.ORDER_SCHEMA} FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?',
                         (order_id,)).fetchone()[0]
+
+
+def freeze_revisions(conn):
+    """Şeması sonradan değişen ürünün (catalogs.REVISIONS) eski siparişlerini verildikleri revizyona sabitler: parça
+    listesinde o revizyona özgü parça olan sipariş, ürünün güncel şeması yerine dondurulmuş revizyonla sürer. İdempotent."""
+    n = 0
+    for key, revs in catalogs.REVISIONS.items():
+        for rev, part_id in revs:
+            n += conn.execute(
+                '''UPDATE orders SET schema_rev = ? WHERE schema_rev IS NULL
+                     AND product_id IN (SELECT id FROM products WHERE schema = ?)
+                     AND EXISTS (SELECT 1 FROM order_parts op WHERE op.order_id = orders.id AND op.part_id = ?)''',
+                (rev, key, part_id)).rowcount
+    return n
 
 
 def recompute(conn, order_id, at=None):
@@ -118,7 +133,7 @@ def recompute(conn, order_id, at=None):
 def order_summaries(conn, where='1=1', args=()):
     orders = db.rows(conn.execute(
         f'''SELECT o.*, u.full_name AS created_by_name, p.name AS product_name, p.serial AS product_serial,
-                   p.code AS product_code, p.schema AS product_schema, p.queue_prefix, p.type AS product_type,
+                   p.code AS product_code, COALESCE(o.schema_rev, p.schema) AS product_schema, p.queue_prefix, p.type AS product_type,
                    (p.schema LIKE 'part-%' OR p.schema LIKE 'spare-%' OR (p.schema = 'custom' AND p.printed = 1)) AS product_stocked,
                    p.per_print, c.name AS company_name, c.logo AS company_logo
             FROM orders o LEFT JOIN users u ON u.id = o.created_by
@@ -142,10 +157,12 @@ def order_summaries(conn, where='1=1', args=()):
 
 def sync_catalog_parts(conn):
     """Kataloğa sonradan eklenen parçaları (ör. elektronik kat) mevcut siparişlere ekler. Montajı bitmiş
-    uçaklarda parça takılı kabul edilir; diğerlerinde üretilmemiş olarak başlar."""
+    uçaklarda parça takılı kabul edilir; diğerlerinde üretilmemiş olarak başlar. Şeması değişen ürünün eski
+    siparişleri önce kendi revizyonuna sabitlenir (freeze_revisions): onlara yeni revizyonun parçası eklenmez."""
+    freeze_revisions(conn)
     added = 0
     for o in db.rows(conn.execute(
-            'SELECT o.id, o.status, p.schema, p.code, p.printed FROM orders o JOIN products p ON p.id = o.product_id')):
+            f'SELECT o.id, o.status, {catalogs.ORDER_SCHEMA} AS schema, p.code, p.printed FROM orders o JOIN products p ON p.id = o.product_id')):
         have = {r[0] for r in conn.execute('SELECT part_id FROM order_parts WHERE order_id = ?', (o['id'],))}
         missing = [pid for pid in catalogs.product_part_ids(o) if pid not in have]
         state = ASSEMBLY if o['status'] in AFTER_ASSEMBLY else WAITING

@@ -3642,6 +3642,9 @@ def _migrate(conn):
     if 'material_review_at' not in {r[1] for r in conn.execute('PRAGMA table_info(orders)')}:   # hurda uçağın malzemeleri değerlendirildi
         conn.execute('ALTER TABLE orders ADD COLUMN material_review_at TEXT')
         conn.execute("UPDATE orders SET material_review_at = scrapped_at WHERE status = 'HURDA'")   # eski hurdalar sorulmaz
+    if 'schema_rev' not in {r[1] for r in conn.execute('PRAGMA table_info(orders)')}:
+        # ürünün şeması sonradan değişince eski sipariş verildiği revizyonla sürer (boş: ürünün güncel şeması); catalogs.REVISIONS
+        conn.execute('ALTER TABLE orders ADD COLUMN schema_rev TEXT')
     if not conn.execute('SELECT 1 FROM warehouses').fetchone():
         conn.execute("INSERT INTO warehouses (name, code, created_at) VALUES ('Ana Depo', 'ANA', ?)", (now(),))
     first_bom = 'unit' not in prod_cols   # ürün ağacı / reçete sistemine geçiş (bir kez)

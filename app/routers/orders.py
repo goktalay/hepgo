@@ -216,7 +216,7 @@ def calibration(oid: int, body: CalibrationIn, user=Depends(production_user), co
 def _get_part(conn, oid, part_id):
     op = db.row(conn.execute(
         '''SELECT op.*, o.code AS order_code, o.status AS order_status, p.name AS printer_name,
-                  pr.schema AS product_schema
+                  COALESCE(o.schema_rev, pr.schema) AS product_schema
            FROM order_parts op JOIN orders o ON o.id = op.order_id
            LEFT JOIN products pr ON pr.id = o.product_id
            LEFT JOIN printers p ON p.id = op.printer_id

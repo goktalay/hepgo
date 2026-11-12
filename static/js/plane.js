@@ -6,8 +6,9 @@ import { fmtMinutes, h, pref, segmented, setPref } from './ui.js';
 const SVGNS = 'http://www.w3.org/2000/svg';
 const planeCache = new Map();
 
-export function loadPlane(productId) {
-  const url = productId ? `/api/products/${productId}/plane` : '/api/plane';
+// orderId: şeması sonradan değişen üründe siparişin verildiği revizyonun çizimi (eski sipariş eski parçasıyla görünür)
+export function loadPlane(productId, orderId) {
+  const url = productId ? `/api/products/${productId}/plane${orderId ? `?order=${orderId}` : ''}` : '/api/plane';
   if (!planeCache.has(url)) planeCache.set(url, api.get(url).catch(err => { planeCache.delete(url); throw err; }));
   return planeCache.get(url);
 }

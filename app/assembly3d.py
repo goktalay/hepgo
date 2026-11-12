@@ -11,6 +11,7 @@ Sonuç tek bir ikili dosyadır (int16, 0,25 mm): parça başına seyreltilmiş s
 (X sağ, Y yukarı, Z arka; mm). Yanında parça listesi (aralık, bölüm, merkez). Önizlemeler değişmedikçe önbellekten verilir.
 """
 import hashlib
+import inspect
 import json
 import math
 import threading
@@ -305,7 +306,8 @@ def _signature(schema_key, previews):
 def build(conn, schema_key):
     """Montaj dosyası (önbellekli): {'file', 'parts': [...], 'scale', 'missing': [...]}"""
     mod = catalogs.schema(schema_key)
-    base = getattr(mod, 'base', None)   # yarı mamul şeması: ana şemanın alt kümesi (yerleşim ana şemadan)
+    # yarı mamul şeması: ana şemanın alt kümesi (yerleşim ana şemadan); sürüm modüllerinin 'base'i türediği şemadır, o sayılmaz
+    base = None if inspect.ismodule(mod) else getattr(mod, 'base', None)
     parts = [p for p in (base.build() if base else mod.build())]
     if base:
         ids = set(mod.part_ids())
@@ -522,7 +524,7 @@ def _compute(parts, previews, out):
 
 # ---------- Elle düzeltmeler (3B Montaj düzenleyicisi): otomatik yerleşimin üstüne parça başına konum / dönüş
 def _ov_key(schema_key):
-    return f'assembly3d.overrides.{schema_key}'
+    return f'assembly3d.overrides.{catalogs.layout_key(schema_key)}'   # dondurulmuş revizyon güncel şemanın yerleşimini paylaşır
 
 
 def overrides(conn, schema_key):

@@ -139,6 +139,12 @@ SCHEMAS.update({f'semi-v4-{code.lower()}': {'module': SemiSchema(sec, plane_v4),
                 for code, (sec, name) in SEMIS.items()})
 SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v4), 'title': f'CAYMAZ V4 parçası {p["id"]}'}
                 for p in plane_v4.build() if f'{PART_PREFIX}{p["id"]}' not in SCHEMAS})
+# CAYMAZ V4'ün dondurulmuş ilk revizyonu (Servo Kapak V2): servo kapağı değişmeden önce verilen siparişler bununla sürer
+# (orders.schema_rev; bkz. catalogs.REVISIONS). 'frozen': yeni ürüne şema olarak seçilemez.
+SCHEMAS['semi-v4r1-gvd'] = {'module': SemiSchema('GOVDE', plane_v4.R1), 'frozen': True,
+                            'title': 'CAYMAZ V4 Gövde (yarı mamul · Servo Kapak V2 revizyonu)'}
+SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v4.R1), 'title': f'CAYMAZ V4 parçası {p["id"]}'}
+                for p in plane_v4.R1.build() if f'{PART_PREFIX}{p["id"]}' not in SCHEMAS})
 # yarı mamul kodu → montaj bölümü (sürümlü yarı mamuller kod sonunda sürüm: SLK2, SGK3, GVD4, ELK2 …)
 SEMI_SECTIONS = {**{c: v[0] for c, v in SEMIS.items()},
                  **{f'{c}{v}': sec for v in ('2', '3', '4') for c, (sec, _) in SEMIS.items()}}
@@ -214,14 +220,62 @@ V2_DESCRIPTION = ('Benzin deposunu rahat yerleştirmek için kapakları büyütt
 
 V3_DESCRIPTION = ('CAYMAZ V2 ile aynı yapı; L4, R4 kanat parçaları ve gövde 01 parçası yeniden çizildi '
                   '(CAYMAZ - L4V3, CAYMAZ - R4V3, CAYMAZ O1 - V3).')
-V4_DESCRIPTION = ('CAYMAZ V2 ile aynı yapı; L2, L3, R2, R3 kanat parçaları ile gövde O8, O9 parçaları ve servo kapağı '
-                  'yeniden çizildi (L2 - V3, L3 - V3, R2 - V3, R3 - V3, O8 - V3, O9 - V3 çizimleri; SERVO KAPAK - V2).')
+V4_DESCRIPTION_R1 = ('CAYMAZ V2 ile aynı yapı; L2, L3, R2, R3 kanat parçaları ile gövde O8, O9 parçaları ve servo kapağı '
+                     'yeniden çizildi (L2 - V3, L3 - V3, R2 - V3, R3 - V3, O8 - V3, O9 - V3 çizimleri; SERVO KAPAK - V2).')
+V4_DESCRIPTION = V4_DESCRIPTION_R1.replace('SERVO KAPAK - V2', 'SERVO KAPAK - V3')
 # sürüm: (mamul kodu, ad, seri, açıklama, şema anahtarı, parça şeması modülü, montaj sarfı kopyalanacak önceki sürüm eki)
 VERSIONS = {
     '2': ('CYZ2', 'CAYMAZ V2', 'CYZ-S2', V2_DESCRIPTION, 'caymaz-v2', plane_v2, ''),
     '3': ('CYZ3', 'CAYMAZ V3', 'CYZ-S3', V3_DESCRIPTION, 'caymaz-v3', plane_v3, '2'),
     '4': ('CYZ4', 'CAYMAZ V4', 'CYZ-S4', V4_DESCRIPTION, 'caymaz-v4', plane_v4, '2'),
 }
+
+
+def _add_part(conn, part, vname, semi_id, plane_mod):
+    """Sürüme özel parçanın parça yedeği ürünü (baskı dosyası/süresi ve bir baskıda çıkan adet print_files'tan); id'sini döner."""
+    from .print_files import PER_PRINT, PRINT_FILES
+    pcode = part['id'] if not conn.execute('SELECT 1 FROM products WHERE code = ?', (part['id'],)).fetchone() else f'P-{part["id"]}'
+    pf = PRINT_FILES.get(part['id'], (None, None))
+    # yeniden çizilen parçanın üstten 2B görünüşü önceki sürümdeki karşılığıyla aynıdır: aynı resim dosyası (kopya yok)
+    changed = getattr(plane_mod, 'CHANGED', None)   # V3/V4: {eski kod: yeni kod}
+    old = next((o for o, n in changed.items() if n == part['id']), None) if isinstance(changed, dict) else None
+    image = conn.execute('SELECT image FROM products WHERE schema = ?', (f'{PART_PREFIX}{old}',)).fetchone() if old else None
+    return conn.execute(
+        '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, parent_id,
+                                  orderable, print_file, print_minutes, image, created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)''',
+        (pcode, part_name(part), f'{part["id"]}-YP', f'{vname} parçası · mamul siparişiyle üretilir', f'{PART_PREFIX}{part["id"]}', 'YP',
+         SEMI, PER_PRINT.get(part['id'], 1), semi_id, pf[0], pf[1], image[0] if image else None, db.now())).lastrowid
+
+
+def replace_parts(conn, ver):
+    """Sürümün şemasında sonradan değişen parça (plane.REPLACED: {eski kod: yeni kod}): yeni parçanın parça yedeği açılır
+    ve ana yapının ürün ağacında eskisinin yerine geçer (adet ve sıra korunur). Eski parça yedeği durur — dondurulmuş
+    siparişler (orders.schema_rev) onunla üretilir. İdempotent: ağaç sonradan elle düzenlenirse yeniden dokunmaz."""
+    _, vname, _, desc, schema_key, plane_mod, _ = VERSIONS[ver]
+    for old, new in getattr(plane_mod, 'REPLACED', {}).items():
+        part = next(p for p in plane_mod.build() if p['id'] == new)
+        semi_ids = [r[0] for r in conn.execute('SELECT id FROM products WHERE schema = ?',
+                                               (f'semi-v{ver}-{semi_of(part).lower()}',)).fetchall()]
+        if not semi_ids:
+            continue
+        row = conn.execute('SELECT id FROM products WHERE schema = ?', (f'{PART_PREFIX}{new}',)).fetchone()
+        new_id = row[0] if row else _add_part(conn, part, vname, semi_ids[0], plane_mod)
+        old_row = conn.execute('SELECT id FROM products WHERE schema = ?', (f'{PART_PREFIX}{old}',)).fetchone()
+        for sid in semi_ids:
+            b = old_row and conn.execute('SELECT qty, pos FROM product_bom WHERE parent_id = ? AND child_id = ?',
+                                         (sid, old_row[0])).fetchone()
+            if b:
+                conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty, pos) VALUES (?,?,?,?)', (sid, new_id, b[0], b[1]))
+                conn.execute('DELETE FROM product_bom WHERE parent_id = ? AND child_id = ?', (sid, old_row[0]))
+            elif not row:
+                conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (sid, new_id))
+        if old_row:   # eski parça: açıklaması elle değiştirilmediyse yerine geçeni söyler
+            conn.execute('UPDATE products SET description = ? WHERE id = ? AND description = ?',
+                         (f'{vname} parçası · {part_name(part)} ile değiştirildi; yalnız önceki siparişlerde üretilir',
+                          old_row[0], f'{vname} parçası · mamul siparişiyle üretilir'))
+    if ver == '4':   # mamul açıklaması elle değiştirilmediyse güncel kapağı anar
+        conn.execute('UPDATE products SET description = ? WHERE schema = ? AND description = ?', (desc, schema_key, V4_DESCRIPTION_R1))
+    conn.commit()
 
 
 def create_version(conn, ver, code=None):
@@ -233,7 +287,6 @@ def create_version(conn, ver, code=None):
     row = conn.execute('SELECT id FROM products WHERE code = ?', (code,)).fetchone()
     if row:
         return row[0]
-    from .print_files import PRINT_FILES
     mamul = conn.execute(
         '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, orderable, usage_type, created_at)
            VALUES (?,?,?,?,?,?,?,1,'TEK',?)''', (code, vname, serial, desc, schema_key, code, 'MAMUL', db.now())).lastrowid
@@ -245,20 +298,8 @@ def create_version(conn, ver, code=None):
                                                    f'semi-v{ver}-{c.lower()}', f'{c}{ver}', SEMI, mamul, db.now())).lastrowid
         conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (mamul, semi_ids[f'{c}{ver}']))
     for part in plane_mod.build():
-        schema = f'{PART_PREFIX}{part["id"]}'
-        if conn.execute('SELECT 1 FROM products WHERE schema = ?', (schema,)).fetchone():
-            continue   # önceki sürümle ortak parça
-        pcode = part['id'] if not conn.execute('SELECT 1 FROM products WHERE code = ?', (part['id'],)).fetchone() else f'P-{part["id"]}'
-        pf = PRINT_FILES.get(part['id'], (None, None))
-        # yeniden çizilen parçanın üstten 2B görünüşü önceki sürümdeki karşılığıyla aynıdır: aynı resim dosyası (kopya yok)
-        changed = getattr(plane_mod, 'CHANGED', None)   # V3/V4: {eski kod: yeni kod}
-        old = next((o for o, n in changed.items() if n == part['id']), None) if isinstance(changed, dict) else None
-        image = conn.execute('SELECT image FROM products WHERE schema = ?', (f'{PART_PREFIX}{old}',)).fetchone() if old else None
-        conn.execute(
-            '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, parent_id,
-                                      orderable, print_file, print_minutes, image, created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)''',
-            (pcode, part_name(part), f'{part["id"]}-YP', f'{vname} parçası · mamul siparişiyle üretilir', schema, 'YP',
-             SEMI, 1, semi_ids[semi_of(part, ver)], pf[0], pf[1], image[0] if image else None, db.now()))
+        if not conn.execute('SELECT 1 FROM products WHERE schema = ?', (f'{PART_PREFIX}{part["id"]}',)).fetchone():
+            _add_part(conn, part, vname, semi_ids[semi_of(part, ver)], plane_mod)   # yoksa: önceki sürümle ortak parça
     for part in plane_mod.build():   # ağaç: V<ver> ana yapısı → parçaları (ortak olanlar dahil)
         child = conn.execute('SELECT id FROM products WHERE schema = ?', (f'{PART_PREFIX}{part["id"]}',)).fetchone()
         conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (semi_ids[semi_of(part, ver)], child[0]))
@@ -310,6 +351,7 @@ def ensure_versions(conn):
     mids, bekleyen = [], []
     for ver, part_codes in AUTO_VERSIONS:
         mids.append(create_version(conn, ver))
+        replace_parts(conn, ver)
         schemas = tuple(f'{PART_PREFIX}{k}' for k in part_codes)
         for r in db.rows(conn.execute(f'''SELECT id, print_file FROM products WHERE gcode_file IS NULL AND print_file IS NOT NULL
                                          AND schema IN ({','.join('?' * len(schemas))})''', schemas)):

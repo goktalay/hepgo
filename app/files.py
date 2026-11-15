@@ -23,6 +23,7 @@ KINDS = {
     'camfaces': {'.jpg'},
     'feed': {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.mp4', '.webm', '.mov', '.m4v',
              '.ogg', '.oga', '.opus', '.m4a', '.mp3', '.wav', '.weba'},   # Şirketten Haberler medyası
+    'wsevents': {'.jpg', '.mp4'},   # İş Güvenliği olay karesi / klibi (kamera servisi yazar; dağıtık kurulumda fabrikada)
     'camclips': {'.mp4'},           # görülme anı video klipleri (kamera servisi yazar; dağıtık kurulumda fabrikada)
     'faces_enroll': {'.jpg'},       # yüz tanıma eğitimi kırpıkları (bulutta)
     'gcode': {'.gcode', '.png', '.bin'},
@@ -282,7 +283,7 @@ def get_file(kind: str, name: str, w: int = 0, dl: int = 0, user=Depends(current
     path = config.UPLOAD_DIR / kind / name
     if not path.is_file():
         # Dağıtık kurulum: kamera medyası (kırpık/kare/klip) fabrikada tutulur; talep üzerine ajandan getirilir
-        if kind in ('camfaces', 'camclips') and config.AGENT_MODE == 'remote':
+        if kind in ('camfaces', 'camclips', 'wsevents') and config.AGENT_MODE == 'remote':
             from . import facebridge
             try:
                 data, ctype = facebridge.media(f'{kind}/{name}')

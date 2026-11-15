@@ -55,6 +55,7 @@ import * as signPage from './modules/sign.js';
 import * as secretariat from './modules/secretariat.js';
 import * as security from './modules/security.js';
 import * as cammgmt from './modules/cammgmt.js';
+import * as worksafety from './modules/worksafety.js';
 import * as directory from './modules/directory.js';
 import * as reportsMod from './modules/reports.js';
 import * as announcements from './modules/announcements.js';
@@ -131,6 +132,8 @@ const MODULES = [
   // Kameralar: "Kamera Yetkilisi" rolü (ya da Sistem Yöneticisi) ve NVR entegrasyonu aktifse görünür (Sistem Yönetimi)
   { key: 'cameras', title: 'Kameralar', mod: cammgmt, group: 'system',
     show: u => u.modules.includes('cameras') && u.nvr },
+  // İş Güvenliği: kameralarla kural denetimi (KKD, bölge, araç, davranış, ergonomi). Ayar ve raporlar NVR bağlantısı olmadan da açılır.
+  { key: 'worksafety', title: 'İş Güvenliği', mod: worksafety, group: 'system', show: u => u.modules.includes('worksafety') },
   { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
   // Fabrika dijital ikizi: 2D kat planı + kamera/personel yerleşimi + yüz tanımadan hareket izi (Sistem Yönetimi)
   { key: 'factory', title: 'Fabrika', mod: factory, group: 'system' },
@@ -163,6 +166,7 @@ const normTr = s => (s || '').toLocaleLowerCase('tr')
 const MOD_KEYWORDS = {
   hr: 'insan kaynaklari personel ozluk bordro izin aile maas kadro',
   cameras: 'kamera nvr yuz tanima isg kkd gorus tanimlanmayan',
+  worksafety: 'is guvenligi isg kkd baret yelek kask eldiven bolge yasak forklift arac dusme kosma ergonomi reba rula uyari ihlal isi haritasi guvenlik puani',
   factory: 'fabrika kat plani kamera yerlesim hareket canli kim nerede dijital ikiz',
   rehber: 'rehber kisi kisiler telefon adres',
   companies: 'firma cari musteri tedarikci',
@@ -198,6 +202,12 @@ const FEATURES = [
   ['personel ekle calisan yeni', 'Personel Ekle', '#/hr', 'İnsan Kaynakları › ＋', 'hr'],
   ['yuz tanima face egitim', 'Yüz Tanıma', '#/cameras/facerec', 'Kameralar › Yüz Tanıma', 'cameras'],
   ['isg kkd kask eldiven alarm goruntu isleme', 'İSG (KKD denetimi)', '#/cameras/isg', 'Kameralar › İSG', 'cameras'],
+  ['is guvenligi uyari ihlal alarm klip kural disi', 'İş Güvenliği uyarıları', '#/worksafety', 'İş Güvenliği › Uyarılar', 'worksafety'],
+  ['canli izleme ihlal kamera kutu tespit', 'İş Güvenliği canlı izleme', '#/worksafety/live', 'İş Güvenliği › Canlı İzleme', 'worksafety'],
+  ['kural baret yelek eldiven gozluk maske emniyet kemeri kosma dusme tirmanma arac yaya reba rula risk', 'İş Güvenliği kuralları', '#/worksafety/rules', 'İş Güvenliği › Kurallar', 'worksafety'],
+  ['bolge cizimi yasak bolge yaya yolu arac yolu makine elektrik dar alan poligon', 'Güvenlik bölgeleri', '#/worksafety/zones', 'İş Güvenliği › Bölgeler', 'worksafety'],
+  ['isi haritasi yogunluk kisi arac ihlal', 'Isı haritası', '#/worksafety/heat', 'İş Güvenliği › Isı Haritası', 'worksafety'],
+  ['guvenlik puani uyum raporu vardiya ihlal orani', 'Güvenlik puanı ve raporlar', '#/worksafety/report', 'İş Güvenliği › Raporlar', 'worksafety'],
   ['tanimlanmayan kisi bilinmeyen yuz', 'Tanımlanmayan Kişiler', '#/cameras/unknown', 'Kameralar › Tanımlanmayan', 'cameras'],
   ['kamera ekle nvr onvif', 'Kamera Ekle (NVR)', '#/cameras', 'Kameralar', 'cameras'],
   ['canli kim nerede konum fabrika', 'Fabrika · Canlı Konum', '#/factory/live', 'Fabrika › Canlı', 'factory'],
@@ -1473,6 +1483,8 @@ function renderHome() {
 
 // ---------- Hareket kaydı: her sayfaya giriş ve çıkış (kalınan süreyle) loglanır ----------
 const SUB_PAGES = {
+  worksafety: p => { const k = (p[0] || '').split('?')[0]; return k === 'e' ? `Uyarı #${p[1]}`
+    : ({ live: 'Canlı İzleme', rules: 'Kurallar', zones: 'Bölgeler', heat: 'Isı Haritası', report: 'Raporlar', settings: 'Ayarlar' }[k] || k); },
   tickets: p => { const k = (p[0] || '').split('?')[0]; return k === 't' ? `Talep #${p[1]}` : k === 'live' ? (p[1] ? `Canlı Destek › Sohbet #${p[1]}` : 'Canlı Destek')
     : ({ list: 'Talepler', team: 'Ekip', canned: 'Hazır Yanıtlar', settings: 'Ayarlar' }[k] || k); },
   uyelik: p => { const k = (p[0] || '').split('?')[0]; const lbl = { overview: 'Genel Bakış', live: 'Canlı Destek', tickets: 'Destek Taleplerim', payments: 'Ödemelerim', contracts: 'Sözleşmelerim' }[k] || k;

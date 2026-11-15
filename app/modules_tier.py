@@ -23,7 +23,7 @@ OPTIONAL = {
     'sections', 'services', 'reservations', 'waiter',
 }
 CENTRAL = {
-    'cameras', 'mikro', 'factory', 'konum', 'sms',
+    'cameras', 'worksafety', 'mikro', 'factory', 'konum', 'sms',
 }
 PACKAGE = {'drone'}   # Dron paketi
 

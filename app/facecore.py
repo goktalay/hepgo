@@ -458,6 +458,9 @@ def push_config(conn, cfg):
         conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('facerec_config', json.dumps(cfg.get('facerec'))))
     if cfg.get('ppe_required') is not None:   # İSG/KKD: kişi başına zorunlu KKD ("type:id" → ['kask',...])
         conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('ppe_required', json.dumps(cfg.get('ppe_required'))))
+    if cfg.get('ws_config') is not None:   # İş Güvenliği kural / bölge yapılandırması
+        from . import worksafety
+        worksafety.set_config(conn, cfg.get('ws_config'))
     # Eğitim izleri (bulut face_enroll aynası) — eşleştirme için embedding yeterli; kırpık yer tutucu
     conn.execute('DELETE FROM face_enroll')
     n = 0
@@ -669,6 +672,12 @@ def rpc(conn, method, args):
         return push_config(conn, a.get('cfg') or {})
     if method == 'watch':
         return watch_live(conn, a['cid'], a.get('ttl', 25))
+    if method.startswith('ws_'):   # İş Güvenliği (kural denetimi) — ayrı modül
+        from . import worksafety
+        try:
+            return worksafety.rpc(conn, method, a)
+        except worksafety.NotFound as e:
+            raise NotFound(str(e)) from None
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')
 
 

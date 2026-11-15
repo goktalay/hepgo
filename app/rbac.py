@@ -57,6 +57,7 @@ CATALOG = [
     ('reservations', 'Rezervasyon', 'Satış & CRM'),
     ('waiter', 'Garson', 'Satış & CRM'),
     ('secretariat', 'Sekreterya', 'Sistem'), ('security', 'Güvenlik', 'Sistem'), ('cameras', 'Kameralar', 'Sistem'),
+    ('worksafety', 'İş Güvenliği', 'Sistem'),   # kamera tabanlı kural denetimi (app/worksafety.py)
     ('rehber', 'Rehber', 'Sistem'), ('tools', 'Araçlar', 'Sistem'),
     ('factory', 'Fabrika', 'Sistem'),
     ('members', 'Üyelik Yönetimi', 'Merkez'), ('tickets', 'Destek Merkezi', 'Merkez'), ('sms', 'Toplu SMS', 'Merkez'), ('sshmaster', 'Mastertool', 'Merkez'),

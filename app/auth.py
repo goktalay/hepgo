@@ -75,6 +75,7 @@ MODULE_ROLES = {
     'secretariat': [ADMIN, SECRETARY],                                                        # M13 Sekreterya
     'security':   [ADMIN, SECURITY],                                                          # M14 Güvenlik
     'cameras':    [ADMIN, CAMERA],                                                            # M24 Kameralar (izleme + yüz tanıma; NVR aktifse görünür)
+    'worksafety': [ADMIN, CAMERA],                                                            # İş Güvenliği (kamera tabanlı kural denetimi: KKD, bölge, araç, ergonomi; uyarı + ısı haritası + rapor)
     'factory':    [ADMIN, CAMERA],                                                            # M31 Fabrika (dijital ikiz: kat planı + kamera/personel yerleşimi + yüz tanımadan hareket)
     'rehber':     [r for r in ROLES if r not in (SECURITY, CAMERA, INTERN, CLEANER)],         # M25 Rehber (birleşik kişi rehberi)
     'hr':         [ADMIN, HR],                                                                # M17 İnsan Kaynakları

@@ -38,6 +38,7 @@ MODULES = [
     ('certs',        'Sertifikasyon',         'ofis'),
     ('fleet',        'Araç Yönetimi',         'saha'),
     ('cameras',      'Kameralar',             'ofis'),
+    ('worksafety',   'İş Güvenliği',          'ofis'),
     ('pos',          'Esnaf Kasa',            'esnaf'),
     ('sections',     'Bölümler',              'esnaf'),
     ('services',     'Hizmetler',             'esnaf'),
@@ -57,7 +58,7 @@ REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales'
 OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
             'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos',
             'sections', 'services', 'reservations', 'waiter'}
-CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}
+CENTRAL = {'cameras', 'worksafety', 'mikro', 'factory', 'konum', 'sms'}
 PACKAGE = {'drone'}   # yalnız Dron paketinde gelir (KOBİ modül seçiminde görünmez); tenant modules_tier.PACKAGE ile aynı
 
 

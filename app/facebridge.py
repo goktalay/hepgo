@@ -10,7 +10,7 @@ import json
 
 from fastapi import HTTPException
 
-from . import config, db, devices
+from . import config, db, devices, worksafety
 
 
 def remote():
@@ -90,6 +90,6 @@ def push(conn):
     cfg = {
         'nvr': {'host': config.NVR_HOST, 'port': config.NVR_PORT, 'user': config.NVR_USER, 'password': config.NVR_PASSWORD},
         'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll, 'facerec': facerec, 'family': family, 'visitors': visitors,
-        'ppe_required': ppe_required,
+        'ppe_required': ppe_required, 'ws_config': worksafety.get_config(conn),
     }
     return rpc('push_config', cfg=cfg)

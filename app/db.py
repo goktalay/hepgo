@@ -3326,6 +3326,21 @@ def _migrate(conn):
             missing TEXT, at TEXT NOT NULL, crop TEXT, frame TEXT,
             acknowledged_by INTEGER, acknowledged_at TEXT, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_isg_alarms_at ON isg_alarms(at);
+        -- İş Güvenliği (kamera tabanlı kural denetimi). FK yok: dağıtık kurulumda fabrika yerel DB'sinde üretilir.
+        CREATE TABLE IF NOT EXISTS ws_events (
+            id INTEGER PRIMARY KEY, camera_id INTEGER, camera_name TEXT, rule TEXT NOT NULL, rule_name TEXT, cat TEXT,
+            zone_id TEXT, zone_name TEXT, severity INTEGER, likelihood INTEGER, risk INTEGER, level TEXT,
+            detail TEXT, meta TEXT, photo TEXT, clip TEXT, at TEXT NOT NULL,
+            ack_by INTEGER, ack_name TEXT, ack_at TEXT, ack_note TEXT);
+        CREATE INDEX IF NOT EXISTS idx_ws_events_at ON ws_events(at);
+        CREATE INDEX IF NOT EXISTS idx_ws_events_rule ON ws_events(rule, at);
+        CREATE TABLE IF NOT EXISTS ws_heat (
+            camera_id INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, grid TEXT NOT NULL,
+            PRIMARY KEY (camera_id, day, kind));
+        CREATE TABLE IF NOT EXISTS ws_stats (
+            day TEXT NOT NULL, hour INTEGER NOT NULL, camera_id INTEGER NOT NULL, rule TEXT NOT NULL,
+            checks INTEGER NOT NULL DEFAULT 0, violations INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, hour, camera_id, rule));
     ''')
     dcols = {r[1] for r in conn.execute('PRAGMA table_info(employee_duties)')}
     for col in ('section', 'role', 'phase'):   # görev tanımı bölümü (AMAC / POZISYON / ROL / YETKI / DIGER), rol ve aşama

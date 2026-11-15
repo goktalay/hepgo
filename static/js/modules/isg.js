@@ -16,7 +16,9 @@ export async function renderIsg(body, _ctx) {
     h('p', { class: 'small muted', style: { margin: '6px 0 0' } },
       'Görüntü İşleme entegrasyonu, tanıdığı personelin zorunlu koruyucu donanımı (kask/eldiven…) takıp takmadığını kamerada denetler; eksikse burada alarm oluşur. '
       + 'Kişi başına zorunlu KKD: İnsan Kaynakları › personel detayı › İSG › KKD. '
-      + 'Kask/eldiven tespiti fabrikadaki KKD modeliyle çalışır; model kurulmadıysa yalnız Yüz Tanıma etkindir.'));
+      + 'Kask/eldiven tespiti fabrikadaki KKD modeliyle çalışır; model kurulmadıysa yalnız Yüz Tanıma etkindir.'),
+    h('p', { class: 'small muted', style: { margin: '6px 0 0' } }, 'Kişiden bağımsız kural denetimi (bölge, araç, davranış, ergonomi, donanım zorunlu alanlar) için: ',
+      h('a', { href: '#/worksafety' }, 'İş Güvenliği modülü'), '.'));
   const list = h('div');
   body.append(note, list);
 

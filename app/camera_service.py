@@ -33,6 +33,7 @@ CLIP_SECONDS, CLIP_FPS = 6, 5                    # kaydedilen klip: görülme ö
 _CH_RE = re.compile(r'/unicast/c(\d+)/')         # NVR kanal numarası (stream_url'den)
 LIVE_EVERY, LIVE_WIDTH = 0.2, 960        # izleme karesi
 FACE_EVERY, FACE_WIDTH = 0.5, 1600       # yüz arama (giriş kameralarında uzak/açılı yüzler için daha geniş)
+FACE_THROTTLE = {'mult': 1, 'off': False}   # İş Güvenliği işleyicisi işlem gücü yetmediğinde yüz aramayı seyreltir / durdurur
 FRAME_WIDTH = 1920                       # saklanan tam kare
 MIN_FACE, MIN_SCORE = 36, 0.6            # yürüyen/açılı yüzler 0.9'u geçemiyordu; 0.6 daha çok yakalar
 SAME_GROUP = 0.40                        # SFace kosinüs: aynı kişinin grubu
@@ -269,7 +270,7 @@ class Camera:
         self.channel = _channel_of(row['stream_url'])   # NVR kanalı (zamanlama için); NVR dışı ise None
         self.stop = threading.Event()
         self.latest = None   # (zaman, kare)
-        self.clipbuf = deque(maxlen=CLIP_SECONDS * CLIP_FPS)   # son ~6 sn küçük kare (klip için)
+        self.clipbuf = deque(maxlen=CLIP_SECONDS * CLIP_FPS)   # son ~6 sn (zaman, küçük kare) — klip ve hareket ölçümü için
         self._last_buf = 0
         self.status = None
         self.threads = [threading.Thread(target=self._read, daemon=True, name=f'cam{row["id"]}-read')]
@@ -318,7 +319,7 @@ class Camera:
                 self.latest = (now, img)
                 if now - self._last_buf >= 1 / CLIP_FPS:   # klip tamponu (küçük kare)
                     self._last_buf = now
-                    self.clipbuf.append(_resize(img, 640))
+                    self.clipbuf.append((now, _resize(img, 640)))
                 if now - last_live >= LIVE_EVERY:
                     last_live = now
                     _write_jpg(live, _resize(img, LIVE_WIDTH), 72)
@@ -335,9 +336,15 @@ class Camera:
     def _faces(self):
         detector = make_face_detector((320, 320), score=MIN_SCORE, top_k=50)
         recognizer = make_face_recognizer()
-        seen_at = 0
+        seen_at, paused = 0, False
         while not self.stop.is_set():
-            self.stop.wait(FACE_EVERY)
+            self.stop.wait(FACE_EVERY * FACE_THROTTLE['mult'])
+            if FACE_THROTTLE['off']:   # İş Güvenliği önceliği: yüz tanıma geçici olarak durduruldu
+                if not paused:
+                    paused = True
+                    _write_overlay(self.row['id'], [])
+                continue
+            paused = False
             if not self.latest or self.latest[0] == seen_at:
                 continue
             if self.sched is not None and not self.sched.active(self.channel):
@@ -433,7 +440,7 @@ class Camera:
     def _save_clip(self, sighting_id):
         """Görülme anının kısa videosunu (tampondaki son ~6 sn) lokal olarak kaydeder ve kayda bağlar. En iyi çaba."""
         try:
-            frames = list(self.clipbuf)
+            frames = [f for _t, f in list(self.clipbuf)]
             if len(frames) < CLIP_FPS:   # en az ~1 sn
                 return
             CLIP_DIR.mkdir(parents=True, exist_ok=True)
@@ -486,6 +493,14 @@ def main():
     sched = Schedule()
     running = {}   # id → (imza, Camera)
     last_heavy = 0
+    ws = None
+    try:   # İş Güvenliği (kural denetimi) aynı karelerin üzerinde, ayrı iş parçacığında çalışır
+        from . import worksafety_worker
+        ws = worksafety_worker.Worker(running, FACE_THROTTLE)
+        ws.start()
+    except Exception:   # noqa: BLE001 — işleyici başlamasa da kamera servisi çalışır
+        log.exception('iş güvenliği işleyicisi başlatılamadı')
+        ws = None
     try:
         log.info('yüz tanıma hesaplama: %s', 'GPU (CUDA)' if face_on_gpu() else 'CPU')
     except Exception:   # noqa: BLE001
@@ -509,7 +524,7 @@ def main():
             for cid, r in allrows.items():
                 if r['active']:                 # yüz tanıma açık kanal: canlı + yüz
                     want[cid] = r
-                elif cid in watched:            # yüz tanıma kapalı ama izleniyor: yalnız canlı
+                elif cid in watched or (ws is not None and ws.wants(cid)):   # izleniyor ya da İş Güvenliği kapsamında: yüz tanımasız
                     rr = dict(r)
                     rr['faces'] = 0
                     want[cid] = rr

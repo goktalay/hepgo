@@ -44,6 +44,73 @@ def rules_unit():
     assert R.model_ok(R.BY_KEY['no_hardhat'], caps) == (True, None) and not R.model_ok(R.BY_KEY['no_hardhat'], {**caps, 'ppe': []})[0]
     assert not R.model_ok(R.BY_KEY['reba'], {**caps, 'pose': False})[0] and R.model_ok(R.BY_KEY['reba'], caps)[0]
     assert not R.model_ok(R.BY_KEY['restricted_entry'], {})[0]   # nesne modeli olmadan hiçbir kural çalışmaz
+    ppe_groups_unit()
+
+
+def ppe_groups_unit():
+    """KKD senaryo grupları: doğrulama, kamera / bölge kapsamı, obje başına ayar (risk, süre, bekleme)."""
+    sq = [[0.5, 0], [1, 0], [1, 1], [0.5, 1]]   # görüntünün sağ yarısı
+    cfg = W.normalize({
+        'rules': {'no_gloves': {'enabled': False}},
+        'ppe_groups': [
+            {'id': 'g1', 'name': ' Seviye 1 ', 'items': {'hardhat': {'sev': 9, 'lik': 5, 'hold': 4, 'cooldown': 5}, 'gloves': {},
+                                                       'shoes': {'sev': 2}, 'olmayan': {}}},
+            {'id': 'g2', 'name': 'Seviye 2', 'items': ['vest']},
+            {'id': 'g1', 'name': 'Aynı kimlik'}, 'bozuk', {'name': ''}],
+        'cameras': {'1': {'ppe_group': 'g1'}, '2': {'ppe': True}, '3': {'ppe': True, 'ppe_group': 'silinmis'},
+                    '4': {'ppe_group': 'g1', 'rules': ['running'], 'zones': [
+                        {'id': 'a', 'type': 'ppe_zone', 'points': sq, 'params': {'group': 'g2'}},
+                        {'id': 'b', 'type': 'ppe_zone', 'points': sq, 'params': {'group': 'yok', 'items': ['vest', 'x']}}]},
+                    '5': {'zones': [{'id': 'c', 'type': 'ppe_zone', 'points': sq, 'params': {'items': ['hardhat']}}]}}})
+    g1, g2, g3 = cfg['ppe_groups']
+    assert (g1['id'], g1['name'], list(g1['items'])) == ('g1', 'Seviye 1', ['hardhat', 'gloves', 'shoes'])
+    assert g1['items']['hardhat'] == {'sev': 5, 'lik': 5, 'hold': 4, 'cooldown': 30} and g1['items']['gloves'] == {}
+    assert g2['items'] == {'vest': {}} and g3['id'].startswith('g') and g3['name'] == 'Grup 5' and g3['items'] == {}
+    assert cfg['cameras']['1']['ppe_group'] == 'g1' and cfg['cameras']['3']['ppe_group'] is None and cfg['cameras']['3']['ppe']
+    za, zb = cfg['cameras']['4']['zones']
+    assert za['params'] == {'items': [], 'group': 'g2'} and zb['params'] == {'items': ['vest']}
+    assert W.normalize(cfg) == cfg
+
+    rules = R.effective(cfg)
+    caps = {'objects': True, 'pose': False, 'ppe': ['hardhat', 'vest', 'gloves'], 'classes': ['person'], 'backend': 'cpu'}
+    cam = {i: W.camera_config(cfg, i) for i in range(1, 7)}
+    left = person(0.1, 0.3, ppe={'hardhat': False, 'vest': False, 'gloves': False, 'shoes': False})
+    right = person(0.7, 0.3, ppe={'hardhat': False, 'vest': False, 'gloves': None})
+    far = person(0.2, 0.1, h=0.05, ppe={'hardhat': False})
+
+    def ev(c, *ps):
+        return {(r['rule'], r['slot']): r for r in R.evaluate({'t': 0, 'persons': list(ps)}, cam[c], rules, caps)}
+
+    # Kamera grubu: yalnız grubun, modeli bulunan objeleri — genel anahtarı kapalı eldiven de; yelek gruba girmediği için yok
+    n = R.needs(cam[1], rules, caps)
+    assert n['ppe'] and {'no_hardhat', 'no_gloves'} <= set(n['active']) and 'no_shoes' not in n['active']
+    got = ev(1, left, right, far)
+    assert set(got) == {('no_hardhat', 'g1'), ('no_gloves', 'g1')}
+    hh = got['no_hardhat', 'g1']
+    assert (hh['checks'], hh['viol']) == (2, 2) and hh['detail'] == '2 kişide baret yok · Seviye 1' and hh['meta']['group'] == 'Seviye 1'
+    assert hh['over'] == {'sev': 5, 'lik': 5, 'hold': 4, 'cooldown': 30} and 'over' not in got['no_gloves', 'g1']
+    assert got['no_gloves', 'g1']['checks'] == 1     # sağdaki kişide eldiven bilinmiyor
+    # Grupsuz "KKD zorunlu" kamera: etkin tüm KKD kuralları (eski davranış) — eldiven kuralı kapalı
+    assert set(ev(2, left)) == {('no_hardhat', ''), ('no_vest', '')} and ev(2, left)['no_vest', '']['detail'] == '1 kişide reflektif yelek yok'
+    assert set(ev(3, left)) == set(ev(2, left))      # silinmiş gruba başvuru → grupsuz
+    # Gruplu bölge kamera grubundan önce gelir: sağdaki kişide yelek "Seviye 2", baret yine kamera grubundan; kameranın
+    # kural listesi (yalnız koşma) grubun objelerini kapatmaz
+    got = ev(4, left, right)
+    assert set(got) == {('no_hardhat', 'g1'), ('no_gloves', 'g1'), ('no_vest', 'g2')}
+    assert got['no_vest', 'g2']['checks'] == 1 and got['no_hardhat', 'g1']['checks'] == 2
+    # Grupsuz bölge: yalnız içindeki kişi ve yalnız seçilen obje; KKD ayarı olmayan kamerada denetim yok
+    got = ev(5, left, right)
+    assert set(got) == {('no_hardhat', '')} and got['no_hardhat', '']['checks'] == 1
+    assert not R.needs(cam[6], rules, caps)['ppe'] and not ev(6, left, right)
+    assert not R.needs(cam[1], rules, {**caps, 'ppe': []})['ppe']     # KKD modeli yoksa grup da çalışmaz
+
+    # Obje ayarı izleyicide: 4 sn süre + risk 25 (KRİTİK) + 30 sn bekleme; eldiven kuralın kendi ayarıyla
+    tr, out = R.Tracker(), []
+    for t in range(0, 40, 2):
+        out += [(t, e['rule'], e['risk'], e['level'], e['slot']) for e in tr.step(1, list(ev(1, left).values()), float(t + 1000), rules)]
+    assert [x for x in out if x[1] == 'no_hardhat'] == [(4, 'no_hardhat', 25, 'KRİTİK', 'g1'), (34, 'no_hardhat', 25, 'KRİTİK', 'g1')]
+    assert [x for x in out if x[1] == 'no_gloves'] == [(4, 'no_gloves', 9, 'ORTA', 'g1')]
+    assert R.apply_over(rules['no_vest'], None) is rules['no_vest'] and R.apply_over(rules['no_vest'], {'sev': 5})['risk'] == 15
 
 
 def main():
@@ -87,7 +154,7 @@ def main():
 
         # Kamera kapsamı
         cams = {c['id']: c for c in ok(a.get('/api/worksafety/cameras'))}
-        assert cams[c1]['in_scope'] and cams[c1]['ppe'] and cams[c1]['zones'] == 1
+        assert cams[c1]['in_scope'] and cams[c1]['ppe'] and cams[c1]['zones'] == 1 and cams[c1]['ppe_group'] is None
         assert cams[c2]['in_scope'] and not cams[c2]['ppe'] and cams[c2]['zones'] == 0   # all_cameras: tümü kapsamda
 
         # Uyarılar: ekle, listele, süz, kapat, geri al

@@ -87,7 +87,7 @@ def get_config(user=Depends(ws_user)):
 
 @router.put('/config')
 def put_config(body: dict, user=Depends(ws_user)):
-    """Kurallar, bölgeler, kamera kapsamı ve genel ayarlar tek belgede saklanır; fabrikaya hemen aktarılır."""
+    """Kurallar, KKD senaryo grupları, bölgeler, kamera kapsamı ve genel ayarlar tek belgede saklanır; fabrikaya hemen aktarılır."""
     with db.connect() as conn:
         old = W.get_config(conn)
         cfg = W.set_config(conn, body)
@@ -119,7 +119,9 @@ def cameras(user=Depends(ws_user)):
     for c in rows:
         cc = W.camera_config(cfg, c['id'])
         c['in_scope'] = cc is not None
-        c['ppe'] = bool(cc and cc.get('ppe'))
+        grp = (cc.get('ppe_groups') or {}).get(cc.get('ppe_group')) if cc else None
+        c['ppe'] = bool(cc and (cc.get('ppe') or grp))
+        c['ppe_group'], c['ppe_group_name'] = (grp['id'], grp['name']) if grp else (None, None)
         c['zones'] = len(cc['zones']) if cc else 0
     return rows
 

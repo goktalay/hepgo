@@ -259,8 +259,8 @@ class Worker:
             x[0] += r['checks']
             x[1] += min(r['viol'], r['checks'])
             if r['viol'] > 0:
-                v = viol.setdefault(r['rule'], {'rule': r['rule'], 'name': self.rules[r['rule']]['name'],
-                                                'level': self.rules[r['rule']]['level'], 'boxes': []})
+                rule = R.apply_over(self.rules[r['rule']], r.get('over'))
+                v = viol.setdefault(r['rule'], {'rule': r['rule'], 'name': rule['name'], 'level': rule['level'], 'boxes': []})
                 v['boxes'] += [[round(c, 4) for c in b] for b in r['boxes']]
         hp = self.heat.setdefault((cid, day, 'person'), {})
         for p in obs['persons']:

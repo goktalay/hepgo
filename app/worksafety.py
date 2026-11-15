@@ -4,6 +4,7 @@ Dağıtık kurulumda tespit ve kayıt FABRİKADA (kamera servisi, yerel DB) yap�
 yöntemleriyle okur (rpc). Yapılandırmanın doğruluk kaynağı buluttur (app_kv['ws_config']); kaydedildiğinde fabrikaya
 aktarılır. Kamera görüntüsü dışarı çıkmaz — olay karesi ve klibi fabrikada tutulur, istenince ajandan getirilir."""
 import json
+import re
 import time
 from datetime import date, datetime, timedelta
 
@@ -24,7 +25,7 @@ class NotFound(Exception):
 # ---------------------------------------------------------------- yapılandırma
 def default_config():
     return {'enabled': False, 'all_cameras': True, 'faces_mode': 'auto', 'blur_faces': True, 'clip': True,
-            'cooldown': 300, 'interval': 2.0, 'retention_days': 90, 'rules': {}, 'cameras': {}}
+            'cooldown': 300, 'interval': 2.0, 'retention_days': 90, 'rules': {}, 'ppe_groups': [], 'cameras': {}}
 
 
 def _num(v, lo, hi, default, cast=float):
@@ -73,9 +74,41 @@ def _zone(z, i):
             prm['dir'] = _num(src['dir'], -360, 360, 0) % 360
     elif t == 'ppe_zone':
         prm['items'] = [k for k in (src.get('items') or []) if k in R.KKD]
+        prm['group'] = _gid(src.get('group')) or None
     zid = str(z.get('id') or '')[:24] or f'z{int(time.time() * 1000) % 10 ** 10}{i}'
     return {'id': zid, 'name': (str(z.get('name') or '').strip() or dict((k, n) for k, n, *_ in R.ZONE_TYPES)[t])[:60],
             'type': t, 'points': pts, 'params': {k: v for k, v in prm.items() if v is not None}}
+
+
+def _gid(v):
+    return re.sub(r'[^A-Za-z0-9_-]', '', str(v or ''))[:24]
+
+
+def _group(g, i, seen):
+    """KKD senaryo grubu: {id, name, items: {kkd: {sev, lik, hold, cooldown}}}. Verilmeyen obje ayarı kuraldan gelir."""
+    if not isinstance(g, dict):
+        return None
+    gid = _gid(g.get('id')) or f'g{int(time.time() * 1000) % 10 ** 10}{i}'
+    if gid in seen:
+        return None
+    seen.add(gid)
+    src = g.get('items') or {}
+    if isinstance(src, list):   # yalnız obje listesi de kabul edilir
+        src = {k: {} for k in src if isinstance(k, str)}
+    items = {}
+    for k in R.KKD:
+        if k not in src:
+            continue
+        o, e = src[k] if isinstance(src[k], dict) else {}, {}
+        for f in ('sev', 'lik'):
+            if o.get(f) not in (None, ''):
+                e[f] = _num(o[f], 1, 5, R.BY_KEY['no_' + k][f], int)
+        if o.get('hold') not in (None, ''):
+            e['hold'] = _num(o['hold'], 0, 3600, 0, int)
+        if o.get('cooldown') not in (None, ''):
+            e['cooldown'] = _num(o['cooldown'], 30, 86400, 300, int)
+        items[k] = e
+    return {'id': gid, 'name': (str(g.get('name') or '').strip() or f'Grup {i + 1}')[:60], 'items': items}
 
 
 def normalize(cfg):
@@ -119,13 +152,20 @@ def normalize(cfg):
             e['params'] = prm
         if e:
             out['rules'][key] = e
+    seen = set()
+    groups = src.get('ppe_groups') if isinstance(src.get('ppe_groups'), list) else []
+    out['ppe_groups'] = [g for g in (_group(g, i, seen) for i, g in enumerate(groups[:40])) if g]
     for cid, c in (src.get('cameras') or {}).items():
         if not str(cid).isdigit() or not isinstance(c, dict):
             continue
         zones = [z for z in (_zone(z, i) for i, z in enumerate(c.get('zones') or [])) if z][:40]
+        for z in zones:
+            if z['params'].get('group') not in seen:    # silinmiş gruba başvuru kalmaz
+                z['params'].pop('group', None)
         only = c.get('rules')
+        gid = _gid(c.get('ppe_group'))
         out['cameras'][str(int(cid))] = {
-            'enabled': bool(c.get('enabled', True)), 'ppe': bool(c.get('ppe')),
+            'enabled': bool(c.get('enabled', True)), 'ppe': bool(c.get('ppe')), 'ppe_group': gid if gid in seen else None,
             'rules': None if only is None else [k for k in only if k in R.BY_KEY], 'zones': zones}
     return out
 
@@ -145,11 +185,13 @@ def set_config(conn, cfg):
 
 
 def camera_config(cfg, cid):
-    """Kameranın etkin ayarı ya da None (kapsam dışı)."""
+    """Kameranın etkin ayarı ya da None (kapsam dışı). Senaryo grubu tanımları `ppe_groups` ({id: grup}) olarak eklenir."""
     c = (cfg.get('cameras') or {}).get(str(cid))
     if c is None:
-        return {'enabled': True, 'ppe': False, 'rules': None, 'zones': []} if cfg.get('all_cameras') else None
-    return c if c.get('enabled') else None
+        return {'enabled': True, 'ppe': False, 'ppe_group': None, 'rules': None, 'zones': []} if cfg.get('all_cameras') else None
+    if not c.get('enabled'):
+        return None
+    return {**c, 'ppe_groups': {g['id']: g for g in cfg.get('ppe_groups') or []}}
 
 
 def catalog(caps=None):
@@ -165,7 +207,7 @@ def catalog(caps=None):
         rules.append(e)
     return {'rules': rules, 'cats': [{'key': k, 'name': n} for k, n in R.CATS],
             'zone_types': [{'key': k, 'name': n, 'color': c, 'rules': rs, 'params': ps} for k, n, c, rs, ps in R.ZONE_TYPES],
-            'kkd': [{'key': k, 'name': R.KKD_NAMES[k]} for k in R.KKD], 'colors': [{'key': k, 'name': n} for k, n in R.COLORS],
+            'kkd': [{'key': k, 'name': R.KKD_NAMES[k], 'rule': 'no_' + k} for k in R.KKD], 'colors': [{'key': k, 'name': n} for k, n in R.COLORS],
             'objects': [c for c in D.COCO if c != 'person'], 'levels': [n for _, n in R.LEVELS],
             'grid': [GRID_W, GRID_H], 'shifts': [s[0] for s in SHIFTS]}
 

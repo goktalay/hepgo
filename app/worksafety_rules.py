@@ -22,7 +22,7 @@ COLORS = (('red', 'Kırmızı'), ('orange', 'Turuncu'), ('yellow', 'Sarı'), ('g
 
 # Bölge türleri: (anahtar, ad, renk, hangi kurallar kullanır, bölge parametreleri)
 ZONE_TYPES = (
-    ('ppe_zone', 'KKD zorunlu alan', '#0ea5e9', ['no_' + k for k in KKD], ['items']),
+    ('ppe_zone', 'KKD zorunlu alan', '#0ea5e9', ['no_' + k for k in KKD], ['group', 'items']),
     ('restricted', 'Yasak bölge', '#ef4444', ['restricted_entry'], []),
     ('timed', 'Saat kısıtlı bölge', '#f97316', ['after_hours'], ['from', 'to']),
     ('machine', 'Makine bölgesi', '#a855f7', ['machine_unauth'], ['auth_colors']),
@@ -49,7 +49,8 @@ def _r(no, key, name, cat, sev, lik, desc, zone=None, zone_req=False, params=Non
 
 def _kkd(no, k, name, sev, lik):
     r = _r(no, 'no_' + k, name, 'kkd', sev, lik,
-           f'{KKD_NAMES[k]} takmayan kişi. Yalnız "KKD zorunlu" işaretli kamerada ya da KKD zorunlu alan içinde denetlenir.',
+           f'{KKD_NAMES[k]} takmayan kişi. KKD senaryo grubu seçilen ya da "KKD zorunlu" işaretli kamerada, ya da KKD zorunlu '
+           'alan içinde denetlenir.',
            zone='ppe_zone', confirm=3)
     r['ppe'] = k
     return r
@@ -175,10 +176,54 @@ def model_ok(rule, caps, cam=None):
     return True, None
 
 
+GROUP_FIELDS = ('sev', 'lik', 'hold', 'cooldown')   # senaryo grubunda obje başına ayarlanabilenler
+
+
+def apply_over(rule, over):
+    """Kural + senaryo grubundaki obje ayarı → o kapsamda geçerli kural (risk / düzey yeniden hesaplanır)."""
+    if not over:
+        return rule
+    e = {**rule, **{k: over[k] for k in GROUP_FIELDS if over.get(k) is not None}}
+    e['risk'] = e['sev'] * e['lik']
+    e['level'] = level(e['risk'])
+    return e
+
+
 def cam_rules(cam, rules):
     """Bu kamerada etkin kural anahtarları (kamera kendi listesini verdiyse onunla kesişim)."""
     only = cam.get('rules')
     return [k for k, r in rules.items() if r['enabled'] and (only is None or k in only)]
+
+
+def _group_items(g, rules, caps):
+    """Senaryo grubunun, modeli bulunan objeleri → {kkd: obje ayarı}."""
+    out = {}
+    for k, o in (g.get('items') or {}).items():
+        r = rules.get('no_' + k)
+        if r and model_ok(r, caps)[0]:
+            out[k] = {f: o[f] for f in GROUP_FIELDS if (o or {}).get(f) is not None}
+    return out
+
+
+def ppe_scopes(cam, rules, caps):
+    """Kameradaki KKD kapsamları → (kamera kapsamı | None, [(bölge, grup | None, objeler)]).
+    Kamera kapsamı: (grup | None, objeler); objeler: {kkd: obje ayarı}. Senaryo grubu seçiliyse yalnız grubun objeleri
+    denetlenir (kuralın genel aç / kapat anahtarından ve kameranın kural listesinden bağımsız); grup yoksa etkin KKD
+    kuralları geçerlidir. Grup tanımları kamera ayarında `ppe_groups` ({id: grup}) olarak gelir."""
+    G = cam.get('ppe_groups') or {}
+    keys = set(cam_rules(cam, rules))
+    plain = {r['ppe']: {} for r in RULES if r.get('ppe') and r['key'] in keys and model_ok(rules[r['key']], caps)[0]}
+    g = G.get(cam.get('ppe_group'))
+    cs = (g, _group_items(g, rules, caps)) if g else ((None, plain) if cam.get('ppe') else None)
+    zs = []
+    for z in cam.get('zones') or []:
+        if z.get('type') != 'ppe_zone' or len(z.get('points') or []) < 3:
+            continue
+        prm = z.get('params') or {}
+        zg = G.get(prm.get('group'))
+        only = prm.get('items') or []
+        zs.append((z, zg, _group_items(zg, rules, caps) if zg else {k: v for k, v in plain.items() if not only or k in only}))
+    return cs, zs
 
 
 def needs(cam, rules, caps):
@@ -186,7 +231,10 @@ def needs(cam, rules, caps):
     keys = cam_rules(cam, rules)
     zt = {z.get('type') for z in (cam.get('zones') or [])}
     act = [k for k in keys if model_ok(rules[k], caps, cam)[0] and (not rules[k]['zone_req'] or rules[k]['zone'] in zt)]
-    kkd_on = any(rules[k].get('ppe') for k in act) and (cam.get('ppe') or 'ppe_zone' in zt)
+    cs, zs = ppe_scopes(cam, rules, caps)
+    kk = set(cs[1] if cs else ()) | {k for _, _, items in zs for k in items}
+    act += ['no_' + k for k in KKD if k in kk and 'no_' + k not in act]   # grupla açılan objeler
+    kkd_on = bool(kk)
     return {
         'active': act,
         'ppe': bool(kkd_on or (set(act) & {'fall', 'ladder_3pt', 'work_at_height'})),
@@ -532,37 +580,42 @@ def evaluate(obs, cam, rules, caps, mem=None):
     act = set(needs(cam, rules, caps)['active'])
     out = []
 
-    def add(key, checks, viol_boxes, detail='', zone=None, slot='', meta=None, n=None):
+    def add(key, checks, viol_boxes, detail='', zone=None, slot='', meta=None, n=None, over=None):
         if key in act and checks > 0:
             out.append({'rule': key, 'zone': zone.get('id') if zone else None, 'zone_name': zone.get('name') if zone else None,
                         'slot': slot, 'checks': int(checks), 'viol': len(viol_boxes) if n is None else int(n),
                         'boxes': [list(b) for b in viol_boxes][:12], 'detail': detail, 'meta': meta or {}})
+            if over:
+                out[-1]['over'] = over
 
     def inside(z, items, pt=foot):
         return [o for o in items if in_poly(pt(o['box']), z['points'])]
 
-    # ---- 1-12 KKD
-    ppe_zones = Z.get('ppe_zone') or []
-    if cam.get('ppe') or ppe_zones:
-        for r in RULES[:12]:
-            k = r['ppe']
-            if r['key'] not in act:
+    # ---- 1-12 KKD: kişi, içinde bulunduğu ilk kapsamın (senaryo gruplu bölge > kamera grubu > grupsuz) objeleriyle denetlenir
+    cs, zs = ppe_scopes(cam, rules, caps)
+    if cs or zs:
+        acc = {}    # (kkd, grup id | '') → sayım
+        for p in P:
+            if p['box'][3] < 0.12:      # çok uzaktaki kişide KKD seçilemez
                 continue
-            scope = []
-            for p in P:
-                if p['box'][3] < 0.12:      # çok uzaktaki kişide KKD seçilemez
-                    continue
-                if cam.get('ppe'):
-                    scope.append(p)
-                else:
-                    for z in ppe_zones:
-                        items = (z.get('params') or {}).get('items') or []
-                        if (not items or k in items) and in_poly(foot(p['box']), z['points']):
-                            scope.append(p)
-                            break
-            known = [p for p in scope if (p.get('ppe') or {}).get(k) is not None]
-            bad = [p['box'] for p in known if p['ppe'][k] is False]
-            add(r['key'], len(known), bad, f'{len(bad)} kişide {KKD_NAMES[k].lower()} yok' if bad else '')
+            pp = p.get('ppe') or {}
+            cand = [(g, items) for z, g, items in zs if in_poly(foot(p['box']), z['points'])] + ([cs] if cs else [])
+            cand.sort(key=lambda c: c[0] is None)   # kararlı: gruplu kapsamlar önce, eşitlikte bölge kameradan önce
+            done = set()
+            for g, items in cand:
+                for k, over in items.items():
+                    if k in done or pp.get(k) is None:
+                        continue
+                    done.add(k)
+                    a = acc.setdefault((k, g['id'] if g else ''), {'known': 0, 'bad': [], 'g': g, 'over': over})
+                    a['known'] += 1
+                    if pp[k] is False:
+                        a['bad'].append(p['box'])
+        for (k, slot), a in sorted(acc.items(), key=lambda kv: (KKD.index(kv[0][0]), kv[0][1])):
+            g, bad = a['g'], a['bad']
+            detail = f'{len(bad)} kişide {KKD_NAMES[k].lower()} yok' + (f' · {g["name"]}' if g else '') if bad else ''
+            add('no_' + k, a['known'], bad, detail, slot=slot, meta={'group': g['name'], 'group_id': g['id']} if g else None,
+                over=a['over'])
 
     # ---- 13 çarpışma riski bölgesinde kişi ve araç
     for z in Z.get('collision') or []:
@@ -784,7 +837,7 @@ class Tracker:
     def step(self, cam_id, results, t, rules):
         events, seen = [], set()
         for r in results:
-            rule = rules[r['rule']]
+            rule = apply_over(rules[r['rule']], r.get('over'))
             key = (cam_id, r['rule'], r['zone'], r['slot'])
             seen.add(key)
             st = self.s.setdefault(key, {'hits': 0, 'since': None, 'miss': 0, 'last_event': 0.0, 'seen': t})
@@ -799,7 +852,7 @@ class Tracker:
             st['since'] = st['since'] or t
             if st['hits'] >= rule['confirm'] and t - st['since'] >= rule['hold'] and t - st['last_event'] >= rule['cooldown']:
                 st['last_event'] = t
-                events.append({**r, 'name': rule['name'], 'sev': rule['sev'], 'lik': rule['lik'], 'risk': rule['risk'],
+                events.append({**{k: v for k, v in r.items() if k != 'over'}, 'name': rule['name'], 'sev': rule['sev'], 'lik': rule['lik'], 'risk': rule['risk'],
                                'level': rule['level'], 'cat': rule['cat'], 'duration': round(t - st['since'], 1)})
         for key in [k for k, st in self.s.items() if k[0] == cam_id and k not in seen and t - st['seen'] > 3600]:
             del self.s[key]

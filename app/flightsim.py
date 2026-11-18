@@ -24,6 +24,7 @@ import time
 
 from . import db, drone_params, drone_sitl, flightsim_gcs, flightsim_hub, flightsim_icept, flightsim_launcher, flightsim_mission, flightsim_power, flightsim_targets
 from . import flightsim_servotrig   # §34 servo tetik (kanal PWM komutu → gecikme → çarpma → özet)
+from . import flightsim_jam   # §48 karıştırma (GPS karıştırma / aldatma benzetimi: SIM_GPS1_*)
 from . import flightsim_gpws   # §42 uçuş uyarı sistemi (istemci hesaplar; sunucu bölümleri toplar → özet + disiplin puanı)
 
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
@@ -68,6 +69,7 @@ ROVER_TIPLERI = ('rover',)
 DRIVES = ('ackermann', 'skid')
 MAV_TYPE_GROUND_ROVER = 10
 KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_home', 'rc', 'speed', 'camera', 'defend', 'motor_cut', 'wind', 'launch_aim')   # speed: §23 SIM_SPEEDUP {factor: 0.25|0.5|1|2|4|8} (§35 ağır çekim); camera: §22.3 {type}; defend: §26 {action: 'next'}; motor_cut: {on: bool}; wind: §31 {ms, dir, gust, turb} (uçuşta rüzgâr); launch_aim: §31 {azimuth_deg, angle_deg} (rampa, ARM öncesi)
+KOMUTLAR += ('jam',)   # §48 karıştırma: {gps: 'off'|'light'|'heavy'|'full', spoof: {on, dir, speed, max_m}, dur_s} | {off: true}
 KOMUTLAR += ('servo_trigger', 'servo_set', 'engage', 'gpws')   # §34: servo_trigger {on, ch, pwm, cmp, tol, delay_ms} · servo_set {ch, pwm} (DO_SET_SERVO; sahte kipte sanal çıkış) · engage §40 {action: 'lock', i} | {action: 'release', reason} · gpws §42 {events: [{code, level, t0, start_s, dur_s}], cfg?: {mode, off}}
 # Motor kesme (`motor_cut {on}`; yalnız uçak tipleri): ARM'lı kalır, motor durur, kumanda yüzeyleri ve uçuş kipi çalışmaya devam eder → süzülme.
 # Gerçek ArduPlane 4.7.2 SITL'de ölçüldü (100–145 m AGL; FBWA/FBWB/CRUISE/AUTO/RTL/MANUAL):
@@ -1089,6 +1091,7 @@ class SimSession:
         self.route = []
         self.komutcu = flightsim_hub.MavKomut(self)
         self.gorev = flightsim_mission.GorevIzleyici(self)   # §18: görev izleme (MP yüklemesi algılama), iz, çarpışma/özet kayıtları
+        self.jam = flightsim_jam.Karistirma(self)   # §48 karıştırma (GPS karıştırma / aldatma; gerçek konum SIMSTATE'ten)
         self.servo_tetik = flightsim_servotrig.ServoTetik(self)   # §34 servo tetik (sunucu tarafı kenar algısı + sim zamanı gecikme + çarpma)
         self.uyarilar = flightsim_gpws.UyariKaydi()   # §42 uçuş uyarıları: istemcinin bildirdiği bölümler (özet + disiplin puanı)
         self.servo_tetik.oneri_oku()
@@ -1204,6 +1207,7 @@ class SimSession:
                 'vertical': self.type in DIKEY_TIPLER,
                 'ground': self.type in ROVER_TIPLERI, 'drive': self.drive,   # §31 kara aracı (kalkış yok; 3B zemine oturur) + sürüş biçimi
                 'motor_cut': bool(self.motor_cut),   # motor kesik (süzülüyor); uçak dışı tiplerde hep False
+                'jam': self.jam.durum(),   # §48 karıştırma durumu (supported: False → düğme gösterilmez)
                 'servo_trigger': self.servo_tetik.durum(),   # §34 servo tetik durumu (kanal işlevleri, dron kaydı önerisi)
                 # §26 yer kontrol merkezi (yerleşimiyle) + "Yer kontrolünü koru" görevi (yapılandırma, deterministik plan, anlık durum)
                 'site': {**self.gcs, 'layout': self.gcs_yer} if self.gcs else None,   # ('gcs' anahtarı Mission Planner bağlantısıdır)
@@ -1635,13 +1639,19 @@ class SimSession:
         elif src != self.sysid:
             return
         elif t == 'GLOBAL_POSITION_INT':
+            gercek = self.jam.gercek_kip   # §48 karıştırma: tele.lat/lon SITL fiziğinden (SIMSTATE); EKF konumu nav_lat/nav_lon'a
             if m.lat or m.lon:   # EKF kökeni oluşmadan SITL 0/0 yollar: merkez konumu korunur (3B'de dron 4000 km uzağa gitmesin)
-                te['lat'], te['lon'] = m.lat / 1e7, m.lon / 1e7
+                if gercek:
+                    self.jam.ekf_konum(m.lat / 1e7, m.lon / 1e7)
+                else:
+                    te['lat'], te['lon'] = m.lat / 1e7, m.lon / 1e7
             te['alt_msl'], te['alt_rel'] = m.alt / 1000.0, m.relative_alt / 1000.0
             te['vn'], te['ve'], te['vd'] = m.vx / 100.0, m.vy / 100.0, m.vz / 100.0
             if m.hdg != 65535:
                 te['heading'] = m.hdg / 100.0
-            te['tbm'] = te['tbm_pos'] = int(m.time_boot_ms)   # tbm_pos: konum damgası (ATTITUDE ile farklı zamanlı; istemci ayrı enterpole eder, §5)
+            te['tbm'] = int(m.time_boot_ms)
+            if not gercek:
+                te['tbm_pos'] = te['tbm']   # tbm_pos: konum damgası (ATTITUDE ile farklı zamanlı; istemci ayrı enterpole eder, §5)
             if time.time() - self._att_son > 0.1:   # ATTITUDE akmıyorsa konum yayını tetikler
                 self._tele_yay(te['tbm'])
         elif t == 'ATTITUDE':
@@ -1652,13 +1662,15 @@ class SimSession:
             self._att_son = time.time()
             if self.type not in DIKEY_TIPLER or time.time() - self._simstate_son > 0.2:
                 self._tele_yay(te['tbm'])   # INTERCEPTOR: yayın aynı EXTRA1 tikindeki SIMSTATE'te (gövde yönelimi ile birlikte)
-        elif t == 'SIMSTATE' and self.type in DIKEY_TIPLER:
-            # §25 tailsitter: ArduPlane ATTITUDE'ı Q kiplerinde ve geçişte "VTOL görünümü"yle yollar (quadplane.show_vtol_view: ahrs_view = gövde ·
-            # PITCH_90 → askıda pitch ≈ 0). HUD/FPV OSD bu görünümü kullanır (pilot için doğal); 3B gövde ise SITL fiziğinin GERÇEK yönelimini (SIMSTATE,
-            # sabit kanat çerçevesi: askıda burun yukarı ~90°) `att_body` ile çizer. Açısal hızlar (rs/ps/ys) zaten gövde çerçevesindedir.
-            te['att_body'] = [round(m.roll, 4), round(m.pitch, 4), round(m.yaw, 4)]
-            self._simstate_son = time.time()
-            self._tele_yay(te.get('tbm'))
+        elif t == 'SIMSTATE':
+            self.jam.simstate(m)   # §48: gerçek fizik konumu (karıştırmada tele.lat/lon kaynağı)
+            if self.type in DIKEY_TIPLER:
+                # §25 tailsitter: ArduPlane ATTITUDE'ı Q kiplerinde ve geçişte "VTOL görünümü"yle yollar (quadplane.show_vtol_view: ahrs_view = gövde ·
+                # PITCH_90 → askıda pitch ≈ 0). HUD/FPV OSD bu görünümü kullanır (pilot için doğal); 3B gövde ise SITL fiziğinin GERÇEK yönelimini (SIMSTATE,
+                # sabit kanat çerçevesi: askıda burun yukarı ~90°) `att_body` ile çizer. Açısal hızlar (rs/ps/ys) zaten gövde çerçevesindedir.
+                te['att_body'] = [round(m.roll, 4), round(m.pitch, 4), round(m.yaw, 4)]
+                self._simstate_son = time.time()
+                self._tele_yay(te.get('tbm'))
         elif t == 'VFR_HUD':
             # motor kesikken VFR_HUD.throttle gaz TALEBİNİ bildirir (ör. 68) ama çıkış 1000 µs → gösterge ve yakıt modeli (flightsim_power) için 0
             te['airspeed'], te['groundspeed'], te['throttle'], te['climb'] = round(m.airspeed, 2), round(m.groundspeed, 2), 0 if self.motor_cut else m.throttle, round(m.climb, 2)
@@ -1721,6 +1733,7 @@ class SimSession:
         for ad, deger in RC_PARAMLAR:   # araçta olmayan ad (kopterde THR_FAILSAFE vb.) sessizce yok sayılır
             self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
         self._param_set(GPS_RTK_PARAMLARI)   # RTK düzeyi GPS (fix 6 zaten; doğruluk/uydu/hata sıfırlama)
+        self.jam.kalp_atisi()   # §48: eeprom'da kalmış karıştırma (SIM_GPS1_JAM / ENABLE) kapatılır
         if self.type == 'sabit_kanat':   # kalkış yöntemi + yerde kayma düzeltmesi parametreleri (§13)
             self._param_set(launch_parametreleri(self.launch))
             self._param_set(self.flap_parametreleri())   # otomatik flaplar (kayıtlı değeri olanlar atlanır: kullanıcı yapılandırması)
@@ -2067,6 +2080,7 @@ class SimSession:
         else:
             for msgid, us in MESAJ_ARALIKLARI:
                 self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 511, 0, msgid, us, 0, 0, 0, 0, 0))
+        self.jam.akis()   # §48: gerçek konum kipinde SIMSTATE 50 Hz
 
     def ruzgar_simdi(self, t=None):
         """§31 anlık rüzgâr (m/s, geldiği yön °): taban + esinti·g(t); t = SITL saati (sn; tele.tbm) — sahte kipte kinematiğin saati."""
@@ -2153,6 +2167,7 @@ class SimSession:
         `ts` sunucu alım zamanı (Unix sn), `tbm` SITL time_boot_ms (sahte: oturum ms)."""
         self._guc_adim(tbm)   # §23: izleyici olmasa da yakıt/batarya simülasyon zamanıyla entegre edilir
         self.servo_tetik.adim(tbm)   # §34 servo tetik gecikmesi (simülasyon zamanı)
+        self.jam.adim(tbm)   # §48 karıştırma: aldatma sürüklenmesi / süre (simülasyon zamanı)
         if self.tele_kanca is not None:   # §33 karşılaşma: halka geçişi / konum yayını (izleyiciden bağımsız)
             try:
                 self.tele_kanca(self.tele)
@@ -2464,6 +2479,11 @@ class SimSession:
             return {'ok': True}
         if self.state != 'HAZIR':
             raise SimHata('invalid', 'Oturum hazır değil')
+        if name == 'jam':   # §48 karıştırma: doğrulama + mantık flightsim_jam'de
+            try:
+                return await self.jam.komut(p)
+            except flightsim_jam.KaristirmaHata as e:
+                raise SimHata('invalid', str(e))
         if name == 'speed':   # §23 simülasyon hızı: SITL SIM_SPEEDUP canlı (PARAM_SET); telemetri/kayıt/.bin SITL zamanıyla, video gerçek zaman
             self.speedup_istek = p['factor']
             self.oturum_param_unut(flightsim_power.SIM_SPEEDUP)   # §35: MP'nin eski SIM_SPEEDUP'ı reset'te geri gelmesin
@@ -2787,6 +2807,7 @@ class SimSession:
         self.motor_cut, self._motor_cut_istek = False, None   # yeni SITL / sıfır kinematik: MOTOR_ESTOP süreç belleğindeydi (yeni süreçte kapalı)
         self.guc.sifirla_zaman()   # §23: yeni SITL saati sıfırdan; yakıt/batarya seviyeleri korunur (tank/batarya değişmez)
         self.servo_tetik.sifirla()   # §34 bekleyen çarpma iptal; dinleme sürer (taban yeniden)
+        self.jam.sifirla()   # §48 karıştırma kapanır (yeni SITL'de parametreler ilk kalp atışında geri alınır)
         if self.sahte is not None:
             self.sahte.sifirla()
             if self.yonetici.sahte_tcp_port and self._tcp_w is None:
@@ -2858,6 +2879,7 @@ class SimSession:
             if self.sahte is not None:
                 self.sahte.adim(min(dt, 0.5))
                 self.tele.update(self.sahte.tele())
+                self.jam.sahte_tele()   # §48: sahte kinematikte karıştırma yalnız göstergeleri etkiler
                 if self.state == 'HAZIR':
                     self._sahte_hub_cerceve(n)   # §14: harekât paneline MAVLink çerçeveleri
                 if now - hb >= 1.0 and self.gcs_addr is not None:

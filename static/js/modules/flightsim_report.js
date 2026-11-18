@@ -8,6 +8,7 @@
 import { clear, fmtDateTime, fmtDuration, h, modal, toast, toastError } from '../ui.js';
 import { layoutLabel } from './flightsim_airframe.js';   // §13.1 kontrol düzeni satırı
 import { defendReportBody } from './flightsim_gcs_ui.js';   // §26 "Yer kontrolünü koru" görev sonu raporu
+import { jamReportLines, jamSection } from './flightsim_jam.js';   // §48 karıştırma bölümü
 import { ensureServoCss, servoMapPoints, servoReportLines, servoSection } from './flightsim_servotrig.js';   // §34 servo tetik bölümü + harita işaretleri
 import { engagementRows, makeEngT } from './flightsim_engage.js';   // §40 angajman listesi
 import { ENGAGE_BONUS } from './flightsim_targets.js';
@@ -49,6 +50,7 @@ export function buildReportText(sum, tr) {
   const dv = sum.defend;   // §26
   if (dv) out.push(`${tr('Yer kontrolünü koru')}: ${tr(dv.ended ? (dv.success ? 'BAŞARILI' : 'BAŞARISIZ') : 'SÜRÜYOR')} · ${tr('Önlenen / doğan')} ${(dv.kills || []).length}/${dv.spawned ?? 0} · ${tr('İstasyon sağlığı')} %${Math.round(dv.health ?? 100)} · ${tr('Puan')} ${dv.score ?? 0} · ${tr({ colonel: 'Albay', major: 'Binbaşı', captain: 'Yüzbaşı', lieutenant: 'Teğmen', sergeant: 'Çavuş', corporal: 'Onbaşı', private: 'Er' }[dv.rank] || 'Er')}`);
   out.push(...servoReportLines(sum, tr));   // §34
+  out.push(...jamReportLines(sum, tr));   // §48
   if (sum.alerts) out.push(gpwsReportLine(sum.alerts, tr));   // §42
   const sn = safetyText(sum, tr);
   if (sn) out.push(`${tr('Güvenlik notu')}: ${sn}`);
@@ -259,6 +261,7 @@ export function reportBody(sum, tr, { canWrite = false, be = null } = {}) {
     tiles,
     h('div', { class: 'fs-rp-cols' }, h('div', null, basic, mission), h('div', { class: 'fs-rp-mapwrap' }, canvas, legend, dev)),
     servoSection(sum, tr, h),   // §34 servo tetik: tetik anı / çarpma anı irtifası ve evden mesafesi
+    jamSection(sum, tr, h),   // §48 karıştırma: süreler, en büyük sahte konum sapması ve seyrüsefer hatası
     powerSection(sum, tr),   // §23
     targetsSection(sum, tr),   // §24
     gpwsSection(sum, tr),   // §42 uçuş uyarıları: tür başına adet / süre / ilk görülme + uçuş disiplini puanı

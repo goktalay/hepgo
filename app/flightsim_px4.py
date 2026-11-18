@@ -112,9 +112,10 @@ OZELLIKLER = {
     'saved_params': (False, 'Dron kaydının kalıcı parametreleri ArduPilot adlarıyla tutulur; PX4 oturumunda yüklenmez/kaydedilmez.'),
     'layout': (False, 'Kontrol düzeni / SITL modeli seçimi ArduPlane\'e özgü; PX4\'te airframe (SYS_AUTOSTART) belirler.'),
     'defend': (False, '"Yer kontrolünü koru" görevi INTERCEPTOR (ArduPlane tailsitter) akışıdır.'),
+    'jam': (False, 'Karıştırma (GPS karıştırma / aldatma) ArduPilot SITL\'in SIM_GPS1_* parametreleriyle benzetilir; PX4 SIH\'de karşılığı yok.'),
 }
 DESTEKSIZ_KOMUT = {'speed': 'speed', 'motor_cut': 'motor_cut', 'launch_aim': 'launch', 'servo_trigger': 'servo_trigger', 'servo_set': 'servo_trigger',
-                   'defend': 'defend'}
+                   'defend': 'defend', 'jam': 'jam'}
 
 
 def px4_klasoru():
@@ -627,6 +628,7 @@ class Px4Session(flightsim.SimSession):
         self.guc.hiz_ayarla(self.speedup_istek)
         self.ulg_sonuc = None
         self._st_parca = {}   # STATUSTEXT.id → parçalar
+        self.jam.desteksiz(OZELLIKLER['jam'][1])   # §48: karıştırma yalnız ArduPilot SITL'de
 
     def to_dict(self, host=None):
         d = super().to_dict(host)

@@ -510,7 +510,7 @@ async def _ws_ac(ws):
     return user
 
 
-SIM_KOMUT = set(flightsim.KOMUTLAR)   # arm, disarm, mode, takeoff, rtl, reset, crash, set_home, rc — çekirdek SimSession.komut
+SIM_KOMUT = set(flightsim.KOMUTLAR) - {'jam'}   # jam (karıştırma) yalnız HEPGO oturum ekranında; arm, disarm, mode, takeoff, rtl, reset, crash, set_home, rc — çekirdek SimSession.komut
 
 
 def _hello(s, user, host):

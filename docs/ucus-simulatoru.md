@@ -3428,3 +3428,85 @@ t·100 (10 ms), x/y/z·50 (2 cm), yaw/roll/pitch·500 (2 mrad); yaw farkı en k�
 - **Bayram 3B süsleri ile uyum** (ana daldan birleşen `flightsim_holiday3d.js`): parkur katmanı `sim.setDecorKeepouts('fpvcourse', fpvKeepouts(course))`
   ile parkur alanını (env.size'ı kapsayan daire), her kapı/direği ve başlangıç pedini süs yerleşiminden çıkarır (dispose'da kaldırır); `flightsim_match3d`
   `setPlayers` oyuncuların kalkış noktalarını (`players[].start`) `'match-starts'` anahtarıyla bildirir (HEPGO + SIMUMAV; tüm karşılaşma türleri).
+
+## 48. KARIŞTIRMA — GPS karıştırma (jamming) ve GPS aldatma (spoofing) benzetimi (`app/flightsim_jam.py` + `static/js/modules/flightsim_jam.js`; **YALNIZ HEPGO**)
+Kullanıcı isteği: "Hepgo içinde simülasyon ekranında karıştırma diye bir bölüm olmalı, istersek spoofing ve gps jamming etkisini simüle etmemiz
+gerekiyor." Oturum ekranı alt bandında **Karıştırma** düğmesi; istenildiğinde açılır, elle ya da süre dolunca kapanır.
+
+**Yalnız simülasyon.** Etki, o oturumun ArduPilot SITL sürecindeki GPS benzetimi parametreleriyle (`SIM_GPS1_*`) üretilir; radyo yayını ya da
+gerçek alıcıya yönelik hiçbir şey yoktur. Otopilot (EKF3, arıza korumaları) parametrelerin ürettiği bozuk GPS'e gerçek donanımdaki gibi tepki verir.
+
+### 48.1 Komut ve durum
+- `cmd jam {gps?, spoof?, dur_s?}` ya da `{off: true}` (REST `/api/drone/sim/sessions/{sid}/cmd` ve WS `cmd`); dönüş `{ok, jam: durum}`.
+  Verilmeyen alan önceki ayarı korur; etkin hiçbir şey kalmazsa kapanır.
+  - `gps`: `'off'` | `'light'` | `'heavy'` | `'full'`.
+  - `spoof`: `{on, dir 0…360° (0 = kuzey, 90 = doğu), speed 0…50 m/s (0 = anında sıçrama), max_m 1…5000 m}`.
+  - `dur_s`: 0…3600; 0 = elle kapatılana dek, > 0 = bu kadar **simülasyon** saniyesi sonra kendiliğinden kapanır (hız çarpanıyla uyumlu).
+- `durum`: `{supported, on, gps, spoof: {on, dir, speed, max_m}, dur_s, left_s, off_m, nav_err, real, sim: 'sitl' | 'fake', limits}`;
+  desteklenmeyen oturumda `{supported: false, reason}`. Oturum yanıtında `session.jam` (düğme `supported` ile görünür).
+- WS çerçevesi `{t: 'jam', ts, reason, …durum}`; `reason`: `cmd` (komut), `timeout` (süre doldu), `reset` (Sıfırla), `settled` (kapanış sonrası
+  seyrüsefer gerçek konuma döndü).
+- Telemetri (etkinken ve toparlanırken): `tele.jam = {gps, spoof, off_m, left_s}`, `tele.nav_lat / nav_lon` (otopilotun sandığı konum),
+  `tele.nav_err` (m).
+- Olay günlüğü: `Karıştırma: <ayar>`, `Karıştırma kapatıldı`, `Karıştırma süresi doldu — kapatıldı`; ön yüz `settled` çerçevesinde
+  "GPS toparlandı — seyrüsefer gerçek konuma döndü" olayını ekler.
+- Özet raporu `summary.jam = {count, gps_s: {light, heavy, full}, spoof_s, max_off_m, max_nav_err, sim}` (hiç açılmadıysa `null`).
+
+### 48.2 Seviyeler ve SITL parametreleri
+| Ayar | Parametreler | Benzetilen etki |
+|---|---|---|
+| Hafif | `SIM_GPS1_NUMSATS 6`, `SIM_GPS1_ACC 5`, `SIM_GPS1_GLTCH_X/Y` Gauss–Markov gezinme (σ 2,5 m, τ 4 sn) | uydu sayısı düşer, konum gürültülenir |
+| Ağır | `SIM_GPS1_JAM 1` | kilit aralıklı düşer, konum savrulur |
+| Tam | `SIM_GPS1_ENABLE 0` | alıcı susar |
+| Aldatma | `SIM_GPS1_GLTCH_X/Y` (ofset, derece) + `SIM_GPS1_VERR_X/Y` (sürükleme hızı, NED m/s) | bildirilen konum `dir` yönünde `speed` ile uzaklaşır, `max_m`'de durur |
+
+- Aldatmada konum ofseti ve hız hatası birlikte yazılır (konum ve hız birbirini tutar); hız `IVME` 0,5 m/s² ile rampalanır, hedefe yaklaşırken
+  aynı ivmeyle yavaşlar. Ani hız basamağını EKF reddeder; yumuşak başlangıçta sürüklenmeyi izler.
+- Adım simülasyon zamanıyladır (`ADIM_MS` 200; SITL GPS'i 5 Hz); parametre yalnız değeri değiştiğinde yazılır.
+- Kapanışta ve oturumun ilk kalp atışında `KAPALI_PARAMLARI` yazılır (eeprom "Sıfırla"da korunduğundan `SIM_GPS1_JAM` / `ENABLE` açıkça geri
+  alınır). "Sıfırla" karıştırmayı kapatır.
+
+### 48.3 Gerçek konum kipi
+Karıştırma etkinken ve kapandıktan sonra EKF gerçek konuma dönene dek (`YAKIN_M` 3 m altında `YAKIN_S` 2 sn; en geç `GERCEK_AZAMI_S` 90 sn)
+`tele.lat/lon` SITL fiziğinin **gerçek** konumudur (`SIMSTATE`, 50 Hz istenir); otopilotun sandığı konum `nav_lat/nav_lon`'dadır. 3B sahne,
+çarpışma, hedefler ve görev izleme aracın gerçekte olduğu yeri kullanır. Mission Planner ve harekât paneli MAVLink'i ham aldığından otopilotun
+aldatılmış konumunu görür (sahadaki yer istasyonu gibi). İrtifa ve hız alanları EKF'ten kalır. DataFlash `.bin` kaydındaki konum da EKF
+konumudur: Kayıttan oynat ve Uçuş Logları analizi aldatılmış izi gösterir.
+
+### 48.4 Ölçüm (gerçek SITL, ArduCopter stable-4.7.2; `tests/jam_sitl_olcum.py`; GUIDED askı 25 m, rüzgâr 0)
+| Senaryo | Gözlenen |
+|---|---|
+| Aldatma doğu 90°, 2 m/s, 60 m (45 sn) | EKF sahte GPS'i izler, araç gerçekte BATIYA kayar (18 sn'de 31 m). Sapma ≈ 44–50 m'de "GPS Glitch or Compass error" + "EKF3 lane switch"; ~9 sn sonra EKF sahte konuma sıçrar, "Glitch cleared". Kip GUIDED kalır. Seyrüsefer hatası 60 m. |
+| Aldatma kapanışı | ~9 sn EKF eski konumda (hata 60 m), sonra EKF sıfırlanır → hata 0; araç kaydığı yerde (−35 m) kalır. `settled` kapanıştan 12 sn sonra. |
+| Hafif, 30 sn süreli | fix 3D, 6 uydu; seyrüsefer hatası 0,1–1,8 m; uçuş sürer. Süre dolunca kendiliğinden kapanır (`timeout`), uydu 18'e döner. |
+| Ağır (24 sn) | fix 1 ↔ 6, uydu 3 ↔ 18; ~3 sn'de "EKF variance" → "EKF Failsafe: changed to Land Mode"; seyrüsefer hatası 29 m'ye kadar. Kapanınca ~12 sn'de yakınsar. |
+| Tam (15 sn) | fix yok, 3 uydu; ~6 sn'de EKF arıza koruması → LAND; hata yavaş büyür (12 sn'de 5,6 m). Kapanınca "EKF3 IMU0 is using GPS". |
+
+Özet (aynı koşu): `{count: 4, gps_s: {light: 30, heavy: 24, full: 15}, spoof_s: 45, max_off_m: 60, max_nav_err: 60.2, sim: 'sitl'}`.
+
+### 48.5 Ön yüz (`flightsim_jam.js`)
+- Saf katman (node testli): `GPS_LEVELS`, `LIMITS`, `DEFAULT_CFG`, `normalizeCfg`, `isActive`, `cmdBody`, `cfgText`, `jamBtnKey`, `bannerText`,
+  `mergeTele`, `jamReportLines`, `jamSection`, `JAM_TEXTS` / `makeJamT`.
+- `createJam({tr, cmd, onEvent, session, stage, storage})` → `{el, banner, update(t), onFrame(m), open, close, isOpen, dispose}`.
+  - Alt bantta **Karıştırma** düğmesi (etkinken kırmızı, nabız, "Karıştırılıyor"; toparlanırken turuncu "Toparlanıyor").
+  - Panel: GPS karıştırma seviyesi (Kapalı / Hafif / Ağır / Tam + açıklama), GPS aldatma anahtarı, sürükleme yönü (° + dönen ok), sürükleme hızı,
+    azami sapma, süre; **Başlat** (etkinken **Uygula**) ve **Durdur**; canlı satır (sapma, seyrüsefer hatası, kalan süre). Esc ya da dışarı
+    tıklama kapatır; boş ayarla Başlat uyarı olayı verir. Son ayar `localStorage fs.jam`.
+  - Sahne bandı: `KARIŞTIRMA · GPS ZAYIF | GPS KESİNTİLİ | GPS YOK · GPS ALDATMA` + sapma / seyrüsefer hatası / kalan süre; toparlanırken turuncu
+    "GPS TOPARLANIYOR". Dar ekranda tek satıra kısalır; mobil çekmecede panel açıkken üst gezinme bandı gizlenir.
+- `flightsim.js`: yalnız yazma yetkisi olan, kayıttan oynatma olmayan ve `session.jam.supported` oturumda kurulur; WS `jam` çerçevesi `onFrame`'e,
+  telemetri `update`'e gider. `flightsim_report.js`: özet raporunda "Karıştırma" kartı (sayı, GPS karıştırma süresi, GPS aldatma süresi, en büyük
+  sahte konum sapması, en büyük seyrüsefer hatası, seviye başına süre) ve metin dökümü satırları. Metinler 6 dil.
+
+### 48.6 Kapsam ve sınırlar
+- Yalnız ArduPilot SITL oturumları. PX4 SIH'de karşılığı yok (`OZELLIKLER['jam']`), SIMUMAV oturumlarında kapalı (`SIM_KOMUT` dışı; köprü
+  `desteksiz`). `flightsim_jam.js` rapor modülü içe aktardığı için SIMUMAV paketine kopyalanır, düğme orada görünmez.
+- Sahte kinematik (SITL'siz; DEV varsayılanı) kipte fiziksel etki yoktur: yalnız göstergeler (fix / uydu, sapma) taklit edilir; panelde ve
+  raporda bu not gösterilir, seyrüsefer hatası kutusu çıkmaz.
+- Yalnız GPS. Kumanda / telemetri bağlantısı karıştırması, karıştırıcının konumuna bağlı etki alanı ve pusula bozulması yok.
+
+### 48.7 Testler
+- `./.venv/bin/python -m tests.test_flightsim_jam` (doğrulama, sürükleme, süre, sahte kip, özet, PX4 / SIMUMAV kapalılığı).
+- `node tests/test_flightsim_jam.mjs` (11: saf katman, 6 dil eksik denetimi, bağlanış denetimleri).
+- Gerçek SITL ölçümü: `PYTHONPATH=. .venv/bin/python tests/jam_sitl_olcum.py` (≈ 5 dk; `HEPGO_SITL_DIR`).
+- Görseller: `./.venv/bin/python -m tests.jam_shots_hepgo` → `/tmp/jam-shots/` (düğme, panel, etkin bant, dar ekran, rapor kartı).

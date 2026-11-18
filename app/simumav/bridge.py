@@ -54,6 +54,7 @@ MODEL_YUKSELT = {'proc:quad250': 'glb:iris_fpv', 'proc:interceptor': 'glb:jet', 
                  'builtin:heli': 'glb:heli', 'builtin:delta': 'glb:zephyr'}
 KINDS = ('corridor', 'free', 'spray', 'fpv_flags', 'fpv_gates', 'survey', 'defend')   # defend: HEPGO §26 "Yer kontrolünü koru" (plan.defend; rota yok)
 WORLD_MODES = ('real', 'google3d', 'procedural')
+KARISTIRMA_YOK = 'Karıştırma (GPS karıştırma / aldatma benzetimi) yalnız HEPGO Uçuş Simülatörü oturum ekranındadır'   # HEPGO §48
 # tracks.world: HEPGO WORLD_DEFAULTS alt kümesi (flightsim3d.js ile aynı anahtarlar); rüzgâr/saat/hava ayrı sütunlardan gelir
 WORLD_KEYS = ('seed', 'size_m', 'tree_density', 'mountain_height', 'mountain_count', 'building_count', 'runway', 'runway_heading', 'water', 'fog', 'landing_circle_m')
 GATE_MAX, GATE_R, GATE_AGL = 50, (1.0, 20.0), (1.0, 120.0)
@@ -685,6 +686,7 @@ async def bot_ucusu_ac(drone, track, launch, camera, start, match_id, owner, hos
                                       layout=drone_airframe(drone), camera=camera, start=start, match_id=match_id)
     except flightsim.SimHata as e:
         raise BridgeHata({'invalid': 422, 'limit': 429, 'sitl': 503}.get(e.kod, 400), e.kod, str(e))
+    s.jam.desteksiz(KARISTIRMA_YOK)
     if launch['method'] == 'hand':
         s.launch = {**s.launch, 'hand': True, 'hand_speed_ms': launch['hand_speed_ms'], 'hand_pitch_deg': launch['hand_pitch_deg']}
     return s
@@ -750,6 +752,7 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
         except flightsim.SimHata as e:
             kod = {'invalid': 422, 'limit': 429, 'sitl': 503}.get(e.kod, 400)
             raise BridgeHata(kod, e.kod, str(e))
+        s.jam.desteksiz(KARISTIRMA_YOK)
         t = db.now()
         snap = {'drone': {'id': drone['id'], 'name': drone['name'], 'type': drone['type'], 'model_key': drone['model_key'], 'color': drone.get('color'), 'airframe': drone_airframe(drone),
                           'drive': getattr(s, 'drive', None) or drive},   # §15 kara aracı sürüş biçimi (çekirdek oturumun etkin değeri)

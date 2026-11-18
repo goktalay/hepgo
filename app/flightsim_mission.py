@@ -429,6 +429,8 @@ class GorevIzleyici:
             'defend': s.savunma.ozet() if getattr(s, 'savunma', None) is not None else None,
             # §34 servo tetik: kanal/eşik/gecikme + tetik anı ve çarpma anı (AGL, MSL, evden mesafe, konum, hız, uçuş süresi); dinlenmediyse None
             'servo_trigger': s.servo_tetik.ozet() if getattr(s, 'servo_tetik', None) is not None else None,
+            # §48 karıştırma: açılma sayısı, seviye başına süre, aldatma süresi, azami sapma / seyrüsefer hatası (hiç açılmadıysa None)
+            'jam': s.jam.ozet() if getattr(s, 'jam', None) is not None else None,
             # §42 uçuş uyarıları: tür başına adet / süre / ilk görülme + "uçuş disiplini" puanı (istemci bildirmediyse None)
             'alerts': s.uyarilar.ozet() if getattr(s, 'uyarilar', None) is not None else None,
         }

@@ -44,7 +44,7 @@ import { createMobileMenu } from './flightsim_mobile.js';
 import { createGfxCtl, createGfxPicker } from './flightsim_gfx_ui.js';   // §43 grafik kalitesi: alt bant "Grafik ▾" menüsü + sihirbaz özet adımı seçici (fs.gfx)   // §39 telefonda üst şerit + alt bant ☰ menüsünde
 import { createEngageCtl } from './flightsim_engage.js';   // §40 hedefli uçuşta Boşluk ile kilit + angajman (HUD kilidi, süre, sonuç; araca güdüm YOK)
 import { createGpwsCtl, gpwsWizardField } from './flightsim_gpws_ui.js';   // §42 uçuş uyarı sistemi (GPWS / stall / bank angle / master caution; sesli + görsel)
-import { createJam } from './flightsim_jam.js';   // §48 karıştırma: GPS karıştırma seviyesi + GPS aldatma (benzetim sunucuda: SITL SIM_GPS1_*)
+import { createJam, tlmLost } from './flightsim_jam.js';   // §48 / §49 karıştırma: GPS karıştırma / aldatma, kumanda / telemetri bağlantısı, karıştırıcı bölgesi (benzetim sunucuda)
 import { createServoTrigger } from './flightsim_servotrig.js';   // §34 servo tetik: kanal + PWM eşiği + gecikme + Dinle (mantık sunucuda); çarpınca otomatik Bitir → özet   // §29.6 alt bant: uçuş modu seçici (F) + DISARM/motor kes (X), tüm kamera kiplerinde
 import { keyHint, loadStickMode, makeStickT, onStickMode, stickLabels } from './flightsim_stickmode.js';   // §27.1.1 kumanda modu (Mode 1–4)
 import { createRcFeelPanel } from './flightsim_rcfeel.js';   // §27.1 sanal kumanda hassasiyeti (oran / expo / ölü bölge)
@@ -1367,8 +1367,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const srvTrig = canWrite && !replay ? createServoTrigger({ tr, stage, session, droneId: session.drone?.id ?? null,
     cmd: (name, params = {}) => be.cmd(sid, name, params), onEvent: (t, sev) => addEvent(t, sev) }) : null;
   // §48 karıştırma (alt bant; yalnız ArduPilot oturumu — session.jam.supported): GPS karıştırma / aldatma; araç gerçek konumunda çizilir, bant seyrüsefer hatasını gösterir
+  // §49: kumanda / telemetri bağlantısı, karıştırıcı bölgesi (küçük harita + 3B silindir) ve otopilotun sandığı konum ("hayalet")
   const jam = canWrite && !replay && session.jam?.supported ? createJam({ tr, stage, session,
     cmd: (name, params = {}) => be.cmd(sid, name, params), onEvent: (t, sev) => addEvent(t, sev) }) : null;
+  if (jam) hud.prepend(jam.tlmBadge);   // §49 telemetri kesikken: "son alınan değerler" rozeti
   // §37 fiziksel kumanda: bağlanınca alt bantta simge (eksen/düğme ataması paneli); sanal kumanda açık değilse açılır; düğmeler ARM / DISARM / mod / ch5
   const padT = makePadT(tr, false);
   const padCtl = canWrite && !replay ? createGamepadCtl({ tr, vehicle: rover ? 'rover' : isPlane(type) ? 'plane' : 'copter', feelShape: (k, v) => rcShape(k, v),   // §37 girdi hassasiyeti + ⚙ ortak eğri önizlemesi
@@ -1631,6 +1633,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
         });
         if (destroyed) { s3.dispose(); return null; }
         sim = s3;
+        jam?.attachSim(sim);   // §49 karıştırıcı bölgesi + hayalet 3B katmanı
         gfxCtl.attach(sim);   // §43 cihaz algılama (GPU adı) + otomatik/uyarlamalı kademe
         attachHolidayDecor(sim);   // bayram süsleri (3B dünyada; uçuşta 2B katman yok — docs/bayram-temalari.md › Uçuş sahnesi)
         if (rc) sim.setKeyboardLock?.(true);   // §37 varsayılan açık sanal kumanda sahneden önce açıldı
@@ -1755,13 +1758,17 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     last = t;
     sim?.setTelemetry(t);
     gpws?.update(t);   // §42 uçuş uyarıları (canlı tele ya da kayıt karesi; §23 yakıt/batarya istemci modeli dahil)
-    milHud?.update(t); osd?.update(t); audio.update(t); ops?.update(t); gauges.update(t);   // §23.6 kadranlar (≤ 10 Hz kendi içinde)
+    const tlmCut = !!jam && tlmLost(t);   // §49 telemetri bağlantısı kesik: yer istasyonu göstergeleri son alınan değerde kalır (3B sahne ve araç üstü OSD sürer)
+    osd?.update(t); audio.update(t);
+    if (!tlmCut) { milHud?.update(t); ops?.update(t); gauges.update(t); }   // §23.6 kadranlar (≤ 10 Hz kendi içinde)
     windG.update({ ms: t.wind_spd ?? world.wind_ms, dir: t.wind_dir ?? world.wind_dir, hdg: t.heading ?? (t.yaw != null ? ((t.yaw * 180 / Math.PI) + 360) % 360 : null) });   // §31
     rampUi?.refresh();
     if (t.speedup != null) speedPill.set(t.speedup);
     const now = performance.now();
     if (now - hudAt < 80) return;
     hudAt = now;
+    jam?.update(t);   // §48 / §49 sahte konum sapması / seyrüsefer hatası / bölge / kalan süre
+    if (tlmCut) { if (t.gcs_connected != null) setGcs(!!t.gcs_connected, t.gcs_addr); return; }
     V.mode.textContent = t.mode || '—';
     V.arm.textContent = t.armed ? 'ARMED' : 'DISARMED';
     V.arm.className = `badge ${t.armed ? 'red' : 'gray'} fs-arm`;
@@ -1789,7 +1796,6 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (rc) rcWarn.hidden = !t.gcs_connected;
     fltBar?.update(t);
     srvTrig?.update(t);   // §34 anlık PWM
-    jam?.update(t);   // §48 sahte konum sapması / seyrüsefer hatası / kalan süre
     if (canWrite && !replay) { armBtn.textContent = t.armed ? 'DISARM' : 'ARM'; armBtn.classList.toggle('danger', !!t.armed); if (t.mode && modeSel.value !== t.mode && document.activeElement !== modeSel) modeSel.value = modes.includes(t.mode) ? t.mode : ''; }
     if (t.gcs_connected != null) setGcs(!!t.gcs_connected, t.gcs_addr);
   };

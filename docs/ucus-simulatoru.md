@@ -3503,10 +3503,137 @@ konumudur: Kayıttan oynat ve Uçuş Logları analizi aldatılmış izi gösteri
   `desteksiz`). `flightsim_jam.js` rapor modülü içe aktardığı için SIMUMAV paketine kopyalanır, düğme orada görünmez.
 - Sahte kinematik (SITL'siz; DEV varsayılanı) kipte fiziksel etki yoktur: yalnız göstergeler (fix / uydu, sapma) taklit edilir; panelde ve
   raporda bu not gösterilir, seyrüsefer hatası kutusu çıkmaz.
-- Yalnız GPS. Kumanda / telemetri bağlantısı karıştırması, karıştırıcının konumuna bağlı etki alanı ve pusula bozulması yok.
+- Kumanda / telemetri bağlantısı karıştırması ve karıştırıcının konumuna bağlı etki alanı §49'da eklendi. Pusula bozulması yok.
 
 ### 48.7 Testler
 - `./.venv/bin/python -m tests.test_flightsim_jam` (doğrulama, sürükleme, süre, sahte kip, özet, PX4 / SIMUMAV kapalılığı).
-- `node tests/test_flightsim_jam.mjs` (11: saf katman, 6 dil eksik denetimi, bağlanış denetimleri).
+- `node tests/test_flightsim_jam.mjs` (17: saf katman, 6 dil eksik denetimi, bağlanış denetimleri; §49 ekleri dahil).
 - Gerçek SITL ölçümü: `PYTHONPATH=. .venv/bin/python tests/jam_sitl_olcum.py` (≈ 5 dk; `HEPGO_SITL_DIR`).
 - Görseller: `./.venv/bin/python -m tests.jam_shots_hepgo` → `/tmp/jam-shots/` (düğme, panel, etkin bant, dar ekran, rapor kartı).
+
+## 49. KARIŞTIRMA EKLERİ — kumanda / telemetri bağlantısı, karıştırıcı bölgesi, "hayalet" işaretçi (`app/flightsim_jam.py` + `flightsim_jam.js` + `flightsim_jam3d.js`; **YALNIZ HEPGO**)
+Kullanıcı isteği: "Kumanda / telemetri bağlantısının karıştırılması (şu an yalnız GPS). Haritada konumu ve yarıçapı olan bir karıştırıcı bölgesi:
+araç içine girince etkilenir. 3B sahnede ve mini haritada otopilotun sandığı konumu gösteren "hayalet" işaretçi. Üçünü de yap ama otomatik land
+yapmasın, gerçek bir sistemde ne oluyorsa o olsun, amacımız zaten gerçek sistemi taklit etmek."
+
+**İlke: simülatör kip zorlamaz.** Karıştırma yalnız girdiyi bozar (GPS benzetimi, alıcı darbesi, yer istasyonu bağlantısı); ne yapılacağına
+otopilot kendi arıza koruma parametreleriyle karar verir. Yalnız simülasyon (§48 ile aynı sınır): SITL parametreleri ve sunucu içi bağlantı kesme.
+
+### 49.1 Komut ve durum (§48.1'e ek alanlar)
+- `cmd jam` ek alanları: `rc: bool`, `tlm: bool`, `zone: {on, lat, lon, r_m 10…20000}`, `fs: 'althold' | 'land' | 'none'` (yalnız kopter).
+  Komut beklemeden döner (`{ok, jam: durum}`); parametre yazımı adım döngüsünde yapılır.
+- `durum` ekleri: `active` (şu an uygulanıyor mu), `rc`, `tlm`, `zone: {on, lat, lon, r_m, inside, dist_m}` (`dist_m` = bölge MERKEZİNE mesafe),
+  `fs` (kopter değilse `null`), `thr_mid` (gaz ortada tutuluyor), `limits.r_m`.
+  - `on` = kurulu (gps / spoof / rc / tlm'den en az biri; bölge tek başına `on` yapmaz).
+  - `active` = `on` ve (bölge kapalı ya da araç içeride).
+- WS `jam` çerçevesi `reason` ekleri: `zone` (bölgeye giriş / çıkış), `thr` (gaz-orta başladı / bitti), `init`.
+- `tele.jam` ekleri: `rc`, `tlm`, `active` + bölge açıksa `inside`, `dist_m`.
+- Özet raporu ekleri: `summary.jam.rc_s`, `tlm_s` (sn) ve `zone: {lat, lon, r_m, entries}` (bölgeye giriş sayısı).
+- Olay günlüğü: `Karıştırıcı bölgesine girildi` / `… çıkıldı`, ayar metninde `kumanda`, `telemetri`, `bölge <r> m`.
+
+### 49.2 Bağlantı karıştırma
+- **Kumanda (`rc`)**: tarayıcıdan gelen RC override'lar (sanal kumanda, oyun kolu, klavye) araca iletilmez (`rc` komutu `{ok, jammed: true}`
+  döner) ve `SIM_RC_FAIL 1` (alıcıda darbe yok) yazılır. Aracın RC arıza koruması gerçek araçtaki gibi çalışsın diye
+  `FS_THR_ENABLE` (kopter) / `THR_FAILSAFE` (sabit kanat) şu sırayla seçilir: oturumda yazılan → dron kaydındaki → ArduPilot fabrika değeri 1.
+  (Kumandasız oturumlar bu parametreyi 0 ile başlatır; aksi hâlde karıştırma hiçbir tepki üretmezdi.) Bitince `SIM_RC_FAIL 0` ve arıza koruması
+  oturum değerine döner; kip otopilotun bıraktığı yerde kalır.
+  - **Araç SITL'in iç kumandasını görmemeli** (`Karistirma._rc_uygula` / `_rc_gecis_adim`). SITL'in kendi iç kumandası vardır (kip anahtarı
+    kanalı 1800, gaz 1000); tarayıcı kumandası onun üstüne override yazar. Araç arada iç kumandayı bir an bile okursa kip anahtarı "çevrilmiş"
+    sayılır (STABILIZE), gaz sıfırken Radio Failsafe motorları hemen durdurur ve araç düşer — gerçek bir bağlantı kaybında olmayan yapay bir
+    etki (SITL'de ölçüldü: 25 m'den 15,5 m/s ile yere çarpma). Bu yüzden:
+    - Kesilirken override **bırakılmaz** (8×0 gönderilmez). Bırakma çerçevesi ArduPilot'a kanalları alıcıdan yeniden okutur
+      (`RC_Channels::read_input` → `has_new_overrides`), `SIM_RC_FAIL 1` ise yalnız yeni darbeyi keser, son değerleri değil. Çerçeveler
+      durunca araç gerçek alıcı kaybındaki gibi son girdilerde donar ve kendi zaman aşımıyla (`RC_FS_TIMEOUT` ≈ 1 sn) Radio Failsafe'e girer.
+    - Dönerken ÖNCE tarayıcı çerçeveleri yeniden akar, `SIM_RC_FAIL 0` + arıza koruması geri yazımı `RC_GECIS_S` = 0,4 sn (gerçek zaman)
+      SONRA yapılır; bekleme dolmadan yeniden kesilirse yazım iptal olur.
+    - Sahte kinematikte alıcı benzetimi yoktur; override hemen bırakılır.
+- **Telemetri (`tlm`)**: Mission Planner ↔ SITL UDP köprüsü iki yönde susar, sunucunun yer istasyonu kalp atışı durur, harekât paneli (hub)
+  beslenmez; araca giden komutlar (`TLM_KOMUTLARI`: arm, disarm, mode, takeoff, rtl, set_home, servo_set, motor_cut — ve harekât paneli
+  üzerinden gönderilenler: goto, görev …) **409** ve
+  "Telemetri bağlantısı karıştırılıyor — komut araca ulaşmadı" ile reddedilir. Simülasyon denetimi (`jam`, `reset`, `speed`, `wind`, `crash` …)
+  etkilenmez.
+  Araç uçmayı sürdürür; tepkisi kendi `FS_GCS_ENABLE` değeridir (fabrika 0: yok sayar, görev / kip sürer).
+- WS `tele` çerçeveleri tarayıcıya akmayı sürdürür: 3B sahne aracın gerçek hareketini gösterir (simülatörün "tanrı gözü"); yer istasyonu
+  göstergelerini dondurmak ön yüzün işidir (§49.6).
+
+### 49.3 Karıştırıcı bölgesi
+- Merkez + yarıçaplı daire. Kurulu etkiler yalnız aracın **gerçek** konumu (aldatılmış seyrüsefer konumu değil) dairenin içindeyken uygulanır.
+  Giriş `d ≤ r`, çıkış `d > r · 1.05` (sınırda titreme olmasın).
+- Giriş / çıkışta parametreler yazılır / geri alınır (`_bolge_degisti`), WS `jam {reason: 'zone'}` yayımlanır, giriş sayısı özete işlenir.
+  Süre sayaçları (`gps_s`, `rc_s`, `tlm_s`, `spoof_s`) yalnız etkinken ilerler; `dur_s` kurulumdan itibaren sayar.
+- Etki ikilidir (içeride tam, dışarıda yok); mesafeyle kademeli zayıflama ve çoklu bölge yok.
+
+### 49.4 Konum kaybında otopilot tepkisi (`fs`) ve "gaz ortada"
+- ArduCopter'da GPS / EKF kaybına tepki `FS_EKF_ACTION`'dır; fabrika değeri 1 = LAND. Kullanıcı isteği ("otomatik land yapmasın") gereği
+  simülatörün varsayılanı `althold` (2): araç irtifasını tutar, konumu tutamaz, rüzgârla sürüklenir. Dron kaydında `FS_EKF_ACTION` varsa
+  varsayılan odur. Panelden seçilebilir: İrtifa tut / İniş / Yalnız bildir. Karıştırma kurulunca yazılır, toparlanınca önceki değer geri yazılır
+  ("Sıfırla" ve yeni SITL'de de); kalıcı parametre izleyicisine bildirilmez (dron kaydına sızmaz).
+- **Gaz ortada**: ALT_HOLD'da irtifayı gaz çubuğu belirler. Kumanda bağlı değilken SITL'in iç RC'si gazı en altta (1000) tutar ve araç
+  alçalıp yere iner. Bu yüzden kopterde GPS karıştırması kuruluyken araç ALT_HOLD'dayken ve `RC_YOK_S` (1 sn) süredir **gaz girdisi** yokken
+  sunucu gaz kanalını 1500'de tutar — "çubukları bırakılmış kumanda". İki durum:
+  - kumanda bağlı değil (tarayıcıdan çerçeve gelmiyor): sunucu kendi RC override çerçevesini gönderir (yalnız kanal 3; diğerleri serbest);
+  - sanal kumanda açık (§37, varsayılan) ama gaz çubuğuna hiç dokunulmamış — çerçevede gaz kanalı 0 ("dokunma"): sunucu ayrı çerçeve
+    GÖNDERMEZ, tarayıcı çerçevesindeki boş gaz kanalını 1500 ile doldurur (`Karistirma.rc_gaz`). RC_CHANNELS_OVERRIDE'da 0 "kanalı bırak"
+    demektir; iki ayrı kaynak birbirinin kanallarını bırakırdı.
+  Pilot gaz çubuğunu oynatınca (gaz kanalı ≠ 0) devralır. Kip değişince, disarm'da ya da kumanda karıştırılınca bırakılır. Bantta
+  "gaz ortada" notu görünür (`thr_mid`).
+- Sabit kanatta `fs` yoktur (ArduPlane GPS kaybında kendi ölü-hesap davranışını uygular); seçici gizlenir.
+
+### 49.5 Ölçüm (gerçek SITL, ArduCopter stable-4.7.2; GUIDED askı 25 m)
+| Durum | Otopilotun tepkisi |
+|---|---|
+| Tam GPS karıştırma, `FS_EKF_ACTION 1` (fabrika) | "EKF Failsafe: changed to Land Mode" → LAND |
+| Tam GPS karıştırma, `FS_EKF_ACTION 2`, gaz 1500 | "EKF Failsafe: changed to Altitude Hold Mode"; irtifa korunur, araç rüzgârla sürüklenir; kip kendiliğinden geri dönmez |
+| Aynı, RC override yok (gaz 1000) | ALT_HOLD'da alçalır ve yere iner → "gaz ortada" bunun için |
+| Tam GPS karıştırma, `FS_EKF_ACTION 0` | GUIDED'da kalır; konum kestirimi bozuldukça ≈ 27 sn'de ≈ 160 m kaçar |
+| Kumanda kesik (`SIM_RC_FAIL 1`, `FS_THR_ENABLE 1`) | "Radio Failsafe" → RTL |
+| Aynı, sanal kumanda açıkken (20 Hz override akışı); 15 sn sonra kumanda geri | ≈ 1 sn'de "Radio Failsafe" → RTL (STABILIZE'a sıçrama / disarm yok); dönüşte "Radio Failsafe Cleared", kip RTL'de kalır |
+| Kumanda kesik + tam GPS karıştırma | RTL → ≈ 3 sn sonra "EKF Failsafe: changed to Land Mode" (konum yokken RTL sürdürülemez; ArduPilot'un kendi kararı) |
+| Tam GPS karıştırma sürerken (ALT_HOLD) kumanda da kesilir | "Radio Failsafe" → "Mode change to RTL failed: requires position" → LAND (≈ 1,5 m/s alçalma); bağlantılar dönünce kip LAND'de kalır |
+| Tam GPS karıştırma (`FS_EKF_ACTION 2`), sanal kumanda açık, gaza dokunulmamış | ALT_HOLD, irtifa 25,0 m sabit (20 sn); pilot gaz 1650 verince tırmanır (25 → 29,5 m), 1500'de durur |
+| Telemetri kesik, `FS_GCS_ENABLE 0` (fabrika) | Tepki yok; kip / görev sürer |
+| Telemetri kesik, `FS_GCS_ENABLE 1` | ≈ 3 sn'de "GCS Failsafe" → RTL |
+
+Sınır: ArduPilot yer istasyonu sysid'inden gelen `RC_CHANNELS_OVERRIDE`'ı kalp atışı sayar; telemetri kesikken sanal kumanda ya da "gaz ortada"
+etkinse `FS_GCS_ENABLE` tetiklenmez (kumanda MAVLink üzerinden taşındığı için). Mission Planner oyun kolu telemetri bağlantısından gider:
+kumanda karıştırması onu etkilemez, telemetri karıştırması keser.
+
+### 49.6 Ön yüz
+- **Panel** (`flightsim_jam.js`): "Bağlantı karıştırma" (Kumanda / Telemetri anahtarları + "Simülatör kip zorlamaz…" notu), "Karıştırıcı bölgesi"
+  (yarıçap, merkez `enlem, boylam` metni, "Araç konumu" / "Aracın önüne" (burun yönünde, sınır 150 m ileride) düğmeleri), kopterde
+  "Konum kaybında otopilot" seçicisi. Tercihler `localStorage['fs.jam']`.
+- **Küçük harita** (`.fs-jam-map`; sahnenin sol üstünde, rüzgâr kutusunun altında): canlı ekranda mini harita olmadığından eklendi. Yalnız
+  bölge kurulu / taslakken ya da hayalet varken görünür. Kuzey yukarı, araç ortada; ölçek 1-2-5 basamaklı (±100 m … ±50 km), küçülürken
+  histerezisli. Çizilenler: araç (burun oku), ev, bölge dairesi (kırmızı = içeride, sarı = dışarıda, mavi kesikli = taslak), hayalet (mor) ve
+  araç ↔ hayalet kesikli bağlantısı. Panel açıkken harita tıklanabilir (`fs-jam-pick`): tıklama bölge merkezini taşır, paneli kapatmaz.
+  Alt satır: "bölge içinde" / "bölge sınırına N m" / "sapma N m".
+- **3B katman** (`flightsim_jam3d.js`, `createJamLayer(sim)` → `{set(model, labels), dispose()}`): bölge = yarı saydam silindir duvar + üst
+  çember + merkez direği + araziye oturan zemin çizgisi + etiket; hayalet = mor yarı saydam küre + tel kafes + sabit boyutlu simge + "sapma N m"
+  etiketi + gerçek araca kesikli bağlantı + yere düşey çizgi. Hayalet `tele.nav_lat / nav_lon`'dan gelir; sapma < 2 m iken çizilmez.
+  Geometri yalnız bölge değişince yeniden kurulur; zemine oturtma 3 sn'de bir.
+- **Bant**: bölge dışındayken sarı "KARIŞTIRICI BÖLGESİ DIŞINDA · bölge sınırına N m"; içeride kırmızı "KARIŞTIRMA · … · KUMANDA YOK ·
+  TELEMETRİ YOK" + alt satırda "gaz ortada", "göstergeler son alınan değerde". Dar sahnede (≤ 1000 px) bant rüzgâr kutusunun, harita bandın altına iner.
+- **Gösterge dondurma** (`tlmLost(tele)`): telemetri kesikken HUD, kadranlar ve harekât paneli son alınan değerde kalır (`.fs-stage.fs-tlm-lost`
+  ile soluklaşır); sade HUD kipinde başta "TELEMETRİ YOK · son alınan değerler" rozeti görünür (Panel kipinde HUD gizli olduğundan bant + soluk
+  panel yeterli sayıldı). 3B sahne, küçük harita ve kayıt gerçek hareketi göstermeyi sürdürür.
+- **Rapor kartı**: "Kumanda kesintisi süresi", "Telemetri kesintisi süresi" kutuları ve "Karıştırıcı bölgesi <merkez> · <r> m · N giriş" satırı.
+- **Boyama hızı** (`PAINT_MS` = 100): telemetri 50 Hz gelir; panel, bant, küçük harita ve 3B katman telemetriyle en çok 10 Hz boyanır (durum her
+  çerçevede birleştirilir; komut yanıtı ve WS `jam` çerçevesi anında boyar). Hayalet 3B'de kare başına yumuşatıldığından adım görünmez.
+- Modül CSS sınıflarında genel adlar kullanılmaz (`app.css`'teki genel `.pick{display:flex}` haritanın düzenini bozmuştu → `fs-jam-pick`).
+
+### 49.7 Kapsam ve sınırlar
+- §48.6 geçerli: yalnız ArduPilot SITL; PX4 ve SIMUMAV oturumlarında kapalı.
+- Sahte kinematikte (SITL'siz) çalışanlar: bölge giriş / çıkışı, göstergeler, RC'nin iletilmemesi, komut reddi, gösterge dondurma, süre sayaçları.
+  Çalışmayanlar: fizik etkisi, `FS_EKF_ACTION` / RC arıza koruması tepkisi, "gaz ortada", `nav_lat / nav_lon` (hayalet görülmez).
+- Bağlantı ikilidir (var / yok): zayıf sinyal, paket kaybı oranı, gecikme benzetimi yok. Video bağlantısı ayrı modellenmez.
+- İzleyici (seyirci) bağlantısında ve replay'de karıştırma katmanı çizilmez.
+- Merkez metninde ondalık ayırıcı nokta olmalıdır (`39.925, 32.84`).
+
+### 49.8 Testler
+- `./.venv/bin/python -m tests.test_flightsim_jam` (§48 + doğrulama ekleri, bölge histerezisi, RC / telemetri kancaları, `fs` yazımı / geri alımı,
+  gaz-orta, özet ekleri).
+- `node tests/test_flightsim_jam.mjs` (17).
+- Gerçek SITL ölçümü (elle, ≈ 4 dk): `PYTHONPATH=. ./.venv/bin/python tests/jam_sitl_olcum49.py` — sanal kumanda akışı açıkken gaz-orta,
+  kumanda karıştırması ve geri dönüş; hiçbir adımda STABILIZE'a sıçrama / havada disarm görülmemeli (49.5'teki son üç satır).
+- Görseller: `./.venv/bin/python -m tests.jam_shots49_hepgo` → `/tmp/jam-shots/49-*.png` (sahte kinematik; panel, taslak bölge, bekleme,
+  içeride, HUD dondurma, dar ekran, rapor). `JAM_REAL=1` ile gerçek SITL adımları eklenir (hayalet, ALT_HOLD + irtifa korunumu, kumanda kaybı).

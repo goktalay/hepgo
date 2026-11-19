@@ -70,6 +70,8 @@ DRIVES = ('ackermann', 'skid')
 MAV_TYPE_GROUND_ROVER = 10
 KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_home', 'rc', 'speed', 'camera', 'defend', 'motor_cut', 'wind', 'launch_aim')   # speed: §23 SIM_SPEEDUP {factor: 0.25|0.5|1|2|4|8} (§35 ağır çekim); camera: §22.3 {type}; defend: §26 {action: 'next'}; motor_cut: {on: bool}; wind: §31 {ms, dir, gust, turb} (uçuşta rüzgâr); launch_aim: §31 {azimuth_deg, angle_deg} (rampa, ARM öncesi)
 KOMUTLAR += ('jam',)   # §48 karıştırma: {gps: 'off'|'light'|'heavy'|'full', spoof: {on, dir, speed, max_m}, dur_s} | {off: true}
+# §49 telemetri karıştırmasında araca ulaşmayan yer istasyonu komutları (simülasyon denetimi — reset, speed, wind, jam, crash… — ve kumanda dışında)
+TLM_KOMUTLARI = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'set_home', 'servo_set', 'motor_cut')
 KOMUTLAR += ('servo_trigger', 'servo_set', 'engage', 'gpws')   # §34: servo_trigger {on, ch, pwm, cmp, tol, delay_ms} · servo_set {ch, pwm} (DO_SET_SERVO; sahte kipte sanal çıkış) · engage §40 {action: 'lock', i} | {action: 'release', reason} · gpws §42 {events: [{code, level, t0, start_s, dur_s}], cfg?: {mode, off}}
 # Motor kesme (`motor_cut {on}`; yalnız uçak tipleri): ARM'lı kalır, motor durur, kumanda yüzeyleri ve uçuş kipi çalışmaya devam eder → süzülme.
 # Gerçek ArduPlane 4.7.2 SITL'de ölçüldü (100–145 m AGL; FBWA/FBWB/CRUISE/AUTO/RTL/MANUAL):
@@ -1091,7 +1093,8 @@ class SimSession:
         self.route = []
         self.komutcu = flightsim_hub.MavKomut(self)
         self.gorev = flightsim_mission.GorevIzleyici(self)   # §18: görev izleme (MP yüklemesi algılama), iz, çarpışma/özet kayıtları
-        self.jam = flightsim_jam.Karistirma(self)   # §48 karıştırma (GPS karıştırma / aldatma; gerçek konum SIMSTATE'ten)
+        # §48 karıştırma (GPS karıştırma / aldatma; gerçek konum SIMSTATE'ten) · §49 kumanda / telemetri bağlantısı + karıştırıcı bölgesi
+        self.jam = flightsim_jam.Karistirma(self, kopter=tip not in PLANE_TIPLERI + ROVER_TIPLERI)
         self.servo_tetik = flightsim_servotrig.ServoTetik(self)   # §34 servo tetik (sunucu tarafı kenar algısı + sim zamanı gecikme + çarpma)
         self.uyarilar = flightsim_gpws.UyariKaydi()   # §42 uçuş uyarıları: istemcinin bildirdiği bölümler (özet + disiplin puanı)
         self.servo_tetik.oneri_oku()
@@ -1282,6 +1285,8 @@ class SimSession:
             return
         self.gcs_last = now
         self.gcs_rx += 1
+        if self.jam.tlm_kesik:   # §49 telemetri karıştırması: yer istasyonunun paketleri araca ulaşmaz (GCS kilidi / sessizlik sayacı sürer)
+            return
         if self.param_izleyici is not None:   # Mission Planner PARAM_SET'leri ham geçer; izleyici yalnız niyeti not eder (yankı PARAM_VALUE kaydettirir)
             self.param_izleyici.gcs_bayt(data)
         self._gcs_param_ayikla(data)   # §35: oturum parametreleri (reset sonrası yeniden yazılır)
@@ -1292,6 +1297,8 @@ class SimSession:
                 pass
 
     def _gcs_gonder(self, data):
+        if self.jam.tlm_kesik:   # §49 telemetri karıştırması: aracın paketleri yer istasyonuna ulaşmaz
+            return
         if self._udp is not None and self.gcs_addr is not None and not self._udp.is_closing():
             try:
                 self._udp.sendto(data, self.gcs_addr)
@@ -1604,7 +1611,7 @@ class SimSession:
                 self._isle(m)
             except Exception:   # noqa: BLE001
                 continue
-        if self.hub is not None:   # §14: aynı mesajlar harekât paneline (hub DroneState/olay/konsol); ikinci ayrıştırma yok
+        if self.hub is not None and not self.jam.tlm_kesik:   # §14: aynı mesajlar harekât paneline (hub DroneState/olay/konsol); ikinci ayrıştırma yok · §49: telemetri kesikken panel beslenmez
             arac = [m for m in msgs if m.get_type() != 'BAD_DATA' and m.get_srcSystem() != GCS_SYSID]
             if arac:
                 try:
@@ -2410,6 +2417,8 @@ class SimSession:
         if name not in KOMUTLAR:
             raise SimHata('invalid', f'Bilinmeyen komut: {name}')
         self._kapi_denetle(name)   # §33 karşılaşma: yarış başlamadan ARM / kalkış yok
+        if name in TLM_KOMUTLARI and self.jam.tlm_kesik:   # §49: yer istasyonu komutu araca ulaşmaz (simülasyon denetimi ve kumanda etkilenmez)
+            raise SimHata('limit', flightsim_jam.TLM_RET)
         if name in ('servo_trigger', 'servo_set'):   # §34 doğrulama + mantık flightsim_servotrig'de
             try:
                 return await self.servo_tetik.komut(name, p)
@@ -2417,6 +2426,9 @@ class SimSession:
                 raise SimHata('invalid', str(e))
         if name == 'rc':
             p = {'ch': _rc_dogrula(p.get('ch'))}
+            if self.jam.rc_kesik:   # §49 kumanda karıştırması: çubuk girdisi araca ulaşmaz (araç kendi RC arıza korumasını uygular)
+                return {'ok': True, 'jammed': True}
+            p['ch'] = self.jam.rc_gaz(p['ch'])   # §49 "gaz ortada": ALT_HOLD'da boş gaz kanalı 1500
         elif name == 'takeoff':
             if self.type in ROVER_TIPLERI:   # §31: kara aracı kalkmaz — ARM + kip (MANUAL sürüş / AUTO görev)
                 raise SimHata('invalid', 'Kara aracında kalkış yok: ARM edip MANUAL ile sürün ya da AUTO ile görevi başlatın')
@@ -2629,6 +2641,8 @@ class SimSession:
             return {'ok': True, 'result': {'sim': True}}
         if self.state != 'HAZIR':
             return {'ok': False, 'error': 'Oturum hazır değil (SITL açılıyor ya da hata)'}
+        if self.jam.tlm_kesik:   # §49: harekât paneli de yer istasyonudur
+            return {'ok': False, 'error': flightsim_jam.TLM_RET}
         try:
             self._kapi_denetle(name)   # §33 karşılaşma
         except SimHata as e:
@@ -2916,7 +2930,8 @@ class SimSession:
                     self._olay(self.sitl['error'], 2)
                     self._durum('HATA')
                 else:
-                    self._gcs_heartbeat()
+                    if not self.jam.tlm_kesik:   # §49 telemetri karıştırması: yer istasyonu kalp atışı kesilir (araç FS_GCS_ENABLE'ına göre davranır)
+                        self._gcs_heartbeat()
                     if self._heartbeat_alindi and now - self._akis_son >= AKIS_YENILE_S:
                         self._akis_iste(tam=False)   # Mission Planner'ın akış istekleri bizim 50 Hz aralıkları ezmiş olabilir
             if self.viewers:

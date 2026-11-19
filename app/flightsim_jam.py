@@ -23,6 +23,33 @@ gerçek donanımdaki gibi tepki verir. Etki alanı o oturumun SITL sürecidir.
   görür (sahadaki yer istasyonu gibi). İrtifa ve hız alanları EKF'ten kalır.
 - Sahte kinematik (SITL'siz) kipte fiziksel etki yoktur: yalnız göstergeler (gps_fix / sats, nav_* ve sapma) taklit edilir; `durum().sim = 'fake'`.
 - PX4 ve SIMUMAV oturumlarında kapalıdır (`desteksiz(not)` → `supported: False`; komut gerekçeyle reddedilir).
+
+BAĞLANTI KARIŞTIRMA + KARIŞTIRICI BÖLGESİ (§49). Kullanıcı isteği: "Kumanda / telemetri bağlantısının karıştırılması … Haritada konumu ve yarıçapı
+olan bir karıştırıcı bölgesi: araç içine girince etkilenir … otomatik land yapmasın, gerçek bir sistemde ne oluyorsa o olsun, amacımız zaten
+gerçek sistemi taklit etmek."
+
+- `rc: true` — KUMANDA bağlantısı kesik: tarayıcının RC override'ları (sanal kumanda / oyun kolu) araca iletilmez, SIM_RC_FAIL 1 (alıcıda darbe
+  yok) yazılır; bekleyen override BIRAKILMAZ (bırakma çerçevesi araca SITL'in iç kumandasını okutur: kip anahtarı sıçrar) ve aracın RC arıza koruması gerçek araçtaki gibi çalışır: FS_THR_ENABLE / THR_FAILSAFE = oturumda yazılan → dron kaydındaki →
+  ArduPilot fabrika değeri 1 (kopter: RTL; konum yoksa otopilot kendi kararıyla iner). Simülatör kip ZORLAMAZ. Bitince SIM_RC_FAIL 0 ve
+  arıza koruması oturum değerine (kumandasız oturum: 0) döner; kip otopilotun bıraktığı yerde kalır.
+- `tlm: true` — TELEMETRİ (yer istasyonu) bağlantısı kesik: Mission Planner ↔ SITL UDP köprüsü iki yönde susar, sunucunun yer istasyonu kalp
+  atışı durur, harekât paneli (hub) beslenmez, tarayıcıdan / panelden araca giden komutlar "araca ulaşmadı" diye reddedilir. Araç uçmayı
+  sürdürür; tepkisi kendi FS_GCS_ENABLE değeridir (fabrika 0: yok sayar). SITL ölçümü: sayaç yalnız HEARTBEAT ile sıfırlanır (sunucunun
+  PARAM_SET akışı sıfırlamaz). 3B sahne gerçek hareketi göstermeyi sürdürür (simülatör günlüğü); ön yüz gösterge kutusunu dondurur.
+- `zone: {on, lat, lon, r_m}` — KARIŞTIRICI BÖLGESİ: kurulu etkiler yalnız aracın GERÇEK konumu dairenin içindeyken uygulanır (giriş d ≤ r,
+  çıkış d > r·BOLGE_CIKIS). `on` = kurulu, `active` = şu an uygulanıyor; giriş / çıkışta parametreler yazılır / geri alınır.
+- `fs: 'althold' | 'land' | 'none'` — yalnız kopter: GPS kaybında otopilot tepkisi (FS_EKF_ACTION 2 / 1 / 0). ArduPilot fabrika değeri 1'dir
+  (LAND); kullanıcı isteğiyle varsayılan 'althold' (dron kaydında FS_EKF_ACTION varsa o). Karıştırma kurulunca yazılır, toparlanınca eski
+  değer geri yazılır. SITL ölçümleri (kopter, 25 m askı): 2 → "EKF Failsafe: changed to Altitude Hold Mode", irtifa korunur, araç rüzgârla
+  sürüklenir, kip kendiliğinden geri dönmez · 1 → LAND · 0 → kipte kalır, konum kestirimi bozuldukça araç yüzlerce metre kaçar.
+- GAZ ORTADA: ALT_HOLD'da irtifayı gaz çubuğu belirler; kumanda bağlı değilken SITL'in iç RC'si gazı en altta (1000) tutar ve araç alçalıp
+  yere iner (ölçüldü). Kopterde GPS karıştırması kurulduktan sonra araç ALT_HOLD'dayken ve gaz girdisi yokken sunucu gaz kanalını 1500'de
+  tutar — "çubuklar bırakılmış kumanda". Kumanda bağlı değilse kendi RC override çerçevesini gönderir (diğer kanallar serbest); sanal kumanda
+  açık ama gaz çubuğuna hiç dokunulmamışsa (gaz kanalı 0 = dokunma) tarayıcı çerçevesindeki boş gaz kanalını doldurur (rc_gaz). Pilot gaz
+  çubuğunu oynatınca devralır. Kip değişince / disarm'da bırakılır.
+- SINIR: ArduPilot, yer istasyonu sysid'inden gelen RC override'ı kalp atışı sayar; telemetri kesikken sanal kumanda ya da "gaz ortada"
+  etkinse FS_GCS_ENABLE tetiklenmez (kumanda MAVLink üzerinden taşındığı için). Mission Planner oyun kolu telemetri bağlantısından gider:
+  kumanda karıştırması onu etkilemez, telemetri karıştırması keser.
 """
 import math
 import random
@@ -55,6 +82,22 @@ SEVIYE_PARAMLARI = {
 # Sahte kinematik kipte gösterge taklidi: seviye → (gps_fix, sats); ağır seviyede kilit SAHTE_AGIR_MS çevrimiyle gidip gelir
 SAHTE_GPS = {'light': (3, 6), 'full': (1, 0)}
 SAHTE_AGIR_MS = 3000
+# §49 bağlantı karıştırma + bölge
+FS_SECENEKLERI = ('althold', 'land', 'none')
+FS_DEGER = {'none': 0.0, 'land': 1.0, 'althold': 2.0}   # FS_EKF_ACTION
+FS_ADI = {'althold': 'irtifa tut (ALT_HOLD)', 'land': 'iniş (LAND)', 'none': 'yalnız bildir'}
+FS_VARSAYILAN = 'althold'
+FS_EKF_FABRIKA = 1.0                 # ArduCopter FS_EKF_ACTION fabrika değeri (LAND)
+RC_FS_FABRIKA = 1.0                  # FS_THR_ENABLE / THR_FAILSAFE fabrika değeri (etkin)
+BOLGE_R_MIN, BOLGE_R_MAX, BOLGE_R_VARSAYILAN = 10.0, 20000.0, 300.0   # m
+BOLGE_CIKIS = 1.05                   # çıkış eşiği = r · bu (sınırda titreme olmasın)
+GAZ_ORTA_PWM = 1500
+RC_FS_ADLARI = ('FS_THR_ENABLE', 'THR_FAILSAFE')   # aracın RC arıza koruması (kopter / uçak)
+RC_GECIS_S = 0.4                     # kumanda geri verilirken: çerçeveler yeniden aktıktan bu kadar sonra SIM_RC_FAIL 0 (gerçek zaman, sn)
+RC_YOK_S = 1.0                       # tarayıcıdan bu kadar süredir RC gelmediyse "kumanda bağlı değil"
+ALT_HOLD = 'ALT_HOLD'
+IZLEYICIDEN_GIZLI = ('FS_EKF_ACTION',)   # kalıcı parametre izleyicisine "bizim yazımımız" diye bildirilen adlar
+TLM_RET = 'Telemetri bağlantısı karıştırılıyor — komut araca ulaşmadı'
 
 
 class KaristirmaHata(ValueError):
@@ -68,18 +111,20 @@ def _sayi(v, ad, alt, ust):
 
 
 def dogrula(p, onceki=None):
-    """`jam` gövdesi → tam ayar sözlüğü `{gps, spoof: {on, dir, speed, max_m}, dur_s}`. Verilmeyen alan önceki ayardan gelir.
-    Hatalı alan → KaristirmaHata (oturum komutu 'invalid' döner)."""
+    """`jam` gövdesi → tam ayar sözlüğü `{gps, spoof: {on, dir, speed, max_m}, dur_s, rc, tlm, zone: {on, lat, lon, r_m}, fs}`. Verilmeyen alan
+    önceki ayardan gelir. Hatalı alan → KaristirmaHata (oturum komutu 'invalid' döner)."""
     if not isinstance(p, dict):
         raise KaristirmaHata('jam gövdesi sözlük olmalı')
     onceki = onceki or {}
     eski_spoof = {**SPOOF_VARSAYILAN, 'on': False, **(onceki.get('spoof') or {})}
+    eski_bolge = {'on': False, 'lat': None, 'lon': None, 'r_m': BOLGE_R_VARSAYILAN, **(onceki.get('zone') or {})}
+    eski_fs = onceki.get('fs') if onceki.get('fs') in FS_SECENEKLERI else FS_VARSAYILAN
     if 'off' in p:
         if p['off'] is not True:
             raise KaristirmaHata('jam.off yalnız true olabilir')
-        return {'gps': 'off', 'spoof': {**eski_spoof, 'on': False}, 'dur_s': 0}
-    if not any(k in p for k in ('gps', 'spoof', 'dur_s')):
-        raise KaristirmaHata('jam: gps, spoof, dur_s ya da off alanlarından biri gerekir')
+        return {'gps': 'off', 'spoof': {**eski_spoof, 'on': False}, 'dur_s': 0, 'rc': False, 'tlm': False, 'zone': {**eski_bolge, 'on': False}, 'fs': eski_fs}
+    if not any(k in p for k in ('gps', 'spoof', 'dur_s', 'rc', 'tlm', 'zone', 'fs')):
+        raise KaristirmaHata('jam: gps, spoof, rc, tlm, zone, fs, dur_s ya da off alanlarından biri gerekir')
     gps = p.get('gps', onceki.get('gps', 'off'))
     if gps not in GPS_SEVIYELERI:
         raise KaristirmaHata(f"jam.gps {' | '.join(GPS_SEVIYELERI)} olmalı")
@@ -93,7 +138,28 @@ def dogrula(p, onceki=None):
                  'speed': round(_sayi(sp.get('speed', eski_spoof['speed']), 'jam.spoof.speed (m/s)', 0, HIZ_MAX), 2),
                  'max_m': round(_sayi(sp.get('max_m', eski_spoof['max_m']), 'jam.spoof.max_m (m)', SAPMA_MIN, SAPMA_MAX), 1)}
     dur = int(round(_sayi(p['dur_s'], 'jam.dur_s (sn)', 0, SURE_MAX))) if 'dur_s' in p else int(onceki.get('dur_s') or 0)
-    return {'gps': gps, 'spoof': spoof, 'dur_s': dur}
+    bag = {}
+    for k, ad in (('rc', 'kumanda'), ('tlm', 'telemetri')):
+        v = p.get(k, bool(onceki.get(k)))
+        if not isinstance(v, bool):
+            raise KaristirmaHata(f'jam.{k} ({ad} bağlantısı) doğru/yanlış (true/false) olmalı')
+        bag[k] = v
+    bolge = eski_bolge
+    if 'zone' in p:
+        z = p['zone']
+        if not isinstance(z, dict) or not isinstance(z.get('on'), bool):
+            raise KaristirmaHata('jam.zone.on doğru/yanlış (true/false) olmalı')
+        lat, lon = z.get('lat', eski_bolge['lat']), z.get('lon', eski_bolge['lon'])
+        if z['on'] or lat is not None or lon is not None:
+            if lat is None or lon is None:
+                raise KaristirmaHata('jam.zone: bölge merkezi (lat, lon) gerekir')
+            lat, lon = round(_sayi(lat, 'jam.zone.lat (°)', -90, 90), 7), round(_sayi(lon, 'jam.zone.lon (°)', -180, 180), 7)
+        bolge = {'on': z['on'], 'lat': lat, 'lon': lon,
+                 'r_m': round(_sayi(z.get('r_m', eski_bolge['r_m']), 'jam.zone.r_m (m)', BOLGE_R_MIN, BOLGE_R_MAX), 1)}
+    fs = p.get('fs', eski_fs)
+    if fs not in FS_SECENEKLERI:
+        raise KaristirmaHata(f"jam.fs {' | '.join(FS_SECENEKLERI)} olmalı")
+    return {'gps': gps, 'spoof': spoof, 'dur_s': dur, **bag, 'zone': bolge, 'fs': fs}
 
 
 def ofset_derece(kuzey_m, dogu_m, lat):
@@ -131,6 +197,12 @@ def ayar_metni(cfg):
     sp = cfg['spoof']
     if sp['on']:
         p.append(f"GPS aldatma {sp['dir']:.0f}° yönünde " + (f"{sp['speed']:g} m/s ile " if sp['speed'] else 'anında ') + f"{sp['max_m']:g} m")
+    if cfg.get('rc'):
+        p.append('kumanda bağlantısı kesik')
+    if cfg.get('tlm'):
+        p.append('telemetri bağlantısı kesik')
+    if p and (cfg.get('zone') or {}).get('on'):
+        p.append(f"bölge {cfg['zone']['r_m']:g} m yarıçap")
     if p and cfg['dur_s']:
         p.append(f"{cfg['dur_s']} sn")
     return ' · '.join(p) or 'kapalı'
@@ -139,16 +211,22 @@ def ayar_metni(cfg):
 class Karistirma:
     """Oturum başına karıştırma durumu (SimSession.jam)."""
 
-    def __init__(self, s):
+    def __init__(self, s, kopter=False):
         self.s = s
+        self.kopter = bool(kopter)            # FS_EKF_ACTION + "gaz ortada" yalnız kopter ailesinde (ArduCopter)
         self.destek, self.destek_notu = True, None
-        self.cfg = dogrula({'off': True})
+        self.cfg = dogrula({'off': True}, {'fs': self._fs_varsayilan()})
         self.g_lat = self.g_lon = None        # SITL fiziğinin gerçek konumu (SIMSTATE)
         self.e_lat = self.e_lon = None        # otopilotun (EKF) konumu — gerçek konum kipinde
         self._gercek = False                  # gerçek konum kipi isteği (SIMSTATE gelince etkin)
         self._rng = random.Random()
-        self.ist = {'count': 0, 'gps_s': {'light': 0.0, 'heavy': 0.0, 'full': 0.0}, 'spoof_s': 0.0, 'max_off_m': 0.0, 'max_nav_err': 0.0}
+        self.ist = {'count': 0, 'gps_s': {'light': 0.0, 'heavy': 0.0, 'full': 0.0}, 'spoof_s': 0.0, 'max_off_m': 0.0, 'max_nav_err': 0.0,
+                    'rc_s': 0.0, 'tlm_s': 0.0, 'zone_in': 0, 'zone': None}
         self._son = {}                        # son yazılan SIM_GPS1_* değerleri (değişmeyen yeniden yazılmaz)
+        self._fs_eski = None                  # FS_EKF_ACTION'ın bizim yazmamızdan önceki değeri (toparlanınca / yeni SITL'de geri yazılır)
+        self._fs_secildi = False              # kullanıcı tepkiyi panelden seçti (seçmediyse varsayılan dron kaydından gelir)
+        self._rc_kesildi = False              # SIM_RC_FAIL 1 + RC arıza koruması yazıldı
+        self._rc_gecis = None                 # kumanda geri verilirken SIM_RC_FAIL 0'ın yazılacağı an (gerçek zaman)
         self._temizle()
 
     def _temizle(self):
@@ -158,11 +236,43 @@ class Karistirma:
         self._son_tbm = self._bas_tbm = None
         self._kalan = None
         self._kapali_s = self._yakin_s = 0.0
+        self._icerde, self._mesafe = False, None   # karıştırıcı bölgesi: araç içinde mi, merkeze mesafe (m)
+        self._gaz_orta = False                # kopter + GPS karıştırması kuruldu: ALT_HOLD'da kumandasız gaz ortada tutulur
+        self._gaz_etkin = False               # şu an gaz ortada tutuluyor
+        self._rc_gaz_t = 0.0                  # tarayıcı kumandasında gaz kanalının en son sürüldüğü an
 
     # ---------------- durum ----------------
     @property
-    def on(self):
+    def gps_kurulu(self):
         return self.cfg['gps'] != 'off' or self.cfg['spoof']['on']
+
+    @property
+    def on(self):
+        """Karıştırma KURULU (bölge varsa araç dışarıdayken de)."""
+        return self.gps_kurulu or self.cfg['rc'] or self.cfg['tlm']
+
+    @property
+    def aktif(self):
+        """Etkiler şu an UYGULANIYOR: kurulu ve (bölge yok ya da araç bölgenin içinde)."""
+        return self.on and (not self.cfg['zone']['on'] or self._icerde)
+
+    @property
+    def gps_etkin(self):
+        return self.cfg['gps'] if self.aktif else 'off'
+
+    @property
+    def spoof_etkin(self):
+        return self.cfg['spoof']['on'] and self.aktif
+
+    @property
+    def rc_kesik(self):
+        """Kumanda bağlantısı şu an kesik: SimSession tarayıcı RC override'larını iletmez."""
+        return self.cfg['rc'] and self.aktif
+
+    @property
+    def tlm_kesik(self):
+        """Telemetri bağlantısı şu an kesik: SimSession GCS köprüsünü, kalp atışını, hub beslemesini ve araç komutlarını keser."""
+        return self.cfg['tlm'] and self.aktif
 
     @property
     def gercek_kip(self):
@@ -172,6 +282,35 @@ class Karistirma:
     def desteksiz(self, not_):
         """Bu oturumda karıştırma yok (PX4 / SIMUMAV): düğme gösterilmez, komut gerekçeyle reddedilir."""
         self.destek, self.destek_notu = False, str(not_)
+
+    def _kayit_degeri(self, ad):
+        """Dron kaydındaki (kalıcı) parametre değeri; yoksa None."""
+        for r in getattr(self.s, 'kayitli_params', None) or ():
+            if r.get('name') == ad:
+                try:
+                    return float(r['value'])
+                except (KeyError, TypeError, ValueError):
+                    return None
+        return None
+
+    def _oturum_degeri(self, ad):
+        """Kullanıcının bu oturumda (Mission Planner / panel) yazdığı değer; yoksa None."""
+        v = (getattr(self.s, 'oturum_paramlari', None) or {}).get(ad)
+        try:
+            return float(v[0]) if v is not None else None
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    def _fs_varsayilan(self):
+        """GPS kaybı tepkisinin oturum varsayılanı: dron kaydında FS_EKF_ACTION varsa o (0 bildir · 1 / 3 iniş · 2 irtifa tut), yoksa irtifa tut."""
+        v = self._kayit_degeri('FS_EKF_ACTION')
+        if v is None:
+            return FS_VARSAYILAN
+        return {0: 'none', 2: 'althold'}.get(int(round(v)), 'land')
+
+    def _bolge_durum(self):
+        z = self.cfg['zone']
+        return {**z, 'inside': self._icerde if z['on'] else None, 'dist_m': round(self._mesafe, 1) if z['on'] and self._mesafe is not None else None}
 
     def nav_err(self):
         if self.s.sahte is not None:
@@ -184,10 +323,12 @@ class Karistirma:
         if not self.destek:
             return {'supported': False, 'reason': self.destek_notu}
         e = self.nav_err()
-        return {'supported': True, 'on': self.on, 'gps': self.cfg['gps'], 'spoof': dict(self.cfg['spoof']), 'dur_s': self.cfg['dur_s'],
+        return {'supported': True, 'on': self.on, 'active': self.aktif, 'gps': self.cfg['gps'], 'spoof': dict(self.cfg['spoof']),
+                'dur_s': self.cfg['dur_s'], 'rc': self.cfg['rc'], 'tlm': self.cfg['tlm'], 'zone': self._bolge_durum(),
+                'fs': self.cfg['fs'] if self.kopter else None, 'thr_mid': self._gaz_etkin,
                 'left_s': self._kalan, 'off_m': round(math.hypot(self.ok, self.od), 1), 'nav_err': round(e, 1) if e is not None else None,
                 'real': self._gercek, 'sim': 'fake' if self.s.sahte is not None else 'sitl',
-                'limits': {'speed': HIZ_MAX, 'max_m': [SAPMA_MIN, SAPMA_MAX], 'dur_s': SURE_MAX}}
+                'limits': {'speed': HIZ_MAX, 'max_m': [SAPMA_MIN, SAPMA_MAX], 'dur_s': SURE_MAX, 'r_m': [BOLGE_R_MIN, BOLGE_R_MAX]}}
 
     def _yay(self, reason):
         self.s._yay({'t': 'jam', 'ts': round(time.time(), 3), 'reason': reason, **self.durum()})
@@ -197,8 +338,15 @@ class Karistirma:
         if not self.ist['count']:
             return None
         i = self.ist
-        return {'count': i['count'], 'gps_s': {k: round(v, 1) for k, v in i['gps_s'].items() if v > 0}, 'spoof_s': round(i['spoof_s'], 1),
-                'max_off_m': round(i['max_off_m'], 1), 'max_nav_err': round(i['max_nav_err'], 1), 'sim': 'fake' if self.s.sahte is not None else 'sitl'}
+        o = {'count': i['count'], 'gps_s': {k: round(v, 1) for k, v in i['gps_s'].items() if v > 0}, 'spoof_s': round(i['spoof_s'], 1),
+             'max_off_m': round(i['max_off_m'], 1), 'max_nav_err': round(i['max_nav_err'], 1), 'sim': 'fake' if self.s.sahte is not None else 'sitl'}
+        if i['rc_s'] > 0:
+            o['rc_s'] = round(i['rc_s'], 1)
+        if i['tlm_s'] > 0:
+            o['tlm_s'] = round(i['tlm_s'], 1)
+        if i['zone'] is not None:   # son kurulan bölge + giriş sayısı (rapor haritası)
+            o['zone'] = {**i['zone'], 'entries': i['zone_in']}
+        return o
 
     # ---------------- SITL'e yazma ----------------
     def _yaz(self, ciftler, zorla=False):
@@ -210,6 +358,9 @@ class Karistirma:
                 degisen.append((ad, v))
         s = self.s
         if degisen and s.sahte is None and s._heartbeat_alindi and s.sysid is not None:
+            iz = getattr(s, 'param_izleyici', None)
+            if iz is not None:   # dron kaydına sızmasın: bizim yazdığımızın yankısı "SITL'de değişti" diye kalıcı kaydedilmez (SIM_* / FS_THR_* zaten hariç)
+                iz.yukleme_isaretle([ad for ad, _ in degisen if ad in IZLEYICIDEN_GIZLI])
             s._param_set(degisen)
         return degisen
 
@@ -221,8 +372,14 @@ class Karistirma:
     def kalp_atisi(self):
         """İlk araç kalp atışı (oturum açılışı / Sıfırla sonrası yeni SITL): eeprom'da kalmış olabilecek karıştırma parametreleri kapatılır."""
         self._son = {}
+        self._rc_kesildi = False   # SIM_RC_FAIL / FS_THR_ENABLE'ı oturum varsayılanları (RC_PARAMLAR) az önce yeniden yazdı
+        self._rc_gecis = None
         if self.destek:
             self._yaz(KAPALI_PARAMLARI, zorla=True)
+            self._fs_geri()        # "Sıfırla": eeprom'da kalan FS_EKF_ACTION yazımımız eski değerine döner
+            if not self._fs_secildi and self.cfg['fs'] != self._fs_varsayilan():   # dron kaydı SITL açılışında yüklendi
+                self.cfg['fs'] = self._fs_varsayilan()
+                self._yay('init')
 
     def akis(self):
         """SIMSTATE akış hızı: gerçek konum kipinde 50 Hz (SET_MESSAGE_INTERVAL reddedildiyse akış bazlı istek zaten EXTRA1 hızındadır)."""
@@ -258,7 +415,7 @@ class Karistirma:
         if not self.on:
             return
         te = self.s.tele
-        g = self.cfg['gps']
+        g = self.gps_etkin
         if g == 'heavy':
             te['gps_fix'], te['sats'] = (1, 3) if int(te.get('tbm') or 0) % SAHTE_AGIR_MS < SAHTE_AGIR_MS * 0.6 else (3, 7)
         elif g in SAHTE_GPS:
@@ -273,11 +430,18 @@ class Karistirma:
         if not self.destek:
             raise KaristirmaHata(self.destek_notu or 'Bu oturumda karıştırma yok')
         yeni = dogrula(p, self.cfg)
+        if isinstance(p, dict) and 'fs' in p:
+            self._fs_secildi = True
         s = self.s
         once, onceki = self.on, self.cfg
         self.cfg = yeni
-        s.oturum_param_unut('SIM_GPS1_')   # §35: Mission Planner'ın eski SIM_GPS1_* değeri "Sıfırla"da geri yazılmasın
+        s.oturum_param_unut('SIM_GPS1_', 'SIM_RC_FAIL')   # §35: Mission Planner'ın eski SIM_GPS1_* değeri "Sıfırla"da geri yazılmasın
         self._bas_tbm, self._kalan = None, (float(yeni['dur_s']) if self.on and yeni['dur_s'] else None)
+        if yeni['zone'] != onceki['zone']:
+            self._icerde, self._mesafe = False, None
+        if self.on and yeni['zone']['on']:
+            self.ist['zone'] = {k: yeni['zone'][k] for k in ('lat', 'lon', 'r_m')}
+        girdi = self._bolge_olc() and self._icerde
         if not (once or self._gercek):
             self._son_tbm = None   # yeni dönem: adım tabanı ilk telemetriyle kurulur (eski damgadan sıçrama olmasın)
         if self.on:
@@ -287,16 +451,16 @@ class Karistirma:
             if s.sahte is None and not self._gercek:
                 self._gercek = True
                 self.akis()
-        if yeni['gps'] != 'light':
-            self.gk = self.gd = 0.0
-        if not yeni['spoof']['on']:
-            self.ok = self.od = self.v = 0.0   # aldatıcı sustu: alıcı gerçek konuma döner (EKF birkaç saniye sonra izler)
-        elif yeni['spoof']['speed'] <= 0:
-            self.ok, self.od, self.v, _, _ = surukle(self.ok, self.od, 0.0, yeni['spoof'], 0.0)   # anında sıçrama
-        self._yaz(SEVIYE_PARAMLARI[yeni['gps']], zorla=yeni['gps'] != onceki['gps'])
-        self._ofset_yaz()
+        if self.gps_kurulu:
+            self._fs_yaz()
+            self._gaz_orta = self.kopter and s.sahte is None
+        self._uygula(zorla_gps=yeni['gps'] != onceki['gps'])
         if self.on:
             s._olay('Karıştırma: ' + ayar_metni(yeni) + (' — sahte kinematik: yalnız göstergeler etkilenir' if s.sahte is not None else ''), 4)
+            if yeni['zone']['on']:
+                if girdi:
+                    self.ist['zone_in'] += 1
+                s._olay('Karıştırıcı bölgesi: araç ' + ('içeride — etkiler uygulanıyor' if self._icerde else 'dışarıda — bölgeye girince etkilenir'), 6)
         elif once:
             s._olay('Karıştırma kapatıldı', 6)
         self._tele()
@@ -309,7 +473,9 @@ class Karistirma:
         self.ok = self.od = self.v = self.gk = self.gd = 0.0
         self._bas_tbm = self._kalan = None
         self._kapali_s = self._yakin_s = 0.0
+        self._icerde, self._mesafe = False, None
         self._yaz(KAPALI_PARAMLARI)
+        self._rc_uygula()
         self.s._olay(metin, 6)
         self._tele()
         self._yay(reason)
@@ -322,15 +488,160 @@ class Karistirma:
         self._gercek = False
         self.g_lat = self.g_lon = self.e_lat = self.e_lon = None
         self._son = {}
+        self._rc_kesildi = False   # yeni SITL: oturum varsayılanları ilk kalp atışında yeniden yazılır
         self._tele()
         if acikti:
             self._yay('reset')
+
+    # ---------------- §49 bağlantı / bölge / arıza koruması ----------------
+    def _uygula(self, zorla_gps=False):
+        """Şu anki etkinliğe (kurulu ayar × bölge) göre SITL'e yazar: GPS seviyesi, aldatma ofseti, kumanda bağlantısı."""
+        cfg = self.cfg
+        if self.gps_etkin != 'light':
+            self.gk = self.gd = 0.0
+        if not self.spoof_etkin:
+            self.ok = self.od = self.v = 0.0   # aldatıcı sustu / araç bölgeden çıktı: alıcı gerçek konuma döner (EKF birkaç saniye sonra izler)
+        elif cfg['spoof']['speed'] <= 0:
+            self.ok, self.od, self.v, _, _ = surukle(self.ok, self.od, 0.0, cfg['spoof'], 0.0)   # anında sıçrama
+        self._yaz(SEVIYE_PARAMLARI[self.gps_etkin], zorla=zorla_gps)
+        self._ofset_yaz()
+        self._rc_uygula()
+
+    def _rc_serbest(self):
+        """RC override'ı bırak (8×0): araç alıcı girişine döner."""
+        s = self.s
+        if s.sahte is not None:
+            s.sahte.komut('rc', {'ch': [0] * 8})
+        elif s._heartbeat_alindi and s.sysid is not None:
+            s._gonder(s.mav.rc_channels_override_encode(s.sysid, s.comp, 0, 0, 0, 0, 0, 0, 0, 0))
+
+    def _rc_uygula(self):
+        """Kumanda bağlantısı: kesilince SIM_RC_FAIL 1 + aracın RC arıza koruması etkinleşir; dönünce geri alınır.
+
+        Araç hiçbir an SITL'in iç kumandasını (kip anahtarı başka konumda, gaz en altta) görmemeli: görürse kip anahtarı "çevrilmiş" sayılır
+        (STABILIZE) ve gaz sıfırken motorlar durur — gerçek bir bağlantı kaybında olmayan yapay bir etki. Bu yüzden:
+        - kesilirken override BIRAKILMAZ (8×0 gönderilmez): bırakma çerçevesi ArduPilot'a kanalları alıcıdan yeniden okutur ve SIM_RC_FAIL
+          yalnız yeni darbeyi keser, son değerleri değil. Çerçeveler durunca araç gerçek alıcı kaybındaki gibi son girdilerde donar ve kendi
+          zaman aşımıyla (RC_FS_TIMEOUT ≈ 1 sn) Radio Failsafe'e girer.
+        - dönerken önce tarayıcı çerçeveleri yeniden akar, "darbe yok" RC_GECIS_S sonra kaldırılır (`_rc_gecis_adim`).
+        Sahte kinematikte alıcı benzetimi yoktur: override hemen bırakılır."""
+        kes = self.rc_kesik
+        if kes == self._rc_kesildi:
+            return
+        self._rc_kesildi = kes
+        self._rc_gecis = None
+        if kes:
+            self._gaz_etkin = False
+            fs = [(ad, next((v for v in (self._oturum_degeri(ad), self._kayit_degeri(ad)) if v is not None), RC_FS_FABRIKA)) for ad in RC_FS_ADLARI]
+            self._yaz((*fs, ('SIM_RC_FAIL', 1.0)), zorla=True)
+            if self.s.sahte is not None:
+                self._rc_serbest()
+        elif self.s.sahte is None:
+            self._rc_gecis = time.time() + RC_GECIS_S
+
+    def _rc_gecis_adim(self):
+        """Kumanda geri verilirken sıranın ikinci yarısı (her telemetri adımında; gerçek zaman): "darbe yok" kalkar, arıza koruması oturum değerine."""
+        if self._rc_gecis is None or time.time() < self._rc_gecis:
+            return
+        self._rc_gecis = None
+        if not self._rc_kesildi:
+            self._yaz((('SIM_RC_FAIL', 0.0), *((ad, self._oturum_degeri(ad) or 0.0) for ad in RC_FS_ADLARI)), zorla=True)
+
+    def _fs_yaz(self):
+        """Kopter: GPS kaybında otopilot tepkisi (FS_EKF_ACTION) seçilen değere; önceki değer toparlanınca geri yazılmak üzere saklanır."""
+        s = self.s
+        if not self.kopter or s.sahte is not None:
+            return
+        if self._fs_eski is None:
+            v = self._oturum_degeri('FS_EKF_ACTION')
+            if v is None:
+                v = (getattr(s, 'param_son', None) or {}).get('FS_EKF_ACTION')
+            if v is None:
+                v = self._kayit_degeri('FS_EKF_ACTION')
+            self._fs_eski = float(v) if v is not None else FS_EKF_FABRIKA
+        self._yaz((('FS_EKF_ACTION', FS_DEGER[self.cfg['fs']]),))
+
+    def _fs_geri(self):
+        if self._fs_eski is not None:
+            v = self._oturum_degeri('FS_EKF_ACTION')   # karıştırma sürerken Mission Planner'dan yazıldıysa o değer
+            self._yaz((('FS_EKF_ACTION', self._fs_eski if v is None else v),), zorla=True)
+            self._fs_eski = None
+            self._son.pop('FS_EKF_ACTION', None)
+
+    def _bolge_olc(self):
+        """Aracın GERÇEK konumunun bölge merkezine mesafesi + içeride mi (histerezisli). Dönüş: içeride durumu değişti mi."""
+        z = self.cfg['zone']
+        once = self._icerde
+        if not (self.on and z['on']):
+            self._icerde, self._mesafe = False, None
+            return once
+        te = self.s.tele
+        lat, lon = (self.g_lat, self.g_lon) if self.g_lat is not None else (te.get('lat'), te.get('lon'))
+        if lat is None or lon is None:
+            return False
+        self._mesafe = fark_m(z['lat'], z['lon'], lat, lon)
+        self._icerde = self._mesafe <= z['r_m'] * (BOLGE_CIKIS if once else 1.0)
+        return once != self._icerde
+
+    def _bolge_degisti(self):
+        if self._icerde:
+            self.ist['zone_in'] += 1
+        self._uygula(zorla_gps=True)
+        self.s._olay('Karıştırıcı bölgesine girildi — ' + ayar_metni({**self.cfg, 'zone': None, 'dur_s': 0}) if self._icerde
+                     else 'Karıştırıcı bölgesinden çıkıldı — bağlantılar ve GPS geri geliyor', 4 if self._icerde else 6)
+        self._tele()
+        self._yay('zone')
+
+    def rc_gaz(self, ch):
+        """Tarayıcı kumanda çerçevesi araca gitmeden önce: "gaz ortada" kuralı geçerliyken gaz kanalı boşsa (0 = kanala dokunma: sanal kumanda
+        açık ama gaz çubuğu hiç oynatılmamış) 1500 ile doldurulur. Ayrı bir override çerçevesi gönderilmez: RC_CHANNELS_OVERRIDE'da 0 "kanalı
+        bırak" demektir, iki kaynak birbirinin kanallarını bırakırdı. Gaz kanalı doluysa pilot gazı devralmıştır."""
+        if ch[2]:
+            self._rc_gaz_t = time.time()
+            return ch
+        te = self.s.tele
+        if not self._gaz_orta or not any(ch) or not (te.get('armed') and te.get('mode') == ALT_HOLD):
+            return ch
+        ch = list(ch)
+        ch[2] = GAZ_ORTA_PWM
+        return ch
+
+    def _gaz_adim(self):
+        """ "Gaz ortada": kopter ALT_HOLD'dayken ve gaz girdisi yokken (kumanda bağlı değil ya da sanal kumandada gaz çubuğuna hiç dokunulmamış)
+        gaz kanalı 1500'de tutulur (aksi hâlde SITL'in iç RC'si gazı en altta tutar, araç alçalır). Pilot gaz çubuğunu oynatınca devralır; kip
+        değişince / disarm'da override bırakılır."""
+        if not self._gaz_orta:
+            return
+        s = self.s
+        te = s.tele
+        asili = bool(te.get('armed')) and te.get('mode') == ALT_HOLD
+        simdi = time.time()
+        akis = simdi - getattr(s, '_rc_son', 0.0) <= RC_YOK_S   # tarayıcıdan kumanda çerçevesi akıyor (gaz kanalı rc_gaz() içinde doldurulur)
+        pilot = simdi - self._rc_gaz_t <= RC_YOK_S              # pilot gaz çubuğunu sürüyor
+        if asili and not self.rc_kesik and not pilot and s._heartbeat_alindi and s.sysid is not None:
+            if not akis:
+                s._gonder(s.mav.rc_channels_override_encode(s.sysid, s.comp, 0, 0, GAZ_ORTA_PWM, 0, 0, 0, 0, 0))
+            if not self._gaz_etkin:
+                self._gaz_etkin = True
+                s._olay('Gaz girdisi yok: gaz çubuğu ortada kabul ediliyor (irtifa korunur; araç rüzgârla sürüklenir)', 4)
+                self._yay('thr')
+            return
+        if self._gaz_etkin:
+            self._gaz_etkin = False
+            if not akis and not self.rc_kesik:
+                self._rc_serbest()
+            self._yay('thr')
+        if not asili and not self.on and not self._gercek:
+            self._gaz_orta = False   # karıştırma bitti, EKF toparlandı ve araç ALT_HOLD'da değil: kural biter
 
     # ---------------- adım ----------------
     def _tele(self):
         te = self.s.tele
         if self.on:
-            te['jam'] = {'gps': self.cfg['gps'], 'spoof': self.cfg['spoof']['on'], 'off_m': round(math.hypot(self.ok, self.od), 1), 'left_s': self._kalan}
+            te['jam'] = {'gps': self.cfg['gps'], 'spoof': self.cfg['spoof']['on'], 'off_m': round(math.hypot(self.ok, self.od), 1), 'left_s': self._kalan,
+                         'rc': self.cfg['rc'], 'tlm': self.cfg['tlm'], 'active': self.aktif}
+            if self.cfg['zone']['on']:
+                te['jam']['inside'], te['jam']['dist_m'] = self._icerde, (round(self._mesafe, 1) if self._mesafe is not None else None)
         else:
             te.pop('jam', None)
             if self.s.sahte is not None:   # sahte kinematik: gösterge taklidi aynı çerçevede geri alınır
@@ -342,7 +653,8 @@ class Karistirma:
 
     def adim(self, tbm=None):
         """Her telemetri adımı (SimSession._tele_yay; izleyici olmasa da): ADIM_MS simülasyon zamanında bir ofset / gürültü / süre ilerler."""
-        if not (self.on or self._gercek):
+        self._rc_gecis_adim()
+        if not (self.on or self._gercek or self._gaz_orta):
             return
         t = tbm if tbm is not None else self.s.tele.get('tbm')
         if t is None:
@@ -357,8 +669,9 @@ class Karistirma:
         self._son_tbm = t
         if self.on:
             self._adim_acik(t, dt)
-        else:
+        elif self._gercek:
             self._adim_toparlanma(dt)
+        self._gaz_adim()
         self._tele()
 
     def _adim_acik(self, t, dt):
@@ -370,17 +683,24 @@ class Karistirma:
             if self._kalan <= 0:
                 self._kapat('timeout', 'Karıştırma süresi doldu — kapatıldı')
                 return
+        if self._bolge_olc():
+            self._bolge_degisti()
         vk = vd = 0.0
-        if cfg['spoof']['on']:
+        g = self.gps_etkin
+        if self.spoof_etkin:
             self.ok, self.od, self.v, vk, vd = surukle(self.ok, self.od, self.v, cfg['spoof'], dt)
             self.ist['spoof_s'] += dt
             self.ist['max_off_m'] = max(self.ist['max_off_m'], math.hypot(self.ok, self.od))
-        if cfg['gps'] == 'light':
+        if g == 'light':
             f = math.exp(-dt / HAFIF_TAU_S)
             q = HAFIF_SIGMA_M * math.sqrt(1.0 - f * f)
             self.gk, self.gd = self.gk * f + self._rng.gauss(0.0, q), self.gd * f + self._rng.gauss(0.0, q)
-        if cfg['gps'] != 'off':
-            self.ist['gps_s'][cfg['gps']] += dt
+        if g != 'off':
+            self.ist['gps_s'][g] += dt
+        if self.rc_kesik:
+            self.ist['rc_s'] += dt
+        if self.tlm_kesik:
+            self.ist['tlm_s'] += dt
         self._ofset_yaz(vk, vd)
         if self.s.sahte is not None:
             self.ist['max_nav_err'] = max(self.ist['max_nav_err'], math.hypot(self.ok + self.gk, self.od + self.gd))
@@ -395,5 +715,6 @@ class Karistirma:
             s = self.s
             if s.sahte is None and not s._smi_red and s.sysid is not None:
                 s._gonder(s.mav.command_long_encode(s.sysid, s.comp, 511, 0, SIMSTATE_ID, SIMSTATE_NORMAL_US, 0, 0, 0, 0, 0))
+            self._fs_geri()   # GPS kaybı tepkisi eski değerine (kip otopilotun bıraktığı yerde kalır)
             self._tele()
             self._yay('settled')

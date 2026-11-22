@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Master — RTSP, RTP, SRT ağ video akışı görüntüleyici ve çözümleyici (Mastertool)</title>
+<meta name="description" content="Video Master: RTSP, RTP, UDP, SRT, RTMP ve HLS ağ akışlarına bağlanan, videoyu oynatan, akan baytları HEX ve paket olarak gösteren, veri hızını grafikte çizen ve akışı dosyaya kaydeden Windows uygulaması. Mastertool hesabıyla ücretsiz.">
+<meta property="og:title" content="Video Master — ağ video akışı görüntüleyici">
+<meta property="og:description" content="RTSP, RTP, UDP, SRT, RTMP ve HLS akışlarını izleyin, çözümleyin, kaydedin. Mastertool uygulaması.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/video-master">
+<link rel="icon" href="/brand/vm.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+  .fmt-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .fmt-cloud span { font: 12.5px ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 3px 9px; border-radius: 999px; background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); color: var(--head); }
+</style>
+<style>
+  .pf-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .pf-list span { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 4px 11px 4px 5px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--head); }
+  .pf-list i { width: 18px; height: 18px; border-radius: 6px; display: inline-block; }
+  .pf-list.no span { padding-left: 11px; color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(248,113,113,.7); }
+  .legal-box { display: flex; gap: 16px; align-items: flex-start; padding: 22px 24px; border-radius: 14px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.07); }
+  .legal-box svg { width: 30px; height: 30px; flex: 0 0 auto; color: #fbbf24; }
+  .legal-box b { color: var(--head); font-size: 17px; display: block; margin-bottom: 6px; }
+  .legal-box p { margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#nasil">Nasıl çalışır</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#urunler">Ürünler</a> › Video Master</div>
+        <img class="brand-ic" src="/brand/vm-512.png" alt="">
+        <span class="eyebrow">Mastertool uygulaması · Windows</span>
+        <h1>Ağ video akışlarınız <em>tek pencerede.</em></h1>
+        <p class="lead">Video Master; RTSP, RTP, UDP, SRT, RTMP ve HLS akışlarına bağlanır, videoyu oynatır, akan baytları HEX ve paket olarak gösterir, veri hızını grafikte çizer ve akışı tek tıkla dosyaya kaydeder. Kamera, kodlayıcı ve yayın hatlarını kurarken ve sorun ararken gereken her şey bir arada.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım › Uygulamalar</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/vm-04-akis-penceresi-gece.webp" width="1600" height="1000" alt="Akış penceresi" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/vm-04-akis-penceresi-gunduz.webp" width="1600" height="1000" alt="Akış penceresi" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>İzleyin, çözümleyin, kaydedin</h2>
+      <p class="sub">IP kameralar, kodlayıcılar, IPTV ve yayın sunucuları için: akışı yalnız görmek değil, içinde ne aktığını da görmek isteyenlere.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg></div>
+          <h3>Altı protokol, tek uygulama</h3><p>RTSP ve RTSPS, ham RTP, UDP üzerinden MPEG-TS, SRT, RTMP ve RTMPS, HTTP / HLS, TCP ve SDP dosyası. Adresi yapıştırın; alanlar kendiliğinden dolar.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5v14l11-7z"/></svg></div>
+          <h3>Kartın üstünde oynatma</h3><p>Her bağlantı bir kart: oynat düğmesine basınca video kartta oynar, anlık veri hızı ve CANLI rozeti görünür. Çift tıklayınca akış penceresi açılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+          <h3>HEX, ASCII ve paket görünümü</h3><p>Akan baytlar HEX, ASCII, ikili, ondalık ve Base64 olarak; duraklatıp tamponda gezin. Paket listesinde RTP sıra numarası, zaman damgası ve H.264 / H.265 NAL türü.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M4 15l4-5 4 3 4-7 4 4"/></svg></div>
+          <h3>Veri hızı grafiği</h3><p>Akan verinin boyutu çizgi grafikte: 30 saniye, 1 dakika ya da 5 dakika; bit/s ya da B/s. Üzerine gelince o anın değeri.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></div>
+          <h3>Akış bilgisi</h3><p>Kodek ve profil, çözünürlük, kare hızı, piksel biçimi, anahtar kare aralığı; ses kodeği ve örnekleme hızı; RTP kaybı ve jitter; MPEG-TS PID tablosu ve süreklilik hataları.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/></svg></div>
+          <h3>Tek tıkla kayıt</h3><p>Kaydet düğmesine basın, durdurunca MP4, MKV, MPEG-TS ya da MOV dosyası oluşur. Görüntü yeniden kodlanmaz; isteğe bağlı dakikalık bölme.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8M4.6 9a1.7 1.7 0 0 0-.3-1.8M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></div>
+          <h3>Olabilecek tüm ayarlar</h3><p>RTP taşıma, çok noktaya yayın ve kaynak süzgeci, SRT kipi ve şifreleme, zaman aşımı ve tamponlar, donanım hızlandırma, döndürme, kare hızı sınırı: hepsi açılır kapanır panelde.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></div>
+          <h3>Kendiliğinden yeniden bağlanma</h3><p>Bağlantı kopunca ya da veri akışı durunca yeniden bağlanır; hata nedeni (kimlik, zaman aşımı, reddedildi) kartta ve pencerede yazar.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
+          <h3>RTSP sinyalleşmesi</h3><p>Sunucuyla alışverişin tamamı: OPTIONS, DESCRIBE, SETUP, PLAY istekleri ve yanıtları, SDP ve çalışan ffmpeg komutu.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="nasil">
+    <div class="wrap">
+      <h2>Nasıl çalışır</h2>
+      <p class="sub">Üç adımda ilk akışınız.</p>
+      <div class="steps">
+        <div class="step"><h3>Kurun ve giriş yapın</h3><p>Hesabım'dan ya da Master Tool'dan kurun; Mastertool hesabınızla oturum açın.</p></div>
+        <div class="step"><h3>Bağlantıyı kaydedin</h3><p>Protokolü seçin ya da adresi yapıştırın; "Bağlantıyı sına" kaydetmeden kodeği, çözünürlüğü ve bir kareyi gösterir.</p></div>
+        <div class="step"><h3>Oynatın</h3><p>Karttaki oynat düğmesine basın; ayrıntı için karta çift tıklayın: video, akış verisi, grafik ve kayıt aynı pencerede.</p></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/vm-01-ana-ekran-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-01-ana-ekran-gece-800.webp" srcset="/shots/vm-01-ana-ekran-gece-800.webp 800w, /shots/vm-01-ana-ekran-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantılar"></a><figcaption><b>Bağlantılar</b><span>Kartın üstündeki oynat düğmesi videoyu kartta oynatır; CANLI rozeti ve anlık veri hızı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/vm-01-ana-ekran-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-01-ana-ekran-gunduz-800.webp" srcset="/shots/vm-01-ana-ekran-gunduz-800.webp 800w, /shots/vm-01-ana-ekran-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantılar"></a><figcaption><b>Bağlantılar</b><span>Kartın üstündeki oynat düğmesi videoyu kartta oynatır; CANLI rozeti ve anlık veri hızı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/vm-02-yeni-baglanti-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-02-yeni-baglanti-gunduz-800.webp" srcset="/shots/vm-02-yeni-baglanti-gunduz-800.webp 800w, /shots/vm-02-yeni-baglanti-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni bağlantı"></a><figcaption><b>Yeni bağlantı</b><span>Protokolü seçin; yapıştırılan adres alanlara kendiliğinden dağılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/vm-03-ag-ayarlari-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-03-ag-ayarlari-gece-800.webp" srcset="/shots/vm-03-ag-ayarlari-gece-800.webp 800w, /shots/vm-03-ag-ayarlari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ağ ayarları"></a><figcaption><b>Ağ ayarları</b><span>RTP taşıma, zaman aşımı, tamponlar ve yeniden bağlanma</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/vm-04-akis-penceresi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-04-akis-penceresi-gece-800.webp" srcset="/shots/vm-04-akis-penceresi-gece-800.webp 800w, /shots/vm-04-akis-penceresi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Akış penceresi"></a><figcaption><b>Akış penceresi</b><span>Video, HEX görünümü, veri hızı grafiği, akış bilgisi, akış ayarları ve kayıt</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/vm-04-akis-penceresi-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-04-akis-penceresi-gunduz-800.webp" srcset="/shots/vm-04-akis-penceresi-gunduz-800.webp 800w, /shots/vm-04-akis-penceresi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Akış penceresi"></a><figcaption><b>Akış penceresi</b><span>Video, HEX görünümü, veri hızı grafiği, akış bilgisi, akış ayarları ve kayıt</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/vm-05-paketler-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-05-paketler-gece-800.webp" srcset="/shots/vm-05-paketler-gece-800.webp 800w, /shots/vm-05-paketler-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Paket listesi"></a><figcaption><b>Paket listesi</b><span>RTP sıra numarası, zaman damgası ve NAL türü; seçilen paketin baytları</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/vm-06-rtsp-sinyallesme-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/vm-06-rtsp-sinyallesme-gunduz-800.webp" srcset="/shots/vm-06-rtsp-sinyallesme-gunduz-800.webp 800w, /shots/vm-06-rtsp-sinyallesme-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="RTSP sinyalleşmesi"></a><figcaption><b>RTSP sinyalleşmesi</b><span>Sunucuyla alışverişin tamamı: istekler ve yanıtlar</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 için bileşenler, desteklenen protokoller ve sınırlar.</p>
+      <div class="two">
+        <table class="keys">
+          <tr><td>İşletim sistemi</td><td>Windows 10 ve 11, 64 bit (x64)</td></tr>
+          <tr><td>Paketler</td><td><code>Video-Master-Setup-&lt;sürüm&gt;.exe</code> (kurulum) ve <code>Video-Master-Portable-&lt;sürüm&gt;.exe</code> (taşınabilir)</td></tr>
+          <tr><td>Kurulum klasörü</td><td><code>Program Files\Mastertool\Video Master</code></td></tr>
+          <tr><td>Teknoloji</td><td>Electron 33 (Chromium 130); akışları FFmpeg açar</td></tr>
+          <tr><td>Hesap</td><td>Mastertool hesabıyla tek giriş; diğer uygulamalarla ortak oturum</td></tr>
+          <tr><td>Arayüz</td><td>8 dil; Gece, Gündüz ve Sistem teması; sistem tepsisi</td></tr>
+        </table>
+        <table class="keys">
+          <tr><td>Protokoller</td><td>RTSP, RTSPS, RTP, UDP (MPEG-TS), SRT, RTMP, RTMPS, HTTP, HLS, TCP, SDP</td></tr>
+          <tr><td>Kodekler</td><td>H.264, H.265, MPEG-2, MPEG-4, MJPEG, VP8, VP9, AV1; AAC, G.711, Opus, MP3, AC-3</td></tr>
+          <tr><td>Kayıt</td><td>MP4, MKV, MPEG-TS, MOV; görüntü yeniden kodlanmadan</td></tr>
+          <tr><td>Senkron</td><td>Bağlantılar uçtan uca şifreli olarak hesabınıza yedeklenir</td></tr>
+          <tr><td>Akış verisi</td><td>RTSP, RTP, UDP ve TCP'de ağdaki gerçek baytlar; SRT, RTMP ve HLS'te çözümlenmiş akışın kopyası</td></tr>
+          <tr><td>Sınırlar</td><td>4K ve yüksek kare hızlı akışlarda işlemci kullanımı yüksektir; çözünürlük ve kare hızı sınırlanabilir</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>Video Master'ı edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Uygulamalar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Uygulamalar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

@@ -185,7 +185,7 @@ def render_tool(k, meta, page, lang, rel=None):
     return _put_ld(out, ld)
 
 
-TOOL_PATHS = {'master-download': '/master-download'}   # kökte yayımlanan araç sayfaları (main.TOOLS[..]['path'])
+TOOL_PATHS = {'master-download': '/master-download', 'video-master': '/video-master'}   # kökte yayımlanan araç sayfaları (main.TOOLS[..]['path'])
 
 
 def tool_pages():

@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', SIMUMAV_RELEASE_KEY='sv-anahtar', SIMUMAV_MT_SHARED_SECRET='sv-gizli', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', VIDEOMASTER_RELEASE_KEY='vm-anahtar', SIMUMAV_RELEASE_KEY='sv-anahtar', SIMUMAV_MT_SHARED_SECRET='sv-gizli', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -232,7 +232,7 @@ def main():
         r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
         assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
         assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
-        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'md', 'ip', 'fs', 'qp', 'm3', 'sd'}
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd'}
         assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
         sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
         c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
@@ -447,8 +447,8 @@ def main():
         SSO = r.json()['sso_token']
         MT = {'Authorization': 'Bearer ' + SSO}
         cat = c.get('/api/mt/apps', headers=MT).json()
-        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'ip', 'fs', 'qp', 'm3', 'sd'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
-        ipc = cat['apps'][6]
+        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        ipc = next(x for x in cat['apps'] if x['app'] == 'ip')
         assert ipc['description']['en'].startswith('Scans') and len(ipc['description']) == 8 and cat['apps'][0]['description'] is None
         assert ipc['group'] == 'tools' and ipc['name'] == 'IP Tools' and ipc['site'].endswith('/araclar/ip-tools') and cat['apps'][0]['group'] == 'apps'
         assert c.get('/brand/ip.png').headers['content-type'] == 'image/png' and c.get('/brand/qp.svg').headers['content-type'] == 'image/svg+xml'
@@ -526,7 +526,33 @@ def main():
         assert r.status_code == 301 and r.headers['location'] == '/master-download', r.status_code
         assert c.get('/master-download', headers={'Host': 'sshmasters.com'}).status_code == 404
         assert c.get('/brand/md-512.png', headers={'Host': 'mastertool.download'}).status_code == 200
-        sm2 = c.get('/sitemap.xml', headers={'Host': 'mastertool.download'}).text; assert sm2.count('<loc>https://mastertool.download/araclar/quick-preview') == 8 and sm2.count('/araclar/ip-tools') >= 8 and sm2.count('<loc>https://mastertool.download/master-download') == 8 and '/araclar/master-download' not in sm2, sm2.count('/araclar/')
+        # Video Master (vm): md gibi 'apps' grubunda, tanıtım kökte; kendi anahtarıyla sürüm yükleme, sso ile giriş, uçtan uca şifreli kütüphane
+        vmc = next(x for x in cat['apps'] if x['app'] == 'vm')
+        assert vmc['group'] == 'apps' and vmc['site'].endswith('/video-master') and vmc['exe'] == 'Video Master.exe' and vmc['description']['tr'].startswith('Ağ video'), vmc
+        vmp = c.get('/video-master?lang=en', headers={'Host': 'mastertool.download'})
+        assert vmp.status_code == 200 and 'canonical" href="https://mastertool.download/video-master?lang=en"' in vmp.text and '"isPartOf"' in vmp.text
+        assert '/shots/vm-01-ana-ekran-gece-en.webp' in vmp.text and vmp.text.count('data-theme-shot=') == 8 and '"screenshot"' in vmp.text
+        r = c.get('/araclar/video-master', headers={'Host': 'mastertool.download'}, follow_redirects=False)
+        assert r.status_code == 301 and r.headers['location'] == '/video-master', r.status_code
+        assert c.get('/video-master', headers={'Host': 'sshmasters.com'}).status_code == 404
+        for f in ('vm.svg', 'vm.png', 'vm-512.png'):
+            assert c.get('/brand/' + f, headers={'Host': 'mastertool.download'}).status_code == 200, f
+        assert c.post('/api/vm/releases/1.0.0/setup', data={'part': '0', 'parts': '1'}, files={'file': ('b', b'MZvideo')},
+                      headers={'X-Release-Key': 'ip-anahtar'}).status_code == 403
+        r = c.post('/api/vm/releases/1.0.0/setup', data={'part': '0', 'parts': '1', 'filename': 'Video-Master-Setup-1.0.0.exe'}, files={'file': ('b', b'MZvideo')},
+                   headers={'X-Release-Key': 'vm-anahtar'})
+        assert r.status_code == 200 and r.json()['size'] == 7, r.text
+        assert c.get('/api/mt/apps/vm/download', headers=MT3).content == b'MZvideo'
+        r = c.post('/api/vm/auth/sso', json={'sso_token': MT3['Authorization'][7:]}); assert r.status_code == 200 and r.json()['token'], r.text
+        VM = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert c.get('/api/vm/me', headers=VM).status_code == 200 and c.get('/api/vm/releases/latest', headers=VM).json()['version'] == '1.0.0'
+        assert c.get('/api/vm/library', headers=VM).json()['version'] == 0
+        vblob = base64.b64encode(os.urandom(64)).decode()
+        assert c.put('/api/vm/library', headers=VM, json={'base_version': 0, 'blob': vblob}).json() == {'version': 1}
+        assert c.get('/api/vm/library', headers=VM).json()['blob'] == vblob
+        assert c.get('/api/vm/library', headers=MT3).status_code in (401, 403)   # ortak oturum belirteci uygulama uçlarında geçmez
+        sm2 = c.get('/sitemap.xml', headers={'Host': 'mastertool.download'}).text; assert sm2.count('<loc>https://mastertool.download/video-master') == 8 and '/araclar/video-master' not in sm2
+        assert sm2.count('<loc>https://mastertool.download/araclar/quick-preview') == 8 and sm2.count('/araclar/ip-tools') >= 8 and sm2.count('<loc>https://mastertool.download/master-download') == 8 and '/araclar/master-download' not in sm2, sm2.count('/araclar/')
         # web oturumunda (Hesabım) sso oturumu kapatılınca ailesi düşer; web 'Oturumlar' listesinde görünür
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()
@@ -573,7 +599,7 @@ def main():
         assert g.get('/api/xx/profile', headers=VF).status_code == 404 and g.get('/api/sm/profile', headers=VF).status_code == 404
         # katalog: kind:'web' kaydı yalnız ?v=1.2.0 ve üstü isteyen Master Tool'a
         r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop'}); MT4 = {'Authorization': 'Bearer ' + r.json()['sso_token']}
-        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'ip', 'fs', 'qp', 'm3', 'sd']
+        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd']
         assert [x['app'] for x in c.get('/api/mt/apps', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps

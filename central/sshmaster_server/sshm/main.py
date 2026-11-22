@@ -47,7 +47,10 @@ TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup
          'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'},
          # group:'apps' — katalogda uygulamalarla; path: tanıtım sayfası araclar/ altında değil kökte (dosya yine static/mt/araclar/<slug>.html)
          'md': {'name': 'Master Download', 'slug': 'master-download', 'group': 'apps', 'path': '/master-download',
-                'setup': 'Master-Download-Setup-{v}.exe', 'portable': 'Master-Download-Portable-{v}.exe'}}
+                'setup': 'Master-Download-Setup-{v}.exe', 'portable': 'Master-Download-Portable-{v}.exe'},
+         # Video Master: ağ video akışı görüntüleyici (goktalay/videomaster) — md gibi kendi sitesi olmayan bir uygulama
+         'vm': {'name': 'Video Master', 'slug': 'video-master', 'group': 'apps', 'path': '/video-master',
+                'setup': 'Video-Master-Setup-{v}.exe', 'portable': 'Video-Master-Portable-{v}.exe'}}
 TOOLS['ip']['desc'] = {'tr': 'Ağdaki cihazları, açık portları ve servisleri tarar', 'en': 'Scans your network for devices, open ports and services',
                        'fr': 'Analyse le réseau : appareils, ports ouverts et services', 'de': 'Durchsucht das Netzwerk nach Geräten, offenen Ports und Diensten',
                        'es': 'Escanea la red en busca de dispositivos, puertos abiertos y servicios', 'ar': 'يفحص الشبكة بحثًا عن الأجهزة والمنافذ المفتوحة والخدمات',
@@ -84,6 +87,14 @@ TOOLS['md']['desc'] = {'tr': 'İnternetten hızlı indirme yöneticisi: çok ba�
                        'ar': 'مدير تنزيل سريع: اتصالات متعددة، قابل للاستئناف، مع تكامل المتصفح',
                        'zh': '快速下载管理器：多连接、支持断点续传、集成浏览器扩展',
                        'ru': 'Быстрый менеджер загрузок: многопоточный, с докачкой и интеграцией в браузер'}
+TOOLS['vm']['desc'] = {'tr': 'Ağ video akışı görüntüleyici, çözümleyici ve kaydedici (RTSP, RTP, SRT…)',
+                       'en': 'Network video stream viewer, analyzer and recorder (RTSP, RTP, SRT…)',
+                       'fr': 'Lecteur, analyseur et enregistreur de flux vidéo réseau (RTSP, RTP, SRT…)',
+                       'de': 'Betrachter, Analysator und Rekorder für Netzwerk-Videostreams (RTSP, RTP, SRT…)',
+                       'es': 'Visor, analizador y grabador de flujos de vídeo en red (RTSP, RTP, SRT…)',
+                       'ar': 'عارض ومحلّل ومسجّل لبثّ الفيديو عبر الشبكة (RTSP، RTP، SRT…)',
+                       'zh': '网络视频流查看、分析与录制工具（RTSP、RTP、SRT…）',
+                       'ru': 'Просмотр, анализ и запись сетевых видеопотоков (RTSP, RTP, SRT…)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 # Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
 # kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına
@@ -2015,6 +2026,12 @@ def page_game(slug: str, path: str, request: Request, lang: str = ''):
 def page_md(request: Request, lang: str = ''):
     """Master Download tanıtım sayfası: kökte (TOOLS['md']['path']); içerik araç sayfasıyla aynı yoldan."""
     return page_tool('master-download', request, lang, _path=True)
+
+
+@app.get('/video-master')
+def page_vm(request: Request, lang: str = ''):
+    """Video Master tanıtım sayfası: kökte (TOOLS['vm']['path']); içerik araç sayfasıyla aynı yoldan."""
+    return page_tool('video-master', request, lang, _path=True)
 
 
 @app.get('/araclar/{slug}')

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Process — çalışan süreçleri canlı izleme (Master Tool aracı)</title>
+<meta name="description" content="Master Process: Windows'ta çalışan süreçleri tek pencerede listeleyin; CPU, bellek, iş parçacığı sayısı ve başlangıç zamanını canlı izleyin, sütunlara göre sıralayın, seçtiğiniz sürecin dosya yolunu görün. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="Master Process — çalışan süreçleri canlı izleyin">
+<meta property="og:description" content="Süreç listesi, CPU ve bellek kullanımı, seçili sürecin ayrıntıları. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/master-process">
+<link rel="icon" href="/brand/mp.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+  .fmt-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .fmt-cloud span { font: 12.5px ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 3px 9px; border-radius: 999px; background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); color: var(--head); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/mp-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Bilgisayarınızda ne çalışıyor, <em>tek bakışta görün.</em></h1>
+        <p class="lead">Master Process; Windows'ta çalışan bütün süreçleri adı, PID'si, bellek ve CPU kullanımı, iş parçacığı sayısı ve başlangıç zamanıyla listeler. İzlemeyi başlatın, liste iki saniyede bir yenilensin; bir sürece tıklayıp pencere başlığını ve dosya yolunu görün.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · indirme Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" src="/shots/mp-01-surec-listesi.webp" width="1600" height="867" alt="Süreç listesi ve ayrıntı paneli" fetchpriority="high"><img class="hs-light" src="/shots/mp-01-surec-listesi.webp" width="1600" height="867" alt="Süreç listesi ve ayrıntı paneli" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Listele, izle, sırala</h2>
+      <p class="sub">Hangi süreç ne kadar bellek ve işlemci kullanıyor, ne zaman başladı, hangi dosyadan çalışıyor: hepsi tek pencerede.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 3v18"/></svg></div>
+          <h3>Süreç listesi</h3><p>Çalışan bütün süreçler tek tabloda: ad, PID, bellek (çalışma kümesi), CPU yüzdesi, iş parçacığı sayısı ve başlangıç zamanı. Liste açılışta ada göre sıralı gelir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg></div>
+          <h3>Canlı izleme</h3><p><b>Start Monitoring</b> ile liste iki saniyede bir yenilenir: değerler yerinde güncellenir, yeni süreçler eklenir, kapananlar listeden çıkar; seçiminiz kaybolmaz. <b>Stop Monitoring</b> ile durdurun, <b>Refresh</b> ile tek seferlik yenileyin.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3"/><path d="M13 6h8M13 12h6M13 18h3"/></svg></div>
+          <h3>Sütuna göre sıralama</h3><p>Sütun başlığına tıklayın: en çok bellek ya da CPU kullanan süreçler üste gelsin. Bellek ve CPU sütunları yazıya göre değil gerçek değere göre sıralanır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M17 9h1.5M17 13h1.5"/></svg></div>
+          <h3>Süreç ayrıntıları</h3><p>Seçtiğiniz sürecin adı, PID'si, belleği, CPU kullanımı, iş parçacığı sayısı, pencere başlığı ve çalıştırılabilir dosyasının tam yolu sağdaki panelde görünür.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg></div>
+          <h3>Sistem özeti</h3><p>Üst şeritte sistemin toplam CPU kullanımı, toplam bellek ve kullanılabilir bellek; alt şeritte süreç sayısı ve izlemenin açık olup olmadığı.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></div>
+          <h3>Yerel ölçüm kaydı</h3><p>İzleme açıkken seçili sürecin CPU ve bellek değerleri bu bilgisayardaki bir SQLite dosyasına yazılır. Kayıt bu sürümde uygulama içinde görüntülenmez; dosya bilgisayarınızda kalır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Yalnız okur</h3><p>Süreçleri sonlandırmaz, önceliklerini değiştirmez; yönetici izni istemez ve internete bağlanmaz. Korumalı sistem süreçleri de listelenir; bunlarda dosya yolu ve başlangıç zamanı boş kalabilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10M7.5 9.5 12 14l4.5-4.5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg></div>
+          <h3>Kurulum ya da taşınabilir</h3><p>Kurulum paketi yönetici izni olmadan kurulur; taşınabilir sürüm tek bir <code>.exe</code> dosyasıdır. .NET çalışma zamanı paketin içindedir, ayrıca kurmanız gerekmez.</p></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekran; uygulamanın tek (koyu) temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/mp-01-surec-listesi.webp" data-lightbox><img src="/shots/mp-01-surec-listesi-800.webp" srcset="/shots/mp-01-surec-listesi-800.webp 800w, /shots/mp-01-surec-listesi.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="867" loading="lazy" decoding="async" alt="Süreç listesi ve ayrıntı paneli"></a><figcaption><b>Süreç listesi ve ayrıntı paneli</b><span>Derleme sırasındaki otomatik sınamada, bir Windows sınama makinesinde alınan gerçek görüntü</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 için paketler, ölçüm yöntemi, yerel veri ve sınırlar.</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 ve 11, 64 bit (x64)</td></tr><tr><th>Paketler</th><td style="overflow-wrap:anywhere"><code>Master-Process-Setup-&lt;sürüm&gt;.exe</code> (Inno Setup kurulum) ve <code>Master-Process-Portable-&lt;sürüm&gt;.exe</code> (taşınabilir, tek dosya)</td></tr><tr><th>Kurulum klasörü</th><td style="overflow-wrap:anywhere"><code>%LOCALAPPDATA%\Programs\Mastertool\Master Process</code> (yalnız bu kullanıcı, varsayılan); herkes için kurulumda <code>Program Files\Mastertool\Master Process</code></td></tr><tr><th>Başlat menüsü</th><td>Master Process</td></tr><tr><th>Hesap</th><td>İndirmek için Mastertool hesabı; uygulamanın kendisi giriş istemez</td></tr><tr><th>İnternet</th><td>Gerekmez</td></tr><tr><th>Yönetici izni</th><td>Gerekmez</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>.NET 8</th><td>WPF masaüstü uygulaması; çalışma zamanı paketle birlikte gelir</td></tr><tr><th>SQLite</th><td>Yerel ölçüm kaydı (System.Data.SQLite)</td></tr><tr><th>Inno Setup</th><td>Kurulum paketi; kaldırma Windows “Yüklü uygulamalar” listesinden</td></tr><tr><th>Derleme</th><td>Her sürüm Windows üzerinde derlenir; kurulum ve taşınabilir paket açılıp süreç listesi yüklenerek sınanır</td></tr></table></div></div>
+        <div class="spec"><h3>Ölçüm</h3><div class="t-wrap"><table><tr><th>Yenileme</th><td>İzleme açıkken 2 saniyede bir; kapalıyken yalnız <b>Refresh</b> ile</td></tr><tr><th>Süreç CPU %</th><td>İki ölçüm arasında harcanan işlemci süresi ÷ (geçen süre × çekirdek sayısı); ilk ölçümde 0</td></tr><tr><th>Sistem CPU %</th><td>Windows'un boşta / çekirdek / kullanıcı süre sayaçlarından</td></tr><tr><th>Bellek</th><td>Sürecin çalışma kümesi (Working Set); B, KB, MB, GB olarak</td></tr><tr><th>Sıralama</th><td>Sütun başlığına tıklayarak; değerler değişince yeniden sıralamak için başlığa yeniden tıklanır</td></tr></table></div></div>
+        <div class="spec"><h3>Yerel veri</h3><div class="t-wrap"><table><tr><th>Ölçüm kaydı</th><td style="overflow-wrap:anywhere"><code>%APPDATA%\Master Process\history.db</code> (SQLite)</td></tr><tr><th>Ne yazılır</th><td>Zaman, PID, süreç adı, CPU yüzdesi ve bellek: yalnız seçili süreç için, yalnız izleme açıkken</td></tr><tr><th>Gizlilik</th><td>Dosya bilgisayarınızda kalır; uygulama ağ bağlantısı kurmaz</td></tr><tr><th>Kayıt açılamazsa</th><td>Uygulama kayıt tutmadan çalışmayı sürdürür</td></tr></table></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0</th><td>İlk sürüm: süreç listesi, 2 saniyelik canlı izleme, sütuna göre sıralama, süreç ayrıntıları paneli, sistem CPU ve bellek özeti, yerel ölçüm kaydı; kurulum ve taşınabilir paket.</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz</h3><div class="tags"><span>English</span></div><p>Arayüz bu sürümde yalnız İngilizce ve tek (koyu) temalıdır.</p></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3><ul><li>Yalnız izler: süreç sonlandırma, öncelik değiştirme ya da hizmet yönetimi yoktur.</li><li>Grafik yoktur; GPU, disk ve ağ kullanımı ölçülmez. Ayrıntı panelindeki “GPU Memory” alanı bu sürümde doldurulmaz.</li><li>Arama / süzme ve üst–alt süreç ağacı yoktur.</li><li>Ölçüm kaydı uygulama içinde görüntülenmez ve eski kayıtlar kendiliğinden silinmez; dosyayı istediğiniz zaman silebilirsiniz.</li><li>Korumalı sistem süreçlerinde dosya yolu ve başlangıç zamanı boş, CPU değeri 0 görünebilir.</li><li>Mastertool oturumu ve cihazlar arası eşitleme yoktur.</li><li>ARM64 için ayrı paket yoktur; Windows 11 ARM cihazlarda x64 öykünmesiyle çalışması beklenir, bu yapılandırmada sınanmamıştır.</li><li>Kod imzası olmadığından ilk indirmede Windows SmartScreen uyarı gösterebilir. Yalnız Windows 10 ve 11 (x64).</li></ul></div>
+      <div class="limits" id="yol-haritasi"><h3>Yol haritası</h3><p style="margin:0 0 8px;color:var(--muted);font-size:14.5px">Master Process, ayrıntılı bir süreç yönetimi uygulaması olarak tasarlanıyor. Aşağıdakiler planlanmaktadır; 1.0.0 sürümünde yoktur ve tarih verilmemiştir.</p><ul><li>Süreç başına disk ve GPU kullanımı (işlemci ve bellek bugün var).</li><li>PID süreç ağacı ve ağaç üzerinde çizgi grafiklerle başarım çözümlemesi.</li><li>Seçili sürecin bellek, disk ve GPU üzerindeki yerleşiminin görsel gösterimi.</li><li>Seçili sürecin pencere görüntüsü.</li><li>Süreç tarihçesi ile onaltılık (hex) ve benzeri ayrıntılı veri akışı görünümleri.</li><li>Seçili sürecin diskte kullandığı dosyaların listesi.</li><li>Diğer Mastertool uygulamalarıyla aynı arayüz düzeni.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>Master Process'i edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

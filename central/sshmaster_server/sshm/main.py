@@ -45,6 +45,8 @@ TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup
          'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'},
          'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'},
          'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'},
+         # Master Process: süreç izleyici (goktalay/masterprocess, .NET 8 / WPF)
+         'mp': {'name': 'Master Process', 'slug': 'master-process', 'setup': 'Master-Process-Setup-{v}.exe', 'portable': 'Master-Process-Portable-{v}.exe'},
          # group:'apps' — katalogda uygulamalarla; path: tanıtım sayfası araclar/ altında değil kökte (dosya yine static/mt/araclar/<slug>.html)
          'md': {'name': 'Master Download', 'slug': 'master-download', 'group': 'apps', 'path': '/master-download',
                 'setup': 'Master-Download-Setup-{v}.exe', 'portable': 'Master-Download-Portable-{v}.exe'},
@@ -79,6 +81,14 @@ TOOLS['sd']['desc'] = {'tr': 'Herkese açık sosyal medya bağlantılarından vi
                        'ar': 'ينزّل الفيديو والصوت من روابط وسائل التواصل الاجتماعي العامة (اختيار الدقة، قوائم التشغيل، قائمة الانتظار)',
                        'zh': '从公开的社交媒体链接下载视频和音频（选择分辨率、播放列表、下载队列）',
                        'ru': 'Скачивает видео и звук по общедоступным ссылкам соцсетей (выбор разрешения, плейлисты, очередь)'}
+TOOLS['mp']['desc'] = {'tr': 'Çalışan süreçleri canlı listeler: CPU, bellek, iş parçacığı sayısı ve dosya yolu',
+                       'en': 'Lists running processes live: CPU, memory, thread count and file path',
+                       'fr': 'Liste en direct les processus en cours : CPU, mémoire, nombre de threads et chemin du fichier',
+                       'de': 'Listet laufende Prozesse live auf: CPU, Arbeitsspeicher, Thread-Anzahl und Dateipfad',
+                       'es': 'Lista en vivo los procesos en ejecución: CPU, memoria, número de hilos y ruta del archivo',
+                       'ar': 'يعرض العمليات الجارية مباشرةً: المعالج والذاكرة وعدد الخيوط ومسار الملف',
+                       'zh': '实时列出正在运行的进程：CPU、内存、线程数和文件路径',
+                       'ru': 'Показывает запущенные процессы в реальном времени: ЦП, память, число потоков и путь к файлу'}
 TOOLS['md']['desc'] = {'tr': 'İnternetten hızlı indirme yöneticisi: çok bağlantılı, sürdürülebilir, tarayıcı eklentili',
                        'en': 'Fast download manager: multi-connection, resumable, with browser integration',
                        'fr': 'Gestionnaire de téléchargements rapide : multi-connexion, reprise possible, intégration au navigateur',

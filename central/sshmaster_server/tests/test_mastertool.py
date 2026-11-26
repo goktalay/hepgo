@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', VIDEOMASTER_RELEASE_KEY='vm-anahtar', SIMUMAV_RELEASE_KEY='sv-anahtar', SIMUMAV_MT_SHARED_SECRET='sv-gizli', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', MASTERPROCESS_RELEASE_KEY='mp-anahtar', VIDEOMASTER_RELEASE_KEY='vm-anahtar', SIMUMAV_RELEASE_KEY='sv-anahtar', SIMUMAV_MT_SHARED_SECRET='sv-gizli', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -232,7 +232,7 @@ def main():
         r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
         assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
         assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
-        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd'}
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd', 'mp'}
         assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
         sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
         c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
@@ -447,7 +447,7 @@ def main():
         SSO = r.json()['sso_token']
         MT = {'Authorization': 'Bearer ' + SSO}
         cat = c.get('/api/mt/apps', headers=MT).json()
-        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd', 'mp'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
         ipc = next(x for x in cat['apps'] if x['app'] == 'ip')
         assert ipc['description']['en'].startswith('Scans') and len(ipc['description']) == 8 and cat['apps'][0]['description'] is None
         assert ipc['group'] == 'tools' and ipc['name'] == 'IP Tools' and ipc['site'].endswith('/araclar/ip-tools') and cat['apps'][0]['group'] == 'apps'
@@ -516,6 +516,19 @@ def main():
         assert sdp.status_code == 200 and '"isPartOf"' in sdp.text and '/shots/sd-02-video-analiz-gece-en.webp' in sdp.text, sdp.status_code
         assert c.get('/brand/sd-512.png', headers={'Host': 'mastertool.download'}).status_code == 200
         assert 'Yalnızca indirme hakkınız olan içerikleri indirin' in sdp.text   # hukuki uyarı sayfada
+        # Master Process (mp): sayfa, simgeler, yayın anahtarı, yükleme → indirme, katalogdaki çalıştırılabilir adı
+        mpp = c.get('/araclar/master-process?lang=en', headers={'Host': 'mastertool.download'})
+        assert mpp.status_code == 200 and '<html lang="en"' in mpp.text and '"Master Process"' in mpp.text and '"isPartOf"' in mpp.text, mpp.status_code
+        assert 'canonical" href="https://mastertool.download/araclar/master-process?lang=en"' in mpp.text and '/shots/mp-01-surec-listesi.webp' in mpp.text
+        assert 'Running processes' in mpp.text or 'running processes' in mpp.text   # başlık / açıklama İngilizceye çevrilmiş
+        for f in ('mp.svg', 'mp.png', 'mp-512.png'):
+            assert c.get('/brand/' + f, headers={'Host': 'mastertool.download'}).status_code == 200, f
+        up = {'data': {'part': '0', 'parts': '1', 'filename': 'Master-Process-Setup-1.0.0.exe'}, 'files': {'file': ('b', b'MZproc')}}
+        assert c.post('/api/mp/releases/1.0.0/setup', headers={'X-Release-Key': 'sd-anahtar'}, **up).status_code == 403
+        r = c.post('/api/mp/releases/1.0.0/setup', headers={'X-Release-Key': 'mp-anahtar'}, **up); assert r.status_code == 200, r.text
+        assert c.get('/api/mt/apps/mp/download', headers=MT3).content == b'MZproc'
+        mpc = next(x for x in c.get('/api/mt/apps', headers=MT3).json()['apps'] if x['app'] == 'mp')
+        assert mpc['exe'] == 'Master Process.exe' and mpc['description']['tr'].startswith('Çalışan süreçleri') and len(mpc['description']) == 8, mpc
         # Master Download (md): katalogda 'apps' grubunda, tanıtım kökte; /araclar/master-download kalıcı yönlenir
         mdc = next(x for x in cat['apps'] if x['app'] == 'md')
         assert mdc['group'] == 'apps' and mdc['site'].endswith('/master-download') and mdc['exe'] == 'Master Download.exe', mdc
@@ -599,7 +612,7 @@ def main():
         assert g.get('/api/xx/profile', headers=VF).status_code == 404 and g.get('/api/sm/profile', headers=VF).status_code == 404
         # katalog: kind:'web' kaydı yalnız ?v=1.2.0 ve üstü isteyen Master Tool'a
         r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop'}); MT4 = {'Authorization': 'Bearer ' + r.json()['sso_token']}
-        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd']
+        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'md', 'vm', 'ip', 'fs', 'qp', 'm3', 'sd', 'mp']
         assert [x['app'] for x in c.get('/api/mt/apps', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps

@@ -3,7 +3,7 @@
   "stem": "mp-01-surec-agaci-gece",
   "theme": "dark",
   "title": "Süreç ağacı ve sistem görünümü",
-  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç grafikleri ve sistem özeti",
+  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç / ağ grafikleri ve sistem özeti",
   "w": 1600,
   "h": 1000,
   "en": true
@@ -12,13 +12,22 @@
   "stem": "mp-01-surec-agaci-gunduz",
   "theme": "light",
   "title": "Süreç ağacı ve sistem görünümü",
-  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç grafikleri ve sistem özeti",
+  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç / ağ grafikleri ve sistem özeti",
   "w": 1600,
   "h": 1000,
   "en": true
  },
  {
-  "stem": "mp-02-genel-gece",
+  "stem": "mp-02-agac-sirali-gece",
+  "theme": "dark",
+  "title": "Ağaçta dal yüküne göre sıralama",
+  "caption": "Sütun başlığına tıklanınca kökler ve kardeşler dal toplamına göre sıralanır; tümünü aç / tümünü kapat düğmeleri",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-03-genel-gece",
   "theme": "dark",
   "title": "Süreç ayrıntıları",
   "caption": "Yol, komut satırı, üst süreç, öncelik, sayaçlar ve süreç eylemleri",
@@ -27,7 +36,7 @@
   "en": true
  },
  {
-  "stem": "mp-03-performans-gece",
+  "stem": "mp-04-performans-gece",
   "theme": "dark",
   "title": "Süreç başına performans grafikleri",
   "caption": "CPU, bellek ve G/Ç için canlı çizgi grafikler; tepe ve ortalama değerler",
@@ -36,7 +45,7 @@
   "en": true
  },
  {
-  "stem": "mp-03-performans-gunduz",
+  "stem": "mp-04-performans-gunduz",
   "theme": "light",
   "title": "Süreç başına performans grafikleri",
   "caption": "CPU, bellek ve G/Ç için canlı çizgi grafikler; tepe ve ortalama değerler",
@@ -45,7 +54,7 @@
   "en": true
  },
  {
-  "stem": "mp-04-bellek-gece",
+  "stem": "mp-05-bellek-gece",
   "theme": "dark",
   "title": "Bellek yerleşim haritası",
   "caption": "Sanal adres alanındaki bölgeler: tür, koruma ve fiziksel bellekte bulunma oranı",
@@ -54,7 +63,7 @@
   "en": true
  },
  {
-  "stem": "mp-04-bellek-gunduz",
+  "stem": "mp-05-bellek-gunduz",
   "theme": "light",
   "title": "Bellek yerleşim haritası",
   "caption": "Sanal adres alanındaki bölgeler: tür, koruma ve fiziksel bellekte bulunma oranı",
@@ -63,7 +72,7 @@
   "en": true
  },
  {
-  "stem": "mp-05-bellek-hex-gece",
+  "stem": "mp-06-bellek-hex-gece",
   "theme": "dark",
   "title": "Bellek içeriği: hex görüntüleyici",
   "caption": "Seçilen bölgenin baytları; canlı yenileme, dizgeler kipi ve adrese gitme",
@@ -72,7 +81,7 @@
   "en": true
  },
  {
-  "stem": "mp-06-disk-gece",
+  "stem": "mp-07-disk-gece",
   "theme": "dark",
   "title": "Disk: G/Ç ve açık dosyalar",
   "caption": "Okuma / yazma hızları, tutamaç türleri ve sürecin açık tuttuğu dosyalar",
@@ -81,7 +90,7 @@
   "en": true
  },
  {
-  "stem": "mp-07-disk-yerlesim-gece",
+  "stem": "mp-08-disk-yerlesim-gece",
   "theme": "dark",
   "title": "Dosyanın diskteki yerleşimi",
   "caption": "Seçilen dosyanın birimdeki kümeleri, parça sayısı ve içeriğinin hex dökümü",
@@ -90,7 +99,70 @@
   "en": true
  },
  {
-  "stem": "mp-08-gpu-gece",
+  "stem": "mp-09-disk-yuzey-gece",
+  "theme": "dark",
+  "title": "Disk yüzeyi ve dosya parçaları",
+  "caption": "Birimin doluluk haritası üzerinde dosyanın kapladığı kümeler; her parçanın başlangıç kümesi, sektörü ve boyutu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-10-ag-gece",
+  "theme": "dark",
+  "title": "Ağ: bağlantılar ve portlar",
+  "caption": "Sürecin indirme / yükleme hızı, açık bağlantıları ve dinlediği portlar; porta göre süzme",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-10-ag-gunduz",
+  "theme": "light",
+  "title": "Ağ: bağlantılar ve portlar",
+  "caption": "Sürecin indirme / yükleme hızı, açık bağlantıları ve dinlediği portlar; porta göre süzme",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-11-ag-akilli-gece",
+  "theme": "dark",
+  "title": "Ağ: akıllı görünüm",
+  "caption": "Giden ve gelen veri ayrı panellerde; HTTP ayrıştırılır, JSON sözdizimi renklendirilir, sıkıştırılmış gövdeler açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-11-ag-akilli-gunduz",
+  "theme": "light",
+  "title": "Ağ: akıllı görünüm",
+  "caption": "Giden ve gelen veri ayrı panellerde; HTTP ayrıştırılır, JSON sözdizimi renklendirilir, sıkıştırılmış gövdeler açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-12-ag-resim-gece",
+  "theme": "dark",
+  "title": "Ağ: resim önizleme",
+  "caption": "Gönderilen ya da alınan resimler akışın içinde önizlenir; tür, boyut ve çözünürlük bilgisiyle",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-13-ag-hex-gece",
+  "theme": "dark",
+  "title": "Ağ: hex dökümü",
+  "caption": "Aynı baytlar hex, düz metin, HTML / XML kaynağı ya da Base64 olarak; duraklatma ve temizleme",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-14-gpu-gece",
   "theme": "dark",
   "title": "GPU kullanımı",
   "caption": "Süreç başına GPU motoru kullanımı ve ayrılmış / paylaşılan GPU belleği",
@@ -99,7 +171,7 @@
   "en": true
  },
  {
-  "stem": "mp-09-pencere-gece",
+  "stem": "mp-15-pencere-gece",
   "theme": "dark",
   "title": "Pencere görüntüsü",
   "caption": "Seçilen sürecin pencereleri ve pencerenin o anki görüntüsü",
@@ -108,7 +180,7 @@
   "en": true
  },
  {
-  "stem": "mp-10-moduller-gece",
+  "stem": "mp-16-moduller-gece",
   "theme": "dark",
   "title": "Yüklenen modüller",
   "caption": "Sürecin yüklediği DLL ve çalıştırılabilir dosyalar; taban adresi ve boyut",
@@ -117,7 +189,7 @@
   "en": true
  },
  {
-  "stem": "mp-11-is-parcaciklari-gece",
+  "stem": "mp-17-is-parcaciklari-gece",
   "theme": "dark",
   "title": "İş parçacıkları",
   "caption": "İş parçacığı başına CPU süresi, öncelik ve durum",
@@ -126,7 +198,7 @@
   "en": true
  },
  {
-  "stem": "mp-12-tarihce-gece",
+  "stem": "mp-18-tarihce-gece",
   "theme": "dark",
   "title": "Tarihçe",
   "caption": "Uygulama açıkken başlayan ve sonlanan süreçler; ömür, tepe CPU ve tepe bellek",
@@ -135,7 +207,7 @@
   "en": true
  },
  {
-  "stem": "mp-13-ayarlar-gece",
+  "stem": "mp-19-ayarlar-gece",
   "theme": "dark",
   "title": "Ayarlar",
   "caption": "Tema, dil, başlangıç ve sistem tepsisi seçenekleri",

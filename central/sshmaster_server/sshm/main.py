@@ -81,14 +81,14 @@ TOOLS['sd']['desc'] = {'tr': 'Herkese açık sosyal medya bağlantılarından vi
                        'ar': 'ينزّل الفيديو والصوت من روابط وسائل التواصل الاجتماعي العامة (اختيار الدقة، قوائم التشغيل، قائمة الانتظار)',
                        'zh': '从公开的社交媒体链接下载视频和音频（选择分辨率、播放列表、下载队列）',
                        'ru': 'Скачивает видео и звук по общедоступным ссылкам соцсетей (выбор разрешения, плейлисты, очередь)'}
-TOOLS['mp']['desc'] = {'tr': 'Süreç yöneticisi: süreç ağacı, süreç başına işlemci / bellek / G/Ç / GPU grafikleri, bellek ve disk haritaları, hex dökümü',
-                       'en': 'Process manager: process tree, per-process CPU / memory / I/O / GPU charts, memory and disk maps, hex view',
-                       'fr': 'Gestionnaire de processus : arborescence, graphiques CPU / mémoire / E/S / GPU par processus, cartes mémoire et disque, vue hexadécimale',
-                       'de': 'Prozessmanager: Prozessbaum, CPU- / Speicher- / E/A- / GPU-Diagramme je Prozess, Speicher- und Datenträgerkarten, Hex-Ansicht',
-                       'es': 'Gestor de procesos: árbol de procesos, gráficos de CPU / memoria / E/S / GPU por proceso, mapas de memoria y disco, vista hexadecimal',
-                       'ar': 'مدير العمليات: شجرة العمليات، مخططات المعالج والذاكرة والإدخال/الإخراج وGPU لكل عملية، خرائط الذاكرة والقرص، عرض ست عشري',
-                       'zh': '进程管理器：进程树，每个进程的 CPU / 内存 / I/O / GPU 图表，内存与磁盘布局图，十六进制视图',
-                       'ru': 'Диспетчер процессов: дерево процессов, графики ЦП / памяти / ввода-вывода / GPU по процессам, карты памяти и диска, hex-просмотр'}
+TOOLS['mp']['desc'] = {'tr': 'Süreç yöneticisi: süreç ağacı, süreç başına işlemci / bellek / G/Ç / ağ / GPU grafikleri, ağ bağlantıları ve akan veri, bellek ve disk haritaları, hex dökümü',
+                       'en': 'Process manager: process tree, per-process CPU / memory / I/O / network / GPU charts, network connections and live data, memory and disk maps, hex view',
+                       'fr': 'Gestionnaire de processus : arborescence, graphiques CPU / mémoire / E/S / réseau / GPU par processus, connexions réseau et données en direct, cartes mémoire et disque, vue hexadécimale',
+                       'de': 'Prozessmanager: Prozessbaum, CPU- / Speicher- / E/A- / Netzwerk- / GPU-Diagramme je Prozess, Netzwerkverbindungen und Live-Daten, Speicher- und Datenträgerkarten, Hex-Ansicht',
+                       'es': 'Gestor de procesos: árbol de procesos, gráficos de CPU / memoria / E/S / red / GPU por proceso, conexiones de red y datos en vivo, mapas de memoria y disco, vista hexadecimal',
+                       'ar': 'مدير العمليات: شجرة العمليات، مخططات المعالج والذاكرة والإدخال/الإخراج والشبكة وGPU لكل عملية، اتصالات الشبكة والبيانات المباشرة، خرائط الذاكرة والقرص، عرض ست عشري',
+                       'zh': '进程管理器：进程树，每个进程的 CPU / 内存 / I/O / 网络 / GPU 图表，网络连接与实时数据流，内存与磁盘布局图，十六进制视图',
+                       'ru': 'Диспетчер процессов: дерево процессов, графики ЦП / памяти / ввода-вывода / сети / GPU по процессам, сетевые соединения и поток данных, карты памяти и диска, hex-просмотр'}
 TOOLS['md']['desc'] = {'tr': 'İnternetten hızlı indirme yöneticisi: çok bağlantılı, sürdürülebilir, tarayıcı eklentili',
                        'en': 'Fast download manager: multi-connection, resumable, with browser integration',
                        'fr': 'Gestionnaire de téléchargements rapide : multi-connexion, reprise possible, intégration au navigateur',

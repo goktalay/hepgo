@@ -45,7 +45,7 @@ TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup
          'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'},
          'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'},
          'sd': {'name': 'Social Download', 'slug': 'social-download', 'setup': 'Social-Download-Setup-{v}.exe', 'portable': 'Social-Download-Portable-{v}.exe'},
-         # Master Process: süreç izleyici (goktalay/masterprocess, .NET 8 / WPF)
+         # Master Process: süreç yöneticisi (goktalay/masterprocess, Electron + .NET 8 NativeAOT yardımcı)
          'mp': {'name': 'Master Process', 'slug': 'master-process', 'setup': 'Master-Process-Setup-{v}.exe', 'portable': 'Master-Process-Portable-{v}.exe'},
          # group:'apps' — katalogda uygulamalarla; path: tanıtım sayfası araclar/ altında değil kökte (dosya yine static/mt/araclar/<slug>.html)
          'md': {'name': 'Master Download', 'slug': 'master-download', 'group': 'apps', 'path': '/master-download',
@@ -81,14 +81,14 @@ TOOLS['sd']['desc'] = {'tr': 'Herkese açık sosyal medya bağlantılarından vi
                        'ar': 'ينزّل الفيديو والصوت من روابط وسائل التواصل الاجتماعي العامة (اختيار الدقة، قوائم التشغيل، قائمة الانتظار)',
                        'zh': '从公开的社交媒体链接下载视频和音频（选择分辨率、播放列表、下载队列）',
                        'ru': 'Скачивает видео и звук по общедоступным ссылкам соцсетей (выбор разрешения, плейлисты, очередь)'}
-TOOLS['mp']['desc'] = {'tr': 'Çalışan süreçleri canlı listeler: CPU, bellek, iş parçacığı sayısı ve dosya yolu',
-                       'en': 'Lists running processes live: CPU, memory, thread count and file path',
-                       'fr': 'Liste en direct les processus en cours : CPU, mémoire, nombre de threads et chemin du fichier',
-                       'de': 'Listet laufende Prozesse live auf: CPU, Arbeitsspeicher, Thread-Anzahl und Dateipfad',
-                       'es': 'Lista en vivo los procesos en ejecución: CPU, memoria, número de hilos y ruta del archivo',
-                       'ar': 'يعرض العمليات الجارية مباشرةً: المعالج والذاكرة وعدد الخيوط ومسار الملف',
-                       'zh': '实时列出正在运行的进程：CPU、内存、线程数和文件路径',
-                       'ru': 'Показывает запущенные процессы в реальном времени: ЦП, память, число потоков и путь к файлу'}
+TOOLS['mp']['desc'] = {'tr': 'Süreç yöneticisi: süreç ağacı, süreç başına işlemci / bellek / G/Ç / GPU grafikleri, bellek ve disk haritaları, hex dökümü',
+                       'en': 'Process manager: process tree, per-process CPU / memory / I/O / GPU charts, memory and disk maps, hex view',
+                       'fr': 'Gestionnaire de processus : arborescence, graphiques CPU / mémoire / E/S / GPU par processus, cartes mémoire et disque, vue hexadécimale',
+                       'de': 'Prozessmanager: Prozessbaum, CPU- / Speicher- / E/A- / GPU-Diagramme je Prozess, Speicher- und Datenträgerkarten, Hex-Ansicht',
+                       'es': 'Gestor de procesos: árbol de procesos, gráficos de CPU / memoria / E/S / GPU por proceso, mapas de memoria y disco, vista hexadecimal',
+                       'ar': 'مدير العمليات: شجرة العمليات، مخططات المعالج والذاكرة والإدخال/الإخراج وGPU لكل عملية، خرائط الذاكرة والقرص، عرض ست عشري',
+                       'zh': '进程管理器：进程树，每个进程的 CPU / 内存 / I/O / GPU 图表，内存与磁盘布局图，十六进制视图',
+                       'ru': 'Диспетчер процессов: дерево процессов, графики ЦП / памяти / ввода-вывода / GPU по процессам, карты памяти и диска, hex-просмотр'}
 TOOLS['md']['desc'] = {'tr': 'İnternetten hızlı indirme yöneticisi: çok bağlantılı, sürdürülebilir, tarayıcı eklentili',
                        'en': 'Fast download manager: multi-connection, resumable, with browser integration',
                        'fr': 'Gestionnaire de téléchargements rapide : multi-connexion, reprise possible, intégration au navigateur',

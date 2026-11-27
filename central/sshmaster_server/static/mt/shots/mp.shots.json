@@ -1,11 +1,146 @@
 [
  {
-  "stem": "mp-01-surec-listesi",
+  "stem": "mp-01-surec-agaci-gece",
   "theme": "dark",
-  "title": "Süreç listesi ve ayrıntı paneli",
-  "caption": "Derleme sırasındaki otomatik sınamada, bir Windows sınama makinesinde alınan gerçek görüntü",
+  "title": "Süreç ağacı ve sistem görünümü",
+  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç grafikleri ve sistem özeti",
   "w": 1600,
-  "h": 867,
-  "en": false
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-01-surec-agaci-gunduz",
+  "theme": "light",
+  "title": "Süreç ağacı ve sistem görünümü",
+  "caption": "Üst–alt ilişkisiyle süreçler, satır içi CPU / bellek / G/Ç grafikleri ve sistem özeti",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-02-genel-gece",
+  "theme": "dark",
+  "title": "Süreç ayrıntıları",
+  "caption": "Yol, komut satırı, üst süreç, öncelik, sayaçlar ve süreç eylemleri",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-03-performans-gece",
+  "theme": "dark",
+  "title": "Süreç başına performans grafikleri",
+  "caption": "CPU, bellek ve G/Ç için canlı çizgi grafikler; tepe ve ortalama değerler",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-03-performans-gunduz",
+  "theme": "light",
+  "title": "Süreç başına performans grafikleri",
+  "caption": "CPU, bellek ve G/Ç için canlı çizgi grafikler; tepe ve ortalama değerler",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-04-bellek-gece",
+  "theme": "dark",
+  "title": "Bellek yerleşim haritası",
+  "caption": "Sanal adres alanındaki bölgeler: tür, koruma ve fiziksel bellekte bulunma oranı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-04-bellek-gunduz",
+  "theme": "light",
+  "title": "Bellek yerleşim haritası",
+  "caption": "Sanal adres alanındaki bölgeler: tür, koruma ve fiziksel bellekte bulunma oranı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-05-bellek-hex-gece",
+  "theme": "dark",
+  "title": "Bellek içeriği: hex görüntüleyici",
+  "caption": "Seçilen bölgenin baytları; canlı yenileme, dizgeler kipi ve adrese gitme",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-06-disk-gece",
+  "theme": "dark",
+  "title": "Disk: G/Ç ve açık dosyalar",
+  "caption": "Okuma / yazma hızları, tutamaç türleri ve sürecin açık tuttuğu dosyalar",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-07-disk-yerlesim-gece",
+  "theme": "dark",
+  "title": "Dosyanın diskteki yerleşimi",
+  "caption": "Seçilen dosyanın birimdeki kümeleri, parça sayısı ve içeriğinin hex dökümü",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-08-gpu-gece",
+  "theme": "dark",
+  "title": "GPU kullanımı",
+  "caption": "Süreç başına GPU motoru kullanımı ve ayrılmış / paylaşılan GPU belleği",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-09-pencere-gece",
+  "theme": "dark",
+  "title": "Pencere görüntüsü",
+  "caption": "Seçilen sürecin pencereleri ve pencerenin o anki görüntüsü",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-10-moduller-gece",
+  "theme": "dark",
+  "title": "Yüklenen modüller",
+  "caption": "Sürecin yüklediği DLL ve çalıştırılabilir dosyalar; taban adresi ve boyut",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-11-is-parcaciklari-gece",
+  "theme": "dark",
+  "title": "İş parçacıkları",
+  "caption": "İş parçacığı başına CPU süresi, öncelik ve durum",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-12-tarihce-gece",
+  "theme": "dark",
+  "title": "Tarihçe",
+  "caption": "Uygulama açıkken başlayan ve sonlanan süreçler; ömür, tepe CPU ve tepe bellek",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "mp-13-ayarlar-gece",
+  "theme": "dark",
+  "title": "Ayarlar",
+  "caption": "Tema, dil, başlangıç ve sistem tepsisi seçenekleri",
+  "w": 1600,
+  "h": 1000,
+  "en": true
  }
 ]

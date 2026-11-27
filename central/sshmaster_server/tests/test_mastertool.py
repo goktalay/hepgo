@@ -519,8 +519,8 @@ def main():
         # Master Process (mp): sayfa, simgeler, yayın anahtarı, yükleme → indirme, katalogdaki çalıştırılabilir adı
         mpp = c.get('/araclar/master-process?lang=en', headers={'Host': 'mastertool.download'})
         assert mpp.status_code == 200 and '<html lang="en"' in mpp.text and '"Master Process"' in mpp.text and '"isPartOf"' in mpp.text, mpp.status_code
-        assert 'canonical" href="https://mastertool.download/araclar/master-process?lang=en"' in mpp.text and '/shots/mp-01-surec-listesi.webp' in mpp.text
-        assert 'Running processes' in mpp.text or 'running processes' in mpp.text   # başlık / açıklama İngilizceye çevrilmiş
+        assert 'canonical" href="https://mastertool.download/araclar/master-process?lang=en"' in mpp.text and '/shots/mp-01-surec-agaci-gece-en.webp' in mpp.text
+        assert 'process manager for Windows' in mpp.text and 'process tree on Windows' in mpp.text   # başlık / açıklama İngilizceye çevrilmiş
         for f in ('mp.svg', 'mp.png', 'mp-512.png'):
             assert c.get('/brand/' + f, headers={'Host': 'mastertool.download'}).status_code == 200, f
         up = {'data': {'part': '0', 'parts': '1', 'filename': 'Master-Process-Setup-1.0.0.exe'}, 'files': {'file': ('b', b'MZproc')}}
@@ -528,7 +528,7 @@ def main():
         r = c.post('/api/mp/releases/1.0.0/setup', headers={'X-Release-Key': 'mp-anahtar'}, **up); assert r.status_code == 200, r.text
         assert c.get('/api/mt/apps/mp/download', headers=MT3).content == b'MZproc'
         mpc = next(x for x in c.get('/api/mt/apps', headers=MT3).json()['apps'] if x['app'] == 'mp')
-        assert mpc['exe'] == 'Master Process.exe' and mpc['description']['tr'].startswith('Çalışan süreçleri') and len(mpc['description']) == 8, mpc
+        assert mpc['exe'] == 'Master Process.exe' and mpc['description']['tr'].startswith('Süreç yöneticisi') and len(mpc['description']) == 8, mpc
         # Master Download (md): katalogda 'apps' grubunda, tanıtım kökte; /araclar/master-download kalıcı yönlenir
         mdc = next(x for x in cat['apps'] if x['app'] == 'md')
         assert mdc['group'] == 'apps' and mdc['site'].endswith('/master-download') and mdc['exe'] == 'Master Download.exe', mdc
